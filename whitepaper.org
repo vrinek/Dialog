@@ -13,9 +13,10 @@ As the volume and complexity of data continue to grow in today's digital world, 
 ** Key Features
 
 Dialog offers several key features that make it suitable for handling public and open data across various domains and industries:
-- *Decentralized architecture*, using IPFS to ensure data integrity and security
-- *Append-only design*, facilitating updates and corrections by appending new links to mark previous data as incorrect and provide corrected information, similar to follow-up commits in version control systems like Git
-- *Flexible data structures*, enabling the representation of complex relationships and various types of data
+- *Decentralized and open*: Dialog is designed as a decentralized system, with no central authority controlling the data. This allows for a more diverse range of information sources and reduces the risk of censorship.
+- *Append-only design, allowing for easy data updates and corrections*: Dialog's data structure is designed to be append-only. Updates and corrections can be made by adding new links to the graph, making it easy to maintain data integrity and history.
+- *Trust mechanisms and reputation system*: Dialog incorporates public key cryptography, reputation systems, and user-defined acceptance lists to ensure data integrity and enable users to filter and evaluate the trustworthiness of data sources.
+- *Scalability and performance*: Dialog is designed to scale with the growth of data and the number of users while maintaining high performance.
 
 * Data Structures in Dialog
 
