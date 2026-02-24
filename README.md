@@ -18,9 +18,11 @@ Distributed, append-only ontology graph protocol.
 - Query interface (SQL, GraphQL, etc. are implementation choices)
 - L3 processing rules beyond subscription-based filtering
 
-## Architecture
+## Specification
 
-See [Dialog architecture.md](Dialog%20architecture.md) for the three-layer design.
+The full protocol specification is in [`spec/`](spec/00-overview.md).
+
+## Architecture
 
 ### Layer 1 — "What we heard"
 Raw blockchain data. Each author has their own chain of signed, append-only blocks.
@@ -87,5 +89,6 @@ New meta-bonds adopted from real-world usage via RFC-like process.
 
 ## Documents
 
-- [Architecture](Dialog%20architecture.md) — three-layer design details
+- [Protocol specification](spec/00-overview.md) — formal spec (start here)
 - [Protocol design brainstorm](docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) — full design session with all decisions and rationale
+- [Original architecture notes](archive/Dialog%20architecture.md) — early design notes (archived, superseded by spec)
