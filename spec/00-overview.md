@@ -35,18 +35,22 @@ Dialog defines a protocol — not a single piece of software. The goal is intero
 Dialog processes data through three layers:
 
 ```
-┌─────────────────┐
-│   Application    │  reads from L3, writes to L1
-├─────────────────┤
-│  Layer 3         │  "What we accept" — filtered by author subscriptions
-│  (distilled)     │  Meta-molecules applied. Conflicts flagged.
-├─────────────────┤
-│  Layer 2         │  "What we know" — union of all subscribed blocks
-│  (accumulated)   │  Append-only graph. No interpretation.
-├─────────────────┤
-│  Layer 1         │  "What we heard" — signed, append-only blocks
-│  (blockchain)    │  One chain per author. DAG via foreign references.
-└─────────────────┘
+              ┌───────────────────┐
+              │    Application    │
+              └───┬───────────▲───┘
+   writes to      │           │    reads from
+      L1          │           │       L3
+                  │   ┌───────┴───────────┐
+                  │   │      Layer 3      │  "What we accept"
+                  │   └───────▲───────────┘
+                  │           │
+                  │   ┌───────┴───────────┐
+                  │   │      Layer 2      │  "What we know"
+                  │   └───────▲───────────┘
+                  │           │
+                  │   ┌───────┴───────────┐
+                  └──▶│      Layer 1      │  "What we heard"
+                      └───────────────────┘
 ```
 
 **Layer 1** stores raw blocks. Each author maintains their own chain of signed blocks. Blocks reference previous blocks in the same chain and optionally reference blocks in other chains, forming a DAG.
