@@ -1,0 +1,9 @@
+# Generated outputs
+dialog-protocol-spec.html
+dialog-protocol-spec.pdf
+*.html
+*.pdf
+
+# Temporary files
+*.tmp
+*.temp
