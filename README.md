@@ -103,12 +103,12 @@ A compiled PDF of the full protocol specification is automatically generated on 
 
 ### Downloading Releases
 
-Tagged releases include a PDF attachment:
+Tagged releases include a PDF attachment with the version in the filename:
 
 1. Go to [GitHub Releases](../../releases)
-2. Download `dialog-protocol-spec.pdf` from the latest release
+2. Download `dialog-protocol-vX.Y.Z.pdf` from the latest release (e.g., `dialog-protocol-v0.2.0.pdf`)
 
-The PDF version matches the git tag (e.g., `v0.2.0`).
+The PDF version inside the document matches the git tag.
 
 ### Local Building
 
@@ -118,8 +118,14 @@ Build the PDF locally using the provided scripts:
 # Build PDF (requires pandoc and chromium)
 ./build-pdf.sh
 
+# Build with version suffix (e.g., for releases)
+./build-pdf.sh --version v0.2.0
+
 # Build HTML version
 ./build-html.sh
+
+# Build HTML with version suffix
+./build-html.sh --version v0.2.0
 ```
 
-The generated files (`dialog-protocol-spec.pdf`, `dialog-protocol-spec.html`) are gitignored and not committed to the repository.
+Generated files (`dialog-protocol-*.pdf`, `dialog-protocol-*.html`) are gitignored and not committed to the repository.

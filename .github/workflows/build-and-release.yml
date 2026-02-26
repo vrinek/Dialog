@@ -8,6 +8,10 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
 
+env:
+  # Base filename without extension - version will be appended for tags
+  BASE_FILENAME: "dialog-protocol"
+
 jobs:
   build-and-upload:
     runs-on: ubuntu-22.04
@@ -22,6 +26,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pandoc chromium-browser
 
+      - name: Set version variables
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "PDF_FILENAME=dialog-protocol-${VERSION}.pdf" >> $GITHUB_OUTPUT
+            echo "Building with version suffix: ${VERSION}"
+          else
+            echo "VERSION=" >> $GITHUB_OUTPUT
+            echo "PDF_FILENAME=dialog-protocol-spec.pdf" >> $GITHUB_OUTPUT
+            echo "Building without version suffix"
+          fi
+
       - name: Inject version from tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -31,28 +49,33 @@ jobs:
       - name: Build PDF
         run: |
           chmod +x build-pdf.sh
-          ./build-pdf.sh
+          if [[ -n "${{ steps.vars.outputs.VERSION }}" ]]; then
+            ./build-pdf.sh --version "${{ steps.vars.outputs.VERSION }}"
+          else
+            ./build-pdf.sh
+          fi
 
       - name: Validate PDF exists
         run: |
-          if [ ! -f "dialog-protocol-spec.pdf" ]; then
-            echo "Error: PDF was not generated"
+          PDF_FILE="${{ steps.vars.outputs.PDF_FILENAME }}"
+          if [ ! -f "$PDF_FILE" ]; then
+            echo "Error: PDF was not generated (expected: $PDF_FILE)"
             exit 1
           fi
           
-          PDF_SIZE=$(stat -c%s "dialog-protocol-spec.pdf")
+          PDF_SIZE=$(stat -c%s "$PDF_FILE")
           if [ $PDF_SIZE -lt 1024 ]; then
             echo "Error: PDF is too small (less than 1KB)"
             exit 1
           fi
           
-          echo "✓ PDF generated successfully: ${PDF_SIZE} bytes"
+          echo "✓ PDF generated successfully: ${PDF_FILE} (${PDF_SIZE} bytes)"
 
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dialog-protocol-spec-${{ github.sha }}
-          path: dialog-protocol-spec.pdf
+          name: dialog-protocol-pdf-${{ github.sha }}
+          path: ${{ steps.vars.outputs.PDF_FILENAME }}
           retention-days: 30
 
   release:
@@ -62,16 +85,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Set version variables
+        id: vars
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "PDF_FILENAME=dialog-protocol-${VERSION}.pdf" >> $GITHUB_OUTPUT
+
       - name: Download PDF artifact
         uses: actions/download-artifact@v4
         with:
-          name: dialog-protocol-spec-${{ github.sha }}
+          name: dialog-protocol-pdf-${{ github.sha }}
           path: ./artifacts
+
+      - name: Rename artifact for release
+        run: |
+          cd ./artifacts
+          # The artifact is downloaded with the original filename from the build
+          # Rename it to include version for the release upload
+          mv *.pdf "${{ steps.vars.outputs.PDF_FILENAME }}"
 
       - name: Create/Update Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/dialog-protocol-spec.pdf
+          files: ./artifacts/${{ steps.vars.outputs.PDF_FILENAME }}
           name: Release ${{ github.ref_name }}
           fail_on_unmatched_files: true
         env:

@@ -4,12 +4,36 @@
 # Uses Chromium headless mode for high-quality PDF generation with proper
 # tables, links, and formatting.
 #
+# Usage: ./build-pdf.sh [--version VERSION]
+#   --version VERSION   Add version suffix to filename (e.g., v0.2.0)
+#
 
 set -e
 
+# Parse arguments
+VERSION=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --version)
+            VERSION="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: ./build-pdf.sh [--version VERSION]"
+            exit 1
+            ;;
+    esac
+done
+
 # Configuration
-OUTPUT_PDF="dialog-protocol-spec.pdf"
-OUTPUT_HTML="dialog-protocol-spec.html"
+if [[ -n "$VERSION" ]]; then
+    OUTPUT_PDF="dialog-protocol-${VERSION}.pdf"
+    OUTPUT_HTML="dialog-protocol-${VERSION}.html"
+else
+    OUTPUT_PDF="dialog-protocol-spec.pdf"
+    OUTPUT_HTML="dialog-protocol-spec.html"
+fi
 
 # Colors for output
 RED='\033[0;31m'

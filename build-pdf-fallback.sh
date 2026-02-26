@@ -3,10 +3,34 @@
 # Fallback PDF build script using pdfroff
 # This is used when Chromium is not available
 #
+# Usage: ./build-pdf-fallback.sh [--version VERSION]
+#   --version VERSION   Add version suffix to filename (e.g., v0.2.0)
+#
 
 set -e
 
-OUTPUT_PDF="dialog-protocol-spec.pdf"
+# Parse arguments
+VERSION=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --version)
+            VERSION="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: ./build-pdf-fallback.sh [--version VERSION]"
+            exit 1
+            ;;
+    esac
+done
+
+# Configuration
+if [[ -n "$VERSION" ]]; then
+    OUTPUT_PDF="dialog-protocol-${VERSION}.pdf"
+else
+    OUTPUT_PDF="dialog-protocol-spec.pdf"
+fi
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

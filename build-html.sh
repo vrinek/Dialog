@@ -2,11 +2,34 @@
 #
 # Build script to generate a combined HTML file from Dialog protocol specification
 #
+# Usage: ./build-html.sh [--version VERSION]
+#   --version VERSION   Add version suffix to filename (e.g., v0.2.0)
+#
 
 set -e
 
+# Parse arguments
+VERSION=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --version)
+            VERSION="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: ./build-html.sh [--version VERSION]"
+            exit 1
+            ;;
+    esac
+done
+
 # Configuration
-OUTPUT_HTML="dialog-protocol-spec.html"
+if [[ -n "$VERSION" ]]; then
+    OUTPUT_HTML="dialog-protocol-${VERSION}.html"
+else
+    OUTPUT_HTML="dialog-protocol-spec.html"
+fi
 
 # Colors for output
 RED='\033[0;31m'
