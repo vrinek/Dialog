@@ -96,3 +96,30 @@ New meta-bonds adopted from real-world usage via RFC-like process.
 - [Protocol specification](spec/00-overview.md) — formal spec (start here)
 - [Protocol design brainstorm](docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) — full design session with all decisions and rationale
 - [Original architecture notes](archive/Dialog%20architecture.md) — early design notes (archived, superseded by spec)
+
+## PDF Specification
+
+A compiled PDF of the full protocol specification is automatically generated on every push.
+
+### Downloading Releases
+
+Tagged releases include a PDF attachment:
+
+1. Go to [GitHub Releases](../../releases)
+2. Download `dialog-protocol-spec.pdf` from the latest release
+
+The PDF version matches the git tag (e.g., `v0.2.0`).
+
+### Local Building
+
+Build the PDF locally using the provided scripts:
+
+```bash
+# Build PDF (requires pandoc and chromium)
+./build-pdf.sh
+
+# Build HTML version
+./build-html.sh
+```
+
+The generated files (`dialog-protocol-spec.pdf`, `dialog-protocol-spec.html`) are gitignored and not committed to the repository.
