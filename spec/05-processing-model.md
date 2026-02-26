@@ -66,7 +66,7 @@ Layer 2 is a single, unified ontology graph built by extracting operations from 
 
 For each valid block in L1, the node MUST:
 
-1. Extract each operation from the block's `ops` list (decrypting first if the block is private and the node holds the key)
+1. Extract each operation from the block's `ops` list (for private blocks, decrypt the `enc` field first to recover `refs`, `ts`, and `ops` — see [04-cryptography.md](04-cryptography.md))
 2. Compute the CID of the resulting entity (atom, bond, or molecule) per [01-data-model.md](01-data-model.md) and [03-encoding.md](03-encoding.md)
 3. Add the entity to the L2 graph, tagged with:
    - The author's public key (from the block's `pub` field)
@@ -168,8 +168,8 @@ To write, an application sends operations to a Layer 1 blockchain node. The data
 
 A user MAY maintain one or more private chains (see [04-cryptography.md](04-cryptography.md) for the encryption scheme). Private chain data flows through the same L1 → L2 → L3 pipeline:
 
-1. L1: Private blocks are stored and validated (chain structure only, since operations are encrypted)
-2. L2: If the node holds the decryption key, operations are decrypted and added to the graph. If not, the block is opaque.
+1. L1: Private blocks are stored and validated (chain structure only via `prev`, since `refs`, `ts`, and `ops` are encrypted in the `enc` field)
+2. L2: If the node holds the decryption key, the `enc` field is decrypted to recover `refs`, `ts`, and `ops`, and the operations are added to the graph. If not, the block is opaque.
 3. L3: Private chain data from the user's own chain is included in L3 (the user always "subscribes" to their own chains).
 
 ## Security Considerations

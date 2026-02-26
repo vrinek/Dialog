@@ -16,7 +16,7 @@ Distributed, append-only ontology graph protocol.
 - Transport (how nodes discover each other and exchange blocks)
 - Conflict resolution strategy (implementation decides)
 - Query interface (SQL, GraphQL, etc. are implementation choices)
-- L3 processing rules beyond subscription-based filtering
+- L3 processing rules beyond author filtering, meta-molecule application, and mandatory conflict detection
 
 ## Specification
 
@@ -25,13 +25,13 @@ The full protocol specification is in [`spec/`](spec/00-overview.md).
 ## Architecture
 
 ### Layer 1 — "What we heard"
-Raw blockchain data. Each author has their own chain of signed, append-only blocks.
+Raw blockchain data. Each author has their own chain of signed, append-only blocks. Users subscribe to authors, determining which chains the node fetches and stores. The `prev` field links each block to its predecessor (ordering only); the `refs` field optionally references specific CID-providing blocks in other chains, forming a DAG.
 
 ### Layer 2 — "What we know"
-Union of all operations from all subscribed blocks, added to a single ontology graph tagged with authorship. Foreign-referenced chains are auto-pulled for validation context.
+Accumulated ontology graph. Operations are extracted from all stored blocks and added to a single graph, tagged with authorship. Foreign-referenced blocks are demand-pulled for validation context. No interpretation occurs — meta-molecules are stored as regular molecules.
 
 ### Layer 3 — "What we accept"
-L2 filtered by the user's author subscriptions (local, private config). Meta-molecules applied here. Conflicts flagged. This is the application's source of truth.
+L2 distilled by filtering to subscribed authors, applying meta-molecule semantics, and surfacing conflicts. Subscriptions are a cross-cutting concern: at L1 they determine which chains to fetch; at L3 they determine which authors' data to accept. This is the application's source of truth.
 
 ## Ontology model
 
@@ -45,31 +45,35 @@ Fillers can be: atom references, bond references, molecule references, IPFS URIs
 
 ## Block format
 
-A public block contains: protocol version, author's public key, signature, previous block hash, foreign block references, timestamp, and an ordered list of operations.
+Three block types: `public`, `private`, `rotation`.
 
-A private block adds a nonce — the operations field is encrypted, all metadata stays plaintext.
+A **public block** contains: protocol version, block type, author's public key, signature, previous block hash, foreign block references (CID-providing blocks), timestamp, and an ordered list of operations.
 
-Three operation types: `create_atom`, `create_bond`, `create_molecule`.
+A **private block** encrypts `refs`, `ts`, and `ops` together into a single `enc` field. Only chain management fields (`v`, `type`, `pub`, `sig`, `prev`) remain in plaintext, minimizing metadata leakage. A `nonce` field provides the 192-bit XChaCha20 nonce.
 
-A block is valid if all its operations reference IDs from the same block or any ancestor block (own chain + foreign references and their ancestors).
+A **rotation block** signals the end of the current key's chain. It contains exactly one `rotate_key` operation. The new key begins a fresh chain whose genesis block references the rotation block via `refs`.
+
+Four operation types: `create_atom`, `create_bond`, `create_molecule`, `rotate_key`.
+
+The `prev` field is strictly for chain ordering (append-only semantics, fork detection) — NOT for CID resolution. The `refs` field lists specific CID-providing blocks whose operations define entities needed by the current block. A block is valid if all its operations reference entity CIDs reachable from the same block, ancestor blocks (via `prev`), or referenced blocks (via `refs`, resolved transitively). Fork detection is a normative requirement.
 
 ## Cryptography
 
 - **Serialization:** CBOR (deterministic encoding for reliable content-addressing)
 - **Hashing:** SHA-256 with multihash encoding
 - **Signatures:** Ed25519
-- **Private blockchain encryption:** Symmetric key, encrypted per-recipient via X25519
+- **Private blockchain encryption:** XChaCha20-Poly1305 (AEAD with AAD); symmetric key wrapped per-recipient via X25519 + HKDF-SHA-256
+- **Domain separator:** `"dialog-v1-block"` byte prefix for signing input
 
 ## Standard meta-bond library (v1)
 
 | Meta-bond | Purpose |
 |-----------|---------|
-| `_A_ is the same as _B_` | Transitive atom equivalence |
+| `_A_ is the same as _B_` | Transitive equivalence (atoms, bonds, or molecules) |
 | `_A_ is true` | Assert a molecule |
 | `_A_ is untrue` | Retract/deny a molecule |
 | `_A_ contradicts _B_` | Declare two molecules contradictory |
 | `_A_ supersedes _B_` | Versioning — molecule A replaces molecule B |
-| `_A_ rotates key to _B_` | Key rotation |
 
 New meta-bonds adopted from real-world usage via RFC-like process.
 

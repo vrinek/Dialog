@@ -12,8 +12,8 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are to be in
 
 - **Author chain:** The linear sequence of blocks published by a single author, linked by `prev` hashes.
 - **Genesis block:** The first block in an author's chain (`prev` is null).
-- **Foreign block reference:** A hash pointing to a block in another author's chain.
-- **Ancestor block:** Any block reachable by following `prev` links and foreign references recursively.
+- **Foreign block reference:** A hash pointing to a specific block in another author's chain that contains CIDs needed by the referencing block.
+- **CID-providing block:** A block listed in `refs` whose operations define entities referenced by the current block.
 
 ## Overview
 
@@ -46,14 +46,14 @@ public-block = {
 | `type` | `tstr` | Block type. MUST be `"public"`, `"private"`, or `"rotation"`. |
 | `pub` | `bstr .size 32` | Author's Ed25519 public key (raw 32 bytes). |
 | `sig` | `bstr .size 64` | Ed25519 signature over the block content. See [04-cryptography.md](04-cryptography.md) for the signing procedure. |
-| `prev` | `bstr .size 32 / null` | SHA-256 digest of the previous block in this author's chain. MUST be `null` for the genesis block. MUST NOT be `null` for any other block. |
-| `refs` | `[* bstr .size 32]` | Zero or more SHA-256 digests of blocks in other authors' chains. MAY be empty. |
+| `prev` | `bstr .size 32 / null` | SHA-256 digest of the previous block in this author's chain. Used strictly for chain ordering (append-only semantics and fork detection), NOT for CID resolution. MUST be `null` for the genesis block. MUST NOT be `null` for any other block. |
+| `refs` | `[* bstr .size 32]` | Zero or more SHA-256 digests of CID-providing blocks (blocks whose operations define entities needed by this block). MAY be empty. Public blocks MUST only reference public blocks. See [Validation](#validation). |
 | `ts` | `uint` | Self-reported Unix timestamp. Untrusted — useful for ordering heuristics but not for validation. The `ts` field SHOULD be greater than or equal to the `ts` of the previous block in the same chain. Implementations SHOULD warn on non-monotonic timestamps. |
 | `ops` | `[+ operation]` | Ordered list of one or more operations. A block MUST contain at least one operation. |
 
 ### Private block
 
-A private block has the same structure as a public block with one additional field and an encrypted operations field.
+A private block encrypts `refs`, `ts`, and `ops` together. Only chain management fields remain in plaintext, minimizing metadata leakage (timing information and social graph via refs are hidden from non-recipients).
 
 ```cddl
 private-block = {
@@ -62,14 +62,22 @@ private-block = {
   "pub"   => bstr .size 32,
   "sig"   => bstr .size 64,
   "prev"  => bstr .size 32 / null,
-  "refs"  => [* bstr .size 32],
-  "ts"    => uint,
-  "ops"   => bstr,             ; encrypted operations (ciphertext)
+  "enc"   => bstr,             ; encrypted payload (refs + ts + ops)
   "nonce" => bstr .size 24     ; 192-bit XChaCha20 nonce
 }
 ```
 
-In a private block, the `ops` field contains ciphertext (a byte string) instead of a plaintext array of operations. All other fields remain plaintext, allowing untrusted nodes to validate the chain DAG structure without reading operation content.
+The `enc` field contains the ciphertext of a CBOR map with three fields: `refs`, `ts`, and `ops`. When decrypted, this yields:
+
+```cddl
+private-block-payload = {
+  "refs" => [* bstr .size 32], ; foreign block references
+  "ts"   => uint,              ; Unix timestamp
+  "ops"  => [+ operation]      ; ordered list of operations
+}
+```
+
+**Plaintext fields** (`v`, `type`, `pub`, `sig`, `prev`) allow untrusted nodes to validate chain structure (append-only ordering, fork detection) without accessing encrypted content. **Encrypted fields** (`refs`, `ts`, `ops`) are only available to recipients holding the decryption key.
 
 See [04-cryptography.md](04-cryptography.md) for the encryption scheme.
 
@@ -99,8 +107,8 @@ rotate-key-op = {
 
 Implementations MUST check the `type` field to determine block structure:
 
-- `"public"`: `ops` is a plaintext array, no `nonce` field.
-- `"private"`: `ops` is ciphertext, `nonce` field required.
+- `"public"`: `ops` is a plaintext array, no `nonce` or `enc` field.
+- `"private"`: `enc` field contains ciphertext (refs + ts + ops), `nonce` field required. No plaintext `ops`, `refs`, or `ts` fields.
 - `"rotation"`: `ops` contains exactly one `rotate_key` operation.
 
 ### Operations
@@ -143,7 +151,7 @@ Creates a bond. The bond's identifier is `SHA-256(dCBOR({"template": <template>}
 
 Creates a molecule. The molecule's identifier is `SHA-256(dCBOR({"bond": <bond_digest>, "fillers": <fillers>}))`.
 
-The `bond` field and any atom/bond/molecule references in `fillers` MUST refer to entities that are **reachable** from this block (see Validation below).
+The `bond` field and any atom/bond/molecule references in `fillers` MUST refer to entities that are **reachable** from this block (see Validation below). The number of fillers MUST equal the number of variables in the referenced bond template (see [01-data-model.md](01-data-model.md)).
 
 #### rotate_key
 
@@ -159,11 +167,11 @@ Each author maintains a single linear chain of blocks:
 genesis → block_1 → block_2 → ... → block_n (tip)
 ```
 
-The `prev` field links each block to its predecessor. This forms a singly-linked list from tip to genesis.
+The `prev` field links each block to its predecessor. This forms a singly-linked list from tip to genesis. The `prev` link serves strictly for chain ordering — establishing append-only semantics and enabling fork detection. It is NOT used for CID resolution.
 
 Each author chain MUST be strictly linear: each block (except the tip) has at most one successor.
 
-Foreign block references (`refs`) create cross-chain links, forming a DAG (directed acyclic graph) across all authors' chains. A foreign reference means: "this block's operations may reference entities defined in the referenced foreign block or any of its ancestors."
+Foreign block references (`refs`) create cross-chain links, forming a DAG (directed acyclic graph) across all authors' chains. A foreign reference means: "this block's operations reference entities defined in the referenced block." Each entry in `refs` points to a specific CID-providing block — the block where the needed entity was created. See [05-processing-model.md](05-processing-model.md) for the demand-driven resolution procedure.
 
 ### Validation
 
@@ -172,15 +180,17 @@ A block is **valid** if and only if:
 1. **Version check.** The `v` field is a recognized protocol version.
 2. **Signature check.** The `sig` field is a valid Ed25519 signature over the block content, verified against the `pub` key. See [04-cryptography.md](04-cryptography.md).
 3. **Chain integrity.** If `prev` is not null, it MUST reference an existing, valid block with the same `pub` key. Within a single chain, all blocks MUST have the same `pub` field. A chain ends when a rotation block is published; the new key begins a separate chain.
-4. **Operation validity.** Every operation in `ops` MUST reference only entity IDs that are **reachable** — defined in:
+4. **Operation validity.** Every operation in `ops` MUST reference only entity CIDs that are **reachable** — defined in:
    - The same block (an earlier operation in the `ops` list), or
    - Any ancestor block in the author's own chain (reachable via `prev`), or
-   - Any foreign-referenced block (listed in `refs`) or its ancestors (reachable via the foreign block's own `prev` and `refs`, recursively)
-5. **Non-empty operations.** The `ops` list MUST contain at least one operation.
-6. **Deterministic encoding.** The block MUST be encoded as valid dCBOR. See [03-encoding.md](03-encoding.md).
-7. **Fork detection.** If a node receives a block whose `prev` value matches the `prev` of another block already stored from the same `pub` key, the node MUST detect this as a chain fork. Fork handling strategy (reject, flag, accept-first-seen) is implementation-scoped.
+   - Any CID-providing block listed in `refs`, or transitively through that block's own `refs` (demand-driven recursive resolution; see [05-processing-model.md](05-processing-model.md))
+5. **Data model conformance.** Every `create_molecule` operation MUST satisfy the data model rules in [01-data-model.md](01-data-model.md). In particular, the number of fillers MUST equal the number of variables in the referenced bond template.
+6. **Public/private reference rules.** Public blocks MUST only reference public blocks in their `refs` field. Private blocks MAY reference either public or private blocks.
+7. **Non-empty operations.** The `ops` list MUST contain at least one operation.
+8. **Deterministic encoding.** The block MUST be encoded as valid dCBOR. See [03-encoding.md](03-encoding.md).
+9. **Fork detection.** If a node receives a block whose `prev` value matches the `prev` of another block already stored from the same `pub` key, the node MUST detect this as a chain fork. Fork handling strategy (reject, flag, accept-first-seen) is implementation-scoped.
 
-For private blocks, validation of rule 4 is only possible by entities that hold the decryption key.
+For private blocks, validation of rules 4, 5, and 6 is only possible by entities that hold the decryption key (since `refs` and `ops` are encrypted).
 
 ### Block identification
 
@@ -194,11 +204,12 @@ Internal references to blocks (in `prev` and `refs` fields) use the raw SHA-256 
 
 ## Security Considerations
 
-- The signature covers the entire block including all operations. Tampering with any field invalidates the signature.
+- The signature covers the entire block including all operations (and for private blocks, the encrypted payload). Tampering with any field invalidates the signature.
 - Timestamps are self-reported and untrusted. Implementations MUST NOT use timestamps for validation decisions. They are informational only.
-- Foreign block references expand the trust boundary: by referencing a foreign block, an author asserts that the foreign chain's history up to that block is available and relevant. See [05-processing-model.md](05-processing-model.md) for how foreign references affect Layer 2.
-- Private blocks hide operation content but expose chain structure (prev links, foreign refs). An observer can see that an author published a block and when, but not what it contains.
-- Chain forking: A malicious or buggy author could publish two blocks with the same `prev`, creating divergent histories. Implementations MUST detect forks (see Validation rule 7). The handling strategy is implementation-scoped.
+- Foreign block references expand the trust boundary: by referencing a foreign block, an author asserts that the referenced block's entities are needed and available. See [05-processing-model.md](05-processing-model.md) for how foreign references affect Layer 2.
+- Private blocks hide operation content, timestamps, and foreign references. An observer can see that an author published a block and its position in the chain (`prev`), but not what it contains, when it was created, or what other blocks it references. This prevents metadata leakage of timing information and social graph (via refs).
+- Chain forking: A malicious or buggy author could publish two blocks with the same `prev`, creating divergent histories. Implementations MUST detect forks (see Validation rule 9). The handling strategy is implementation-scoped.
+- Public blocks MUST NOT reference private blocks. This prevents public data from depending on content that non-recipient nodes cannot validate.
 
 ## Examples
 
@@ -209,6 +220,7 @@ A genesis block creating two atoms, one bond, and one molecule:
 ```
 {
   "v":    1,
+  "type": "public",
   "pub":  <32 bytes: author's Ed25519 public key>,
   "sig":  <64 bytes: Ed25519 signature>,
   "prev": null,
@@ -238,6 +250,7 @@ This block is valid because:
 ```
 {
   "v":    1,
+  "type": "public",
   "pub":  <author B's key>,
   "sig":  <signature>,
   "prev": <hash of author B's previous block>,
@@ -251,7 +264,7 @@ This block is valid because:
 }
 ```
 
-This block is valid because the bond referenced in the molecule is reachable through the foreign block reference to author A's chain.
+This block is valid because the bond referenced in the molecule was created in the specific block in author A's chain that is listed in `refs`. The ref points directly to the CID-providing block, not to a chain tip.
 
 ## References
 

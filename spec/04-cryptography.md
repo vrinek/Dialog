@@ -15,7 +15,7 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are to be in
 Dialog uses two cryptographic schemes:
 
 1. **Ed25519** ([RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032)) for block signatures — every block is signed by its author
-2. **X25519 + XChaCha20-Poly1305** for private block encryption — operations are encrypted, metadata stays plaintext
+2. **X25519 + XChaCha20-Poly1305** for private block encryption — `refs`, `ts`, and `ops` are encrypted; only chain management fields stay plaintext
 
 Both schemes use Curve25519 keys. An author's Ed25519 signing key can be converted to an X25519 key agreement key, so a single keypair serves both purposes.
 
@@ -47,17 +47,30 @@ The signature covers all block fields **except** the signature itself. To comput
 2. Encode the map as dCBOR
 3. Sign the resulting bytes with the author's Ed25519 private key
 
+For public and rotation blocks:
+
 ```cddl
-; The signing input is the block without the "sig" field
-signing-input = {
+signing-input-public = {
   "v"    => uint,
-  "type" => tstr,              ; "public", "private", or "rotation"
+  "type" => tstr,              ; "public" or "rotation"
   "pub"  => bstr .size 32,
   "prev" => bstr .size 32 / null,
   "refs" => [* bstr .size 32],
   "ts"   => uint,
-  "ops"  => [+ operation] / bstr  ; plaintext or encrypted
-  ? "nonce" => bstr .size 24       ; 192-bit XChaCha20 nonce, present for private blocks
+  "ops"  => [+ operation]
+}
+```
+
+For private blocks (where `refs`, `ts`, and `ops` are encrypted into the `enc` field):
+
+```cddl
+signing-input-private = {
+  "v"     => uint,
+  "type"  => "private",
+  "pub"   => bstr .size 32,
+  "prev"  => bstr .size 32 / null,
+  "enc"   => bstr,             ; ciphertext of refs + ts + ops
+  "nonce" => bstr .size 24     ; 192-bit XChaCha20 nonce
 }
 ```
 
@@ -85,7 +98,7 @@ Implementations MUST reject blocks where verification fails.
 
 ### Private block encryption
 
-Private blocks encrypt the operations list while keeping all metadata in plaintext.
+Private blocks encrypt `refs`, `ts`, and `ops` together into a single `enc` field. Only chain management fields (`v`, `type`, `pub`, `sig`, `prev`) remain in plaintext. This prevents metadata leakage of timing information and social graph (via refs) to non-recipient nodes.
 
 #### Encryption scheme
 
@@ -96,24 +109,28 @@ Private blocks encrypt the operations list while keeping all metadata in plainte
 #### Encryption procedure
 
 ```
-plaintext = dCBOR(operations list)  ; the [+ operation] array
+plaintext = dCBOR({"refs": block.refs, "ts": block.ts, "ops": block.ops})
 aad = dCBOR({"v": block.v, "type": block.type, "pub": block.pub,
-             "prev": block.prev, "refs": block.refs, "ts": block.ts})
+             "prev": block.prev})
 ciphertext = XChaCha20Poly1305_Encrypt(symmetric_key, nonce, plaintext, aad)
 ```
 
-The Additional Authenticated Data (AAD) MUST be the deterministic CBOR encoding of a map containing all plaintext block fields: `v`, `type`, `pub`, `prev`, `refs`, and `ts`. The AAD binds the ciphertext to the block's metadata, preventing payload-swapping attacks. Since dCBOR mandates deterministic map key ordering, the AAD encoding is unambiguous.
+The plaintext is the dCBOR encoding of a map containing the three encrypted fields: `refs` (foreign block references), `ts` (timestamp), and `ops` (operations list).
 
-The `ops` field of the private block contains the ciphertext. The `nonce` field contains the nonce used for encryption.
+The Additional Authenticated Data (AAD) MUST be the deterministic CBOR encoding of a map containing all plaintext block fields (excluding `sig`, `enc`, and `nonce`): `v`, `type`, `pub`, and `prev`. The AAD binds the ciphertext to the block's metadata, preventing payload-swapping attacks. Since dCBOR mandates deterministic map key ordering, the AAD encoding is unambiguous.
+
+The `enc` field of the private block contains the ciphertext. The `nonce` field contains the nonce used for encryption.
 
 #### Decryption procedure
 
 ```
 aad = dCBOR({"v": block.v, "type": block.type, "pub": block.pub,
-             "prev": block.prev, "refs": block.refs, "ts": block.ts})
-plaintext = XChaCha20Poly1305_Decrypt(symmetric_key, block["nonce"], block["ops"], aad)
-operations = dCBOR_decode(plaintext)  ; yields [+ operation]
+             "prev": block.prev})
+plaintext = XChaCha20Poly1305_Decrypt(symmetric_key, block["nonce"], block["enc"], aad)
+payload = dCBOR_decode(plaintext)  ; yields {"refs": [...], "ts": uint, "ops": [...]}
 ```
+
+The decrypted payload is a CBOR map with three fields: `refs`, `ts`, and `ops`.
 
 If the AAD does not match during decryption (authentication tag verification fails), the block MUST be rejected. If decryption fails for any other reason (invalid key or tampered ciphertext), the block MUST also be rejected.
 
@@ -155,6 +172,7 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
 
 - **Ed25519 security level:** ~128-bit security. Sufficient for the foreseeable future.
 - **Nonce reuse:** Reusing a nonce with XChaCha20-Poly1305 under the same key completely breaks confidentiality. Implementations MUST generate unique nonces for every private block. Using a counter or random 24-byte value are both acceptable. XChaCha20's 192-bit nonce space makes random nonce collisions negligible.
+- **Metadata leakage:** Private blocks encrypt `refs`, `ts`, and `ops` together. An observer can see that a private block exists and its position in the chain (`prev`), but cannot learn the block's timestamp, what other blocks it references, or what operations it contains. This prevents social graph analysis via refs and timing correlation via timestamps.
 - **Key compromise:** If an author's Ed25519 private key is compromised, the attacker can sign blocks and publish fraudulent key rotations. v1 of the protocol does not include pre-rotation or social recovery. Key compromise handling is deferred to a future protocol version. See the [brainstorm document](../docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) for candidate approaches.
 - **Ed25519 to X25519 conversion:** This is a well-established operation (used by libsodium and others). The security properties are preserved. See [RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) for X25519 and [this analysis](https://moderncrypto.org/mail-archive/curves/2014/000205.html) for the conversion.
 
@@ -197,15 +215,19 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
 ### Encrypting a private block
 
 ```
-1. Encode operations as dCBOR:
-   plaintext = dCBOR([{"op": "create_atom", "description": "My private note"}])
+1. Encode the encrypted payload (refs + ts + ops) as dCBOR:
+   plaintext = dCBOR({
+     "refs": [],
+     "ts":   1740067200,
+     "ops":  [{"op": "create_atom", "description": "My private note"}]
+   })
 
 2. Generate a unique 24-byte nonce:
    nonce = random_bytes(24)
 
 3. Compute AAD from plaintext block fields:
    aad = dCBOR({"v": 1, "type": "private", "pub": <32 bytes>,
-                "prev": <32 bytes or null>, "refs": [], "ts": 1740067200})
+                "prev": <32 bytes or null>})
 
 4. Encrypt:
    ciphertext = XChaCha20Poly1305_Encrypt(chain_key, nonce, plaintext, aad)
@@ -217,9 +239,7 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
      "pub":   <32 bytes>,
      "sig":   <64 bytes>,
      "prev":  <32 bytes or null>,
-     "refs":  [],
-     "ts":    1740067200,
-     "ops":   <ciphertext bytes>,
+     "enc":   <ciphertext bytes>,
      "nonce": <24 bytes>
    }
 ```

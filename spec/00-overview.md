@@ -46,7 +46,7 @@ Dialog processes data through three layers:
                       └───────────────────┘
 ```
 
-**Layer 1** stores raw blocks. Users subscribe to authors, determining which chains the node fetches and stores. Each author maintains their own chain of signed blocks. Blocks reference previous blocks in the same chain and optionally reference blocks in other chains, forming a DAG.
+**Layer 1** stores raw blocks. Users subscribe to authors, determining which chains the node fetches and stores. Each author maintains their own chain of signed blocks. The `prev` field links each block to its predecessor in the same chain (ordering only). The `refs` field optionally references specific blocks in other chains that contain needed entity CIDs, forming a DAG.
 
 **Layer 2** is the accumulated ontology graph. Operations are extracted from blocks and added to a single graph, tagged with authorship. No interpretation occurs — meta-molecules are stored as regular molecules.
 
@@ -68,7 +68,7 @@ All three are content-addressed: their identifier is determined by their content
 
 ### Blocks and chains
 
-Authors publish data by creating blocks. A block contains operations (create_atom, create_bond, create_molecule, rotate_key) and is signed by the author's Ed25519 key. Each block links to the previous block in the author's chain and optionally to blocks in other authors' chains.
+Authors publish data by creating blocks. A block contains operations (create_atom, create_bond, create_molecule, rotate_key) and is signed by the author's Ed25519 key. Each block links to the previous block in the author's chain (for ordering) and optionally references specific blocks in other authors' chains (for CID resolution).
 
 ### Author subscriptions
 
