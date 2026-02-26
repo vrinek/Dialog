@@ -1,10 +1,10 @@
 # Meta-Bonds
 
-**Version:** 1.0 (2026-02-20) | **Status:** Draft
+**Version:** <<VERSION>> | **Status:** Draft
 
 ## Abstract
 
-This document defines the Dialog v1 standard meta-bond library — a set of bonds whose molecules carry special semantics during Layer 2 to Layer 3 processing. It specifies the six standard meta-bonds, their semantics, and the process for extending the library.
+This document defines the Dialog v1 standard meta-bond library — a set of bonds whose molecules carry special semantics during Layer 2 to Layer 3 processing. It specifies the five standard meta-bonds, their semantics, and the process for extending the library.
 
 ## Terminology
 
@@ -23,18 +23,19 @@ Meta-molecules are created with the same `create_molecule` operation as any othe
 
 ### Standard meta-bond library
 
-Implementations SHOULD support the following six meta-bonds. These bonds are content-addressed like any other bond — their CIDs are computed from their template strings.
+Implementations MUST support the following five meta-bonds. These bonds are content-addressed like any other bond — their CIDs are computed from their template strings.
 
 #### 1. Equivalence
 
 ```
 Template: "_A_ is the same as _B_"
-Fillers:  A = atom (type 0), B = atom (type 0)
+Fillers:  A = atom (type 0) / bond (type 1) / molecule (type 2),
+          B = atom (type 0) / bond (type 1) / molecule (type 2)
 ```
 
-Declares transitive equivalence between two atoms. If A is the same as B, and B is the same as C, then A, B, and C are all equivalent.
+Declares transitive equivalence between two entities of the same type. Both fillers MUST be the same type (both atoms, both bonds, or both molecules). If A is the same as B, and B is the same as C, then A, B, and C are all equivalent.
 
-**L3 semantics:** Implementations SHOULD treat equivalent atoms as interchangeable when querying L3. The specific deduplication strategy (merge, prefer one, show both) is implementation-scoped.
+**L3 semantics:** Implementations SHOULD treat equivalent entities as interchangeable when querying L3. The specific deduplication strategy (merge, prefer one, show both) is implementation-scoped.
 
 #### 2. Truth assertion
 
@@ -80,19 +81,6 @@ Declares that molecule A replaces molecule B. Used for corrections and versionin
 
 **L3 semantics:** If both A and B are in L3, implementations SHOULD present A and hide or deprecate B.
 
-#### 6. Key rotation
-
-```
-Template: "_A_ rotates key to _B_"
-Fillers:  A = atom (type 0), B = atom (type 0)
-```
-
-Declares that the author identity represented by atom A (an Ed25519 public key, described as an atom) is rotating to the key represented by atom B. This molecule MUST be published in a block signed by the old key.
-
-**L3 semantics:** After processing this meta-molecule, implementations MUST accept blocks signed by the new key as belonging to the same author chain. Blocks signed by the old key after the rotation block MUST be rejected.
-
-**Note:** The atoms A and B are descriptions of the keys (e.g., "Ed25519 public key 0x1234..."). The actual key bytes are in the block's `pub` field and the new key is identified by its atom description matching the `pub` field of subsequent blocks.
-
 ### Conflict handling
 
 When subscribed authors disagree through meta-molecules, the protocol requires:
@@ -122,8 +110,8 @@ Implementations MAY define and use custom meta-bonds beyond the standard library
 
 ## Security Considerations
 
-- **Key rotation abuse:** An attacker who compromises an author's private key can publish a fraudulent key rotation. v1 does not include pre-rotation or social recovery mechanisms. See the [brainstorm document](../docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) for future mitigation approaches.
-- **Equivalence attacks:** A malicious author could assert "A is the same as B" where A and B are unrelated atoms, potentially confusing applications. L3 filtering mitigates this — the assertion only affects users who subscribe to that author.
+- **Key rotation abuse:** An attacker who compromises an author's private key can publish a fraudulent rotation block via the L1 `rotate_key` operation (see [02-block-format.md](02-block-format.md)). v1 does not include pre-rotation or social recovery mechanisms.
+- **Equivalence attacks:** A malicious author could assert "A is the same as B" where A and B are unrelated entities, potentially confusing applications. L3 filtering mitigates this — the assertion only affects users who subscribe to that author.
 - **Truth assertion spam:** An author could assert large numbers of molecules as true or untrue. This is mitigated by L3 subscription filtering and is comparable to any other spam in the system.
 
 ## Examples
@@ -154,32 +142,71 @@ create_molecule(
 
 Users who subscribe to Author C will see both atoms as equivalent in L3.
 
-### Key rotation
+### Declaring bond equivalence
 
-Author with key `0xOLD...` rotates to key `0xNEW...`:
+Two authors independently created bonds that express the same relationship:
 
 ```
-Block signed by 0xOLD...:
-  ops: [
-    create_atom("Ed25519 key 0xOLD..."),
-    create_atom("Ed25519 key 0xNEW..."),
-    create_bond("_A_ rotates key to _B_"),
-    create_molecule(
-      bond: <CID of "_A_ rotates key to _B_">,
-      fillers: [
-        {type: 0, value: <hash of "Ed25519 key 0xOLD...">},
-        {type: 0, value: <hash of "Ed25519 key 0xNEW...">}
-      ]
-    )
+Author A: create_bond("_A_ is the capital of _B_")
+  → CID: 01711220f295b892...
+
+Author B: create_bond("_A_ is the capital city of _B_")
+  → CID: 01711220<different hash>...
+```
+
+Author C declares the two bonds equivalent:
+
+```
+create_molecule(
+  bond: <CID of "_A_ is the same as _B_">,
+  fillers: [
+    {type: 1, value: <hash of "_A_ is the capital of _B_">},
+    {type: 1, value: <hash of "_A_ is the capital city of _B_">}
   ]
+)
 ```
 
-All subsequent blocks in this chain MUST be signed by `0xNEW...`.
+In L3, molecules using either bond template are treated as expressing the same relationship.
+
+### Declaring molecule equivalence
+
+Two authors independently published molecules that state the same fact using different atoms and bonds:
+
+```
+Author A: create_molecule(
+  bond: <CID of "_A_ is the capital of _B_">,
+  fillers: [{type: 0, value: <hash of "Paris, the capital of France">},
+            {type: 0, value: <hash of "France">}]
+)
+  → CID: 01711220f9f124b0...
+
+Author B: create_molecule(
+  bond: <CID of "_A_ is the capital city of _B_">,
+  fillers: [{type: 0, value: <hash of "Paris, France">},
+            {type: 0, value: <hash of "The French Republic">}]
+)
+  → CID: 01711220<different hash>...
+```
+
+Author C declares the two molecules equivalent:
+
+```
+create_molecule(
+  bond: <CID of "_A_ is the same as _B_">,
+  fillers: [
+    {type: 2, value: <hash of Author A's molecule>},
+    {type: 2, value: <hash of Author B's molecule>}
+  ]
+)
+```
+
+In L3, both molecules are treated as the same assertion. This is useful when atom-level or bond-level equivalence alone is insufficient because the molecules combine different atoms and different bond templates.
 
 ## References
 
 ### Normative
 - [01-data-model.md](01-data-model.md) — Molecule and filler type definitions
 - [02-block-format.md](02-block-format.md) — Operation types
+- [03-encoding.md](03-encoding.md) — CBOR encoding and CID computation
 - [04-cryptography.md](04-cryptography.md) — Key encoding and signing
 - [05-processing-model.md](05-processing-model.md) — L2→L3 processing and conflict handling

@@ -1,10 +1,10 @@
 # Processing Model
 
-**Version:** 1.0 (2026-02-20) | **Status:** Draft
+**Version:** <<VERSION>> | **Status:** Draft
 
 ## Abstract
 
-This document defines Dialog's three-layer processing model: how raw blocks (Layer 1) become an ontology graph (Layer 2) and are filtered into application truth (Layer 3). It specifies the normative rules for L1 validation, L2 accumulation, and L3 subscription filtering.
+This document defines Dialog's three-layer processing model: how raw blocks (Layer 1) become an ontology graph (Layer 2) and are distilled into application truth (Layer 3). It specifies the normative rules for L1 validation, L2 accumulation, and L3 truth distillation.
 
 ## Terminology
 
@@ -13,7 +13,7 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are to be in
 - **Author chain:** The linear sequence of blocks published by a single author.
 - **Author subscription:** A user's declaration that they accept data from a specific author.
 - **Blockchain subscription:** A user's subscription to the blocks of a specific author chain.
-- **Foreign chain loading:** The process of pulling a referenced foreign chain's history into L2.
+- **Foreign chain loading:** The process of resolving referenced foreign blocks into L2 via demand-driven traversal.
 
 ## Overview
 
@@ -23,7 +23,7 @@ Dialog processes data through three layers:
 |-------|------|----------|------|
 | L1 | "What we heard" | Raw signed blocks | Blockchain data with cryptographic integrity |
 | L2 | "What we know" | Ontology graph | Accumulated, author-tagged knowledge |
-| L3 | "What we accept" | Filtered graph | Subjective truth based on subscriptions |
+| L3 | "What we accept" | Filtered graph | Subjective truth: subscription filtering, meta-molecule application, conflict surfacing |
 
 Data flows strictly downward: L1 → L2 → L3. Applications read from L3 and write to L1.
 
@@ -43,9 +43,20 @@ When a node receives a block, it MUST:
 
 #### Chain management
 
-A node maintains the set of author chains it is subscribed to. For each chain, it stores all blocks from the genesis block to the current tip.
+A node maintains the set of author chains it is subscribed to. Subscriptions determine which chains the node fetches and stores at L1. A node only pulls blocks from chains it is subscribed to. For each chain, it stores all blocks from the genesis block to the current tip.
 
 A user MUST subscribe to the blockchain of every author they subscribe to. A user MAY subscribe to additional blockchains.
+
+#### Chain succession (key rotation)
+
+When a node processes a rotation block (see [02-block-format.md](02-block-format.md)):
+
+1. The node MUST mark the old key as inactive — no further blocks are accepted for it
+2. The node MUST add the new key (from the `rotate_key` operation) to the set of known chains
+3. If the user subscribes to the old key's author, the implementation SHOULD auto-subscribe to the new key's chain, treating it as the same logical author
+4. Author identity (mapping multiple keys to a single author) is implementation-scoped
+
+The new key's genesis block SHOULD reference the rotation block via `refs` to establish verifiable key succession.
 
 ### Layer 2 — Ontology graph accumulation
 
@@ -65,15 +76,44 @@ L2 is append-only. Entities MUST NOT be removed or modified once added.
 
 If an entity with the same CID already exists in L2 (because the same content was published by a different author, or re-published by the same author), the new authorship record is added alongside the existing one. The entity itself is not duplicated.
 
-#### Foreign chain loading
+#### Foreign chain loading (demand-driven)
 
-When a block references a foreign block (via the `refs` field), the foreign chain's history up to and including the referenced block MUST be loaded into L2, even if the user does not subscribe to that foreign author.
+When a block references foreign blocks (via the `refs` field), the implementation resolves CIDs through demand-driven traversal of the explicit refs graph.
 
-Specifically:
+##### Reference semantics
 
-1. Retrieve the foreign block and all its ancestors (following `prev` links to the genesis block)
-2. Validate each block
-3. Process each block through L2 accumulation (extract operations, add to graph)
+The `refs` field lists specific blocks that contain CIDs needed by the current block's operations. References are explicit CID providers — they point to the blocks where needed entities were created.
+
+The `prev` field is strictly for chain ordering (append-only semantics and fork detection). It is NOT used for CID resolution.
+
+##### Resolution procedure
+
+To validate a block H:
+
+1. Extract all entity CIDs referenced by H's operations (bond digests, filler values)
+2. Check if each CID was created in H itself (an earlier operation in the same block)
+3. For unresolved CIDs, check ancestor blocks in the same chain (following `prev`)
+4. For still-unresolved CIDs, fetch blocks listed in H's `refs` and check if the CID was created there
+5. If a referenced block's entities themselves have unresolved transitive dependencies (e.g., a molecule references a bond not yet seen), recurse into that block's own `refs`
+6. Continue until all CIDs are transitively resolved, or the scan limit is reached
+
+##### Scan limit
+
+Implementations MAY set a user-configurable limit on the number of foreign blocks scanned during recursive resolution. This limit SHOULD have a safe default. If the limit is reached before all CIDs resolve, the block MUST be treated as invalid (unresolvable references).
+
+##### Public/private reference rules
+
+- Public blocks MUST only reference public blocks in their `refs` field
+- Private blocks MAY reference either public or private blocks
+- Non-recipient nodes (those without the decryption key) MAY safely drop private blocks they cannot decrypt
+
+##### Undecryptable reference handling
+
+If a node can decrypt block H but cannot decrypt a block listed in H's `refs`, this is a validation error. The node MUST surface this error to the application layer. The node MUST NOT silently accept the block with partial validation.
+
+##### Fat blocks
+
+Since operations are idempotent at L2 (same CID = same entity), an implementation MAY include all transitively-needed operations in a single block, making it self-contained. This "fat block" strategy is an implementation choice for offline or portable use cases. The protocol does not mandate or prohibit it.
 
 Foreign chain data is present in L2 for validation context but is not automatically promoted to L3 (see Layer 3 below).
 
@@ -81,9 +121,9 @@ Foreign chain data is present in L2 for validation context but is not automatica
 
 L2 performs no interpretation of data. Meta-molecules (e.g., "X is true", "A is the same as B") are stored as regular molecules in L2. Their special semantics are only applied during L2→L3 processing.
 
-### Layer 3 — Subscription filtering and truth distillation
+### Layer 3 — Truth distillation
 
-Layer 3 is the application's source of truth. It is L2 filtered by the user's author subscriptions.
+Layer 3 is the application's source of truth. It filters L2 by subscribed authors, applies meta-molecule semantics, and surfaces conflicts.
 
 #### Author subscriptions
 
@@ -101,6 +141,8 @@ Only data from subscribed authors passes from L2 to L3:
 3. If no, the entity is excluded from L3
 
 Foreign chain data that was loaded into L2 for validation context is excluded from L3 unless the user independently subscribes to the foreign author.
+
+Note: Subscriptions are a cross-cutting concern. At L1, they determine which chains to fetch and store. At L3, they determine which authors' data to accept into application truth. L2 is unaffected — it accumulates all data pulled at L1 without filtering.
 
 #### Meta-molecule application
 
@@ -124,7 +166,7 @@ To write, an application sends operations to a Layer 1 blockchain node. The data
 
 ### Private chains
 
-Each user has at least one private chain (see [04-cryptography.md](04-cryptography.md) for the encryption scheme). Private chain data flows through the same L1 → L2 → L3 pipeline:
+A user MAY maintain one or more private chains (see [04-cryptography.md](04-cryptography.md) for the encryption scheme). Private chain data flows through the same L1 → L2 → L3 pipeline:
 
 1. L1: Private blocks are stored and validated (chain structure only, since operations are encrypted)
 2. L2: If the node holds the decryption key, operations are decrypted and added to the graph. If not, the block is opaque.
@@ -133,7 +175,7 @@ Each user has at least one private chain (see [04-cryptography.md](04-cryptograp
 ## Security Considerations
 
 - **L2 growth:** L2 grows unboundedly as more blocks are processed and foreign chains are loaded. This is an accepted trade-off for v1. Pruning rules may be defined in a future protocol version.
-- **Foreign chain loading:** A malicious author could reference a very large foreign chain, forcing nodes to download and process it. Implementations SHOULD set reasonable limits on foreign chain loading depth or size.
+- **Recursive resolution depth:** A malicious author could construct deeply nested ref chains to force excessive traversal. The configurable scan limit (see Foreign chain loading) provides protection. Implementations SHOULD set a safe default and allow user configuration.
 - **Subscription privacy:** Author subscriptions are never published, protecting users from social graph analysis. However, the set of blockchains a node requests from the network may reveal subscription information at the transport layer. Transport implementations SHOULD consider this.
 - **Optimistic writes:** Applications using optimistic heuristics MUST handle the case where an operation fails to propagate to L3 (e.g., due to a validation failure discovered during L2 processing).
 
@@ -164,19 +206,21 @@ L3 (Carol's view): Carol's L3 does NOT include Alice's data
     (in which case Alice's data is in L2 but not L3)
 ```
 
-### Foreign chain loading
+### Foreign chain loading (demand-driven resolution)
 
 ```
 Alice's chain: block_1 → block_2 → block_3
 Bob's chain:   block_A → block_B (refs: [Alice's block_2])
 
 When processing Bob's block_B:
-  1. Foreign ref points to Alice's block_2
-  2. Load Alice's chain: block_1, block_2 (not block_3)
-  3. Process Alice's block_1 and block_2 into L2
+  1. block_B has a create_molecule referencing a bond
+  2. Bond CID not found in block_B itself or Bob's block_A
+  3. Check refs: Alice's block_2 is listed
+  4. Fetch Alice's block_2 — bond was created there
+  5. All CIDs resolved — block_B is valid
+  6. Alice's block_1 is NOT fetched (not needed for resolution)
 
-Bob's block_B can now reference entities from Alice's block_1 and block_2.
-Alice's data is in L2 but only in L3 for users who subscribe to Alice.
+Alice's data in L2 is limited to what was actually needed.
 ```
 
 ## References

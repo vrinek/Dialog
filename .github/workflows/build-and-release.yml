@@ -22,6 +22,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pandoc chromium-browser
 
+      - name: Inject version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          chmod +x scripts/inject-version.sh
+          ./scripts/inject-version.sh
+
       - name: Build PDF
         run: |
           chmod +x build-pdf.sh

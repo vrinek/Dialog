@@ -1,6 +1,6 @@
 # Cryptography
 
-**Version:** 1.0 (2026-02-20) | **Status:** Draft
+**Version:** <<VERSION>> | **Status:** Draft
 
 ## Abstract
 
@@ -25,7 +25,7 @@ Both schemes use Curve25519 keys. An author's Ed25519 signing key can be convert
 
 An author is identified by their Ed25519 public key — a 32-byte value. This key is the author's identity. There is no separate identity layer.
 
-Profile information (name, avatar, etc.) is expressed as molecules in the author's chain that describe the key. See [06-meta-bonds.md](06-meta-bonds.md) for the key rotation meta-bond.
+Profile information (name, avatar, etc.) is expressed as molecules in the author's chain that describe the key.
 
 ### Key encoding
 
@@ -51,28 +51,33 @@ The signature covers all block fields **except** the signature itself. To comput
 ; The signing input is the block without the "sig" field
 signing-input = {
   "v"    => uint,
+  "type" => tstr,              ; "public", "private", or "rotation"
   "pub"  => bstr .size 32,
   "prev" => bstr .size 32 / null,
   "refs" => [* bstr .size 32],
   "ts"   => uint,
   "ops"  => [+ operation] / bstr  ; plaintext or encrypted
-  ? "nonce" => bstr               ; present for private blocks
+  ? "nonce" => bstr .size 24       ; 192-bit XChaCha20 nonce, present for private blocks
 }
 ```
 
 #### Signing procedure
 
 ```
-signing_input = dCBOR(block without "sig" field)
+signing_bytes = dCBOR(block without "sig" field)
+signing_input = "dialog-v1-block" || signing_bytes
 signature = Ed25519_Sign(private_key, signing_input)
 ```
+
+The signing input is prefixed with the domain separator string `"dialog-v1-block"` (15 bytes, UTF-8 encoded) to prevent cross-protocol signature replay attacks.
 
 The complete block is then: all the signing input fields plus `"sig" => signature`.
 
 #### Verification procedure
 
 ```
-signing_input = dCBOR(received block without "sig" field)
+signing_bytes = dCBOR(received block without "sig" field)
+signing_input = "dialog-v1-block" || signing_bytes
 valid = Ed25519_Verify(block["pub"], signing_input, block["sig"])
 ```
 
@@ -92,19 +97,25 @@ Private blocks encrypt the operations list while keeping all metadata in plainte
 
 ```
 plaintext = dCBOR(operations list)  ; the [+ operation] array
-ciphertext = XChaCha20Poly1305_Encrypt(symmetric_key, nonce, plaintext)
+aad = dCBOR({"v": block.v, "type": block.type, "pub": block.pub,
+             "prev": block.prev, "refs": block.refs, "ts": block.ts})
+ciphertext = XChaCha20Poly1305_Encrypt(symmetric_key, nonce, plaintext, aad)
 ```
+
+The Additional Authenticated Data (AAD) MUST be the deterministic CBOR encoding of a map containing all plaintext block fields: `v`, `type`, `pub`, `prev`, `refs`, and `ts`. The AAD binds the ciphertext to the block's metadata, preventing payload-swapping attacks. Since dCBOR mandates deterministic map key ordering, the AAD encoding is unambiguous.
 
 The `ops` field of the private block contains the ciphertext. The `nonce` field contains the nonce used for encryption.
 
 #### Decryption procedure
 
 ```
-plaintext = XChaCha20Poly1305_Decrypt(symmetric_key, block["nonce"], block["ops"])
+aad = dCBOR({"v": block.v, "type": block.type, "pub": block.pub,
+             "prev": block.prev, "refs": block.refs, "ts": block.ts})
+plaintext = XChaCha20Poly1305_Decrypt(symmetric_key, block["nonce"], block["ops"], aad)
 operations = dCBOR_decode(plaintext)  ; yields [+ operation]
 ```
 
-If decryption fails (invalid key or tampered ciphertext), the block MUST be rejected.
+If the AAD does not match during decryption (authentication tag verification fails), the block MUST be rejected. If decryption fails for any other reason (invalid key or tampered ciphertext), the block MUST also be rejected.
 
 #### Key management
 
@@ -113,13 +124,21 @@ Each private chain uses a single symmetric key. This key is shared with authoriz
 1. Convert the author's Ed25519 private key to an X25519 private key
 2. Convert each recipient's Ed25519 public key to an X25519 public key
 3. Perform X25519 key agreement between the author and each recipient
-4. Use the shared secret (or a KDF derivative) to encrypt the symmetric chain key
+4. Derive a wrapping key using HKDF-SHA-256 (RFC 5869) and encrypt the symmetric chain key
+
+The Ed25519-to-X25519 conversion MUST follow the birational map specified in RFC 7748 S4.1. Reference implementations include libsodium's `crypto_sign_ed25519_pk_to_curve25519` and `crypto_sign_ed25519_sk_to_curve25519`.
 
 ```
 author_x25519_sk = Ed25519_to_X25519(author_ed25519_sk)
 recipient_x25519_pk = Ed25519_to_X25519(recipient_ed25519_pk)
 shared_secret = X25519(author_x25519_sk, recipient_x25519_pk)
-wrapped_key = Encrypt(KDF(shared_secret), chain_symmetric_key)
+wrapping_key = HKDF-SHA-256(
+  salt:   empty (zero-length byte string),
+  ikm:    shared_secret,
+  info:   "dialog-v1-key-wrap",
+  length: 32 bytes
+)
+wrapped_key = Encrypt(wrapping_key, chain_symmetric_key)
 ```
 
 The mechanism for distributing wrapped keys to recipients is out of scope (implementation-specific). The protocol only defines the encryption of block content.
@@ -128,9 +147,9 @@ The mechanism for distributing wrapped keys to recipients is out of scope (imple
 
 ### Key rotation
 
-Key rotation is expressed as a meta-molecule, not a cryptographic operation. See [06-meta-bonds.md](06-meta-bonds.md).
+Key rotation is an L1 block-level operation, not a meta-molecule. See [02-block-format.md](02-block-format.md) for the `rotate_key` operation type and rotation block structure.
 
-When an author publishes a `[old_key] rotates key to [new_key]` molecule in a block signed by the old key, subsequent blocks in the chain are signed by the new key. Implementations processing the chain MUST accept the new key for blocks after the rotation.
+When an author publishes a rotation block containing a `rotate_key` operation with the new public key bytes, the current chain ends. The new key begins a fresh chain. Implementations MUST mark the old key as inactive and MUST NOT accept further blocks signed by it.
 
 ## Security Considerations
 
@@ -147,6 +166,7 @@ When an author publishes a `[old_key] rotates key to [new_key]` molecule in a bl
 1. Construct the block without signature:
    {
      "v":    1,
+     "type": "public",
      "pub":  <32 bytes>,
      "prev": null,
      "refs": [],
@@ -155,14 +175,16 @@ When an author publishes a `[old_key] rotates key to [new_key]` molecule in a bl
    }
 
 2. Encode as dCBOR:
-   <resulting bytes>
+   signing_bytes = <resulting bytes>
 
-3. Sign:
-   signature = Ed25519_Sign(private_key, <dCBOR bytes>)
+3. Prepend domain separator and sign:
+   signing_input = "dialog-v1-block" || signing_bytes
+   signature = Ed25519_Sign(private_key, signing_input)
 
 4. Complete block:
    {
      "v":    1,
+     "type": "public",
      "pub":  <32 bytes>,
      "sig":  <64 bytes>,
      "prev": null,
@@ -181,12 +203,17 @@ When an author publishes a `[old_key] rotates key to [new_key]` molecule in a bl
 2. Generate a unique 24-byte nonce:
    nonce = random_bytes(24)
 
-3. Encrypt:
-   ciphertext = XChaCha20Poly1305_Encrypt(chain_key, nonce, plaintext)
+3. Compute AAD from plaintext block fields:
+   aad = dCBOR({"v": 1, "type": "private", "pub": <32 bytes>,
+                "prev": <32 bytes or null>, "refs": [], "ts": 1740067200})
 
-4. Construct private block:
+4. Encrypt:
+   ciphertext = XChaCha20Poly1305_Encrypt(chain_key, nonce, plaintext, aad)
+
+5. Construct private block:
    {
      "v":     1,
+     "type":  "private",
      "pub":   <32 bytes>,
      "sig":   <64 bytes>,
      "prev":  <32 bytes or null>,
@@ -202,9 +229,10 @@ When an author publishes a `[old_key] rotates key to [new_key]` molecule in a bl
 ### Normative
 - [RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) — Edwards-Curve Digital Signature Algorithm (Ed25519)
 - [RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) — Elliptic Curves for Security (X25519)
+- [RFC 5869](https://datatracker.ietf.org/doc/html/rfc5869) — HMAC-based Extract-and-Expand Key Derivation Function (HKDF)
 - [draft-irtf-cfrg-xchacha](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha-03) — XChaCha20-Poly1305
 - [03-encoding.md](03-encoding.md) — dCBOR encoding rules
 
 ### Informative
-- [06-meta-bonds.md](06-meta-bonds.md) — Key rotation via meta-molecules
+- [02-block-format.md](02-block-format.md) — Block format and rotation block structure
 - [libsodium](https://doc.libsodium.org/) — Reference implementation for Ed25519, X25519, and XChaCha20-Poly1305

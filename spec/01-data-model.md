@@ -1,6 +1,6 @@
 # Data Model
 
-**Version:** 1.0 (2026-02-20) | **Status:** Draft
+**Version:** <<VERSION>> | **Status:** Draft
 
 ## Abstract
 
@@ -51,11 +51,28 @@ bond = {
 }
 ```
 
-The template MUST be a non-empty UTF-8 string containing one or more variables. Variables are delimited by underscores: `_VariableName_`. Variable names MUST be unique within a bond.
+The template MUST be a non-empty UTF-8 string containing one or more variables. Variables are identified by the following grammar:
+
+```abnf
+variable = "_" 1*UCALPHA "_"
+UCALPHA  = %x41-5A          ; A-Z
+```
+
+A variable is an underscore, followed by one or more uppercase ASCII letters (`A`-`Z`), followed by an underscore. Implementations MUST parse variables using a leftmost-longest match: scan left to right, and when an underscore is encountered, consume the longest sequence of uppercase ASCII letters followed by a closing underscore. All other underscores in the template are literal text.
+
+Variable names MUST be unique within a bond template.
+
+**Disambiguation.** Because the parser uses leftmost-longest match, ambiguous sequences resolve deterministically:
+
+- `_AB_` is a single variable `AB`.
+- `_A_B_` is the variable `A` followed by the literal text `B_`, because after consuming `_A_` the next character `B` is not preceded by an opening underscore.
+- `_A__B_` is the variable `A` followed by the variable `B` (the middle two underscores serve as the closing underscore of `A` and the opening underscore of `B`).
+- `type_of` contains no variables — the underscore is not followed by a closing `_UCALPHA+_` sequence.
+- `_a_` contains no variables — lowercase letters do not match `UCALPHA`.
 
 Examples:
 - `_A_ is the capital of _B_`
-- `_Person_ founded _Company_`
+- `_X_ founded _Y_`
 - `_A_ occurred before _B_`
 
 The bond's CID is computed identically to an atom's: dCBOR encode, then hash.
@@ -87,7 +104,7 @@ filler-value = bstr / tstr / scalar-value
 
 scalar-value = {
   ? "unit" => bstr .size 32,  ; SHA-256 digest of a unit atom
-  "value" => number,           ; integer or float
+  "value" => int / #6.4([int, int]),  ; integer or decimal fraction (CBOR tag 4)
 }
 / datetime-range
 
@@ -96,6 +113,8 @@ datetime-range = {
   "to" => tstr                 ; RFC 3339 datetime string
 }
 ```
+
+The number of fillers in a molecule MUST equal the number of variables in the referenced bond template. The fillers are positionally matched to variables in the order they appear in the template.
 
 #### Filler types
 
@@ -114,9 +133,11 @@ Filler types 0, 1, and 2 use the raw SHA-256 digest (32 bytes), not the full CID
 #### Scalars
 
 A scalar is one of:
-- A unitless number (integer or float)
-- A number with a unit (the unit is an atom, referenced by its SHA-256 digest)
+- A unitless integer, or a decimal fraction encoded as CBOR tag 4 (`[exponent, mantissa]`, both integers)
+- An integer or decimal fraction with a unit (the unit is an atom, referenced by its SHA-256 digest)
 - A datetime range (two RFC 3339 timestamps)
+
+Decimal fractions use CBOR tag 4, encoding the value as `[exponent, mantissa]` where both are integers. For example, `3.14` is encoded as `#6.4([-2, 314])`. This is dCBOR-compatible since both components are integers -- no IEEE 754 floats are used.
 
 There are no plain dates in Dialog. The date "Thursday, Feb 20, 2026" is represented as a datetime range from `2026-02-20T00:00:00Z` to `2026-02-20T23:59:59Z`.
 

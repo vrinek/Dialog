@@ -1,6 +1,6 @@
 # Encoding
 
-**Version:** 1.0 (2026-02-20) | **Status:** Draft
+**Version:** <<VERSION>> | **Status:** Draft
 
 ## Abstract
 
@@ -144,7 +144,7 @@ Common CBOR patterns used in Dialog:
 - [multiformats/cid](https://github.com/multiformats/cid) — Content Identifier specification
 - [multiformats/multihash](https://github.com/multiformats/multihash) — Self-describing hash specification
 - [multiformats/unsigned-varint](https://github.com/multiformats/unsigned-varint) — Unsigned variable-length integer encoding
+- [RFC 8610: CDDL](https://datatracker.ietf.org/doc/html/rfc8610) — Concise Data Definition Language
 
 ### Informative
-- [RFC 8610: CDDL](https://datatracker.ietf.org/doc/html/rfc8610) — Concise Data Definition Language (used for schema notation in this specification)
 - [cbor.io](https://cbor.io/) — CBOR tools and implementations

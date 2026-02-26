@@ -1,6 +1,6 @@
 # Dialog Protocol Specification — Overview
 
-**Version:** 1.0 (2026-02-20) | **Status:** Draft
+**Version:** <<VERSION>> | **Status:** Draft
 
 ## Abstract
 
@@ -14,21 +14,14 @@ Dialog defines a protocol — not a single piece of software. The goal is intero
 
 ### What the protocol defines
 
-| Concern | Document |
-|---------|----------|
-| Ontology data types (atoms, bonds, molecules) and content addressing | [01-data-model.md](01-data-model.md) |
-| Block structure, operations, chain linking, and validation | [02-block-format.md](02-block-format.md) |
-| CBOR encoding, CID format, and hashing parameters | [03-encoding.md](03-encoding.md) |
-| Signatures, encryption, and key management | [04-cryptography.md](04-cryptography.md) |
-| Three-layer processing model (L1/L2/L3) | [05-processing-model.md](05-processing-model.md) |
-| Standard meta-bond library | [06-meta-bonds.md](06-meta-bonds.md) |
+The protocol defines the ontology data model, block format and validation, encoding parameters, cryptographic primitives, the three-layer processing model, and the standard meta-bond library. See the [Document index](#document-index) at the bottom of this page for the full list of specification documents.
 
 ### What the protocol does NOT define
 
 - **Transport.** How nodes discover each other and exchange blocks is an implementation concern. The protocol defines the data format and validation rules only.
 - **Conflict resolution strategy.** When subscribed authors disagree, the protocol surfaces the conflict but does not dictate how to resolve it.
 - **Query interface.** How applications query Layer 3 (SQL, GraphQL, API, etc.) is an implementation choice.
-- **L3 processing rules** beyond subscription-based filtering and mandatory conflict detection.
+- **L3 processing rules** beyond author filtering, meta-molecule application, and mandatory conflict detection.
 
 ## Architecture
 
@@ -53,11 +46,11 @@ Dialog processes data through three layers:
                       └───────────────────┘
 ```
 
-**Layer 1** stores raw blocks. Each author maintains their own chain of signed blocks. Blocks reference previous blocks in the same chain and optionally reference blocks in other chains, forming a DAG.
+**Layer 1** stores raw blocks. Users subscribe to authors, determining which chains the node fetches and stores. Each author maintains their own chain of signed blocks. Blocks reference previous blocks in the same chain and optionally reference blocks in other chains, forming a DAG.
 
 **Layer 2** is the accumulated ontology graph. Operations are extracted from blocks and added to a single graph, tagged with authorship. No interpretation occurs — meta-molecules are stored as regular molecules.
 
-**Layer 3** is the application's truth. L2 is filtered by the user's author subscriptions (private, local config). Meta-molecules are applied. Conflicts are surfaced.
+**Layer 3** is the application's truth. L2 distilled by filtering to subscribed authors, applying meta-molecule semantics, and surfacing conflicts.
 
 Applications read from L3 only. To write, applications send operations to a blockchain node and wait for propagation through L1 → L2 → L3.
 
@@ -75,15 +68,15 @@ All three are content-addressed: their identifier is determined by their content
 
 ### Blocks and chains
 
-Authors publish data by creating blocks. A block contains operations (create_atom, create_bond, create_molecule) and is signed by the author's Ed25519 key. Each block links to the previous block in the author's chain and optionally to blocks in other authors' chains.
+Authors publish data by creating blocks. A block contains operations (create_atom, create_bond, create_molecule, rotate_key) and is signed by the author's Ed25519 key. Each block links to the previous block in the author's chain and optionally to blocks in other authors' chains.
 
 ### Author subscriptions
 
-Users choose which authors to trust by subscribing to them. Only data from subscribed authors passes from L2 to L3. Subscriptions are private and local.
+Users choose which authors to trust by subscribing to them. Subscriptions drive chain fetching at L1 and author filtering at L3. L2 is unaffected — it accumulates everything pulled at L1. Subscriptions are private and local.
 
 ### Meta-molecules
 
-Some molecules carry special meaning: asserting truth, retracting claims, declaring equivalence, noting contradictions, superseding earlier statements, or rotating keys. These meta-molecules are regular molecules at L1/L2 but are interpreted during L2→L3 processing.
+Some molecules carry special meaning: asserting truth, retracting claims, declaring equivalence, noting contradictions, or superseding earlier statements. These meta-molecules are regular molecules at L1/L2 but are interpreted during L2→L3 processing. Key rotation is handled separately as an L1 block-level operation (see [02-block-format.md](02-block-format.md)).
 
 ## Conventions
 
@@ -105,6 +98,8 @@ The following parameters are fixed protocol-wide. Implementations MUST use exact
 | Signature algorithm | Ed25519 |
 | Key agreement | X25519 (Ed25519 keys converted) |
 | Symmetric encryption | XChaCha20-Poly1305 |
+| Key derivation (KDF) | HKDF-SHA-256 (RFC 5869), salt: empty, info: "dialog-v1-key-wrap", output: 32 bytes |
+| Signing domain separator | "dialog-v1-block" (byte prefix) |
 | Protocol version | 1 |
 
 ## Open questions (v1)

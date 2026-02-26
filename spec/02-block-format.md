@@ -1,10 +1,10 @@
 # Block Format
 
-**Version:** 1.0 (2026-02-20) | **Status:** Draft
+**Version:** <<VERSION>> | **Status:** Draft
 
 ## Abstract
 
-This document defines the structure of Dialog blocks, the three operation types, chain linking rules, and block validation. A block is the unit of data in Layer 1 — a signed, append-only container of ontology operations.
+This document defines the structure of Dialog blocks, the four operation types, chain linking rules, and block validation. A block is the unit of data in Layer 1 — a signed, append-only container of ontology operations.
 
 ## Terminology
 
@@ -29,6 +29,7 @@ Dialog uses an IOTA-inspired blockchain model where each author maintains their 
 ```cddl
 public-block = {
   "v"    => uint,              ; protocol version
+  "type" => "public",          ; block type
   "pub"  => bstr .size 32,    ; author's Ed25519 public key
   "sig"  => bstr .size 64,    ; Ed25519 signature
   "prev" => bstr .size 32     ; SHA-256 digest of previous block
@@ -42,11 +43,12 @@ public-block = {
 | Field | Type | Description |
 |-------|------|-------------|
 | `v` | `uint` | Protocol version. MUST be `1` for this specification. Implementations MUST reject blocks with an unrecognized version. |
+| `type` | `tstr` | Block type. MUST be `"public"`, `"private"`, or `"rotation"`. |
 | `pub` | `bstr .size 32` | Author's Ed25519 public key (raw 32 bytes). |
 | `sig` | `bstr .size 64` | Ed25519 signature over the block content. See [04-cryptography.md](04-cryptography.md) for the signing procedure. |
 | `prev` | `bstr .size 32 / null` | SHA-256 digest of the previous block in this author's chain. MUST be `null` for the genesis block. MUST NOT be `null` for any other block. |
 | `refs` | `[* bstr .size 32]` | Zero or more SHA-256 digests of blocks in other authors' chains. MAY be empty. |
-| `ts` | `uint` | Self-reported Unix timestamp. Untrusted — useful for ordering heuristics but not for validation. |
+| `ts` | `uint` | Self-reported Unix timestamp. Untrusted — useful for ordering heuristics but not for validation. The `ts` field SHOULD be greater than or equal to the `ts` of the previous block in the same chain. Implementations SHOULD warn on non-monotonic timestamps. |
 | `ops` | `[+ operation]` | Ordered list of one or more operations. A block MUST contain at least one operation. |
 
 ### Private block
@@ -56,13 +58,14 @@ A private block has the same structure as a public block with one additional fie
 ```cddl
 private-block = {
   "v"     => uint,
+  "type"  => "private",
   "pub"   => bstr .size 32,
   "sig"   => bstr .size 64,
   "prev"  => bstr .size 32 / null,
   "refs"  => [* bstr .size 32],
   "ts"    => uint,
   "ops"   => bstr,             ; encrypted operations (ciphertext)
-  "nonce" => bstr              ; encryption nonce
+  "nonce" => bstr .size 24     ; 192-bit XChaCha20 nonce
 }
 ```
 
@@ -70,12 +73,42 @@ In a private block, the `ops` field contains ciphertext (a byte string) instead 
 
 See [04-cryptography.md](04-cryptography.md) for the encryption scheme.
 
-### Operations
+### Rotation block
 
-There are exactly three operation types:
+A rotation block signals the end of the current key's chain. It MUST contain exactly one `rotate_key` operation and no other operations. The `new_pub` field contains the raw bytes of the new Ed25519 public key.
 
 ```cddl
-operation = create-atom / create-bond / create-molecule
+rotation-block = {
+  "v"    => uint,
+  "type" => "rotation",
+  "pub"  => bstr .size 32,
+  "sig"  => bstr .size 64,
+  "prev" => bstr .size 32 / null,
+  "refs" => [* bstr .size 32],
+  "ts"   => uint,
+  "ops"  => [rotate-key-op]       ; exactly one operation
+}
+
+rotate-key-op = {
+  "op"      => "rotate_key",
+  "new_pub" => bstr .size 32      ; new Ed25519 public key (raw bytes)
+}
+```
+
+### Validation dispatch
+
+Implementations MUST check the `type` field to determine block structure:
+
+- `"public"`: `ops` is a plaintext array, no `nonce` field.
+- `"private"`: `ops` is ciphertext, `nonce` field required.
+- `"rotation"`: `ops` contains exactly one `rotate_key` operation.
+
+### Operations
+
+There are exactly four operation types:
+
+```cddl
+operation = create-atom / create-bond / create-molecule / rotate-key
 
 create-atom = {
   "op"          => "create_atom",
@@ -112,6 +145,12 @@ Creates a molecule. The molecule's identifier is `SHA-256(dCBOR({"bond": <bond_d
 
 The `bond` field and any atom/bond/molecule references in `fillers` MUST refer to entities that are **reachable** from this block (see Validation below).
 
+#### rotate_key
+
+Rotates the author's key. The rotation block is the last block in the current key's chain. A new chain begins with a genesis block signed by the new key. The new key's genesis block SHOULD reference the rotation block via `refs` to establish verifiable key succession.
+
+Implementations MUST mark the old key as inactive after processing a rotation block. Implementations MUST NOT accept further blocks signed by the old key after the rotation block.
+
 ### Chain linking
 
 Each author maintains a single linear chain of blocks:
@@ -122,6 +161,8 @@ genesis → block_1 → block_2 → ... → block_n (tip)
 
 The `prev` field links each block to its predecessor. This forms a singly-linked list from tip to genesis.
 
+Each author chain MUST be strictly linear: each block (except the tip) has at most one successor.
+
 Foreign block references (`refs`) create cross-chain links, forming a DAG (directed acyclic graph) across all authors' chains. A foreign reference means: "this block's operations may reference entities defined in the referenced foreign block or any of its ancestors."
 
 ### Validation
@@ -130,13 +171,14 @@ A block is **valid** if and only if:
 
 1. **Version check.** The `v` field is a recognized protocol version.
 2. **Signature check.** The `sig` field is a valid Ed25519 signature over the block content, verified against the `pub` key. See [04-cryptography.md](04-cryptography.md).
-3. **Chain integrity.** If `prev` is not null, it MUST reference an existing, valid block by the same author.
+3. **Chain integrity.** If `prev` is not null, it MUST reference an existing, valid block with the same `pub` key. Within a single chain, all blocks MUST have the same `pub` field. A chain ends when a rotation block is published; the new key begins a separate chain.
 4. **Operation validity.** Every operation in `ops` MUST reference only entity IDs that are **reachable** — defined in:
    - The same block (an earlier operation in the `ops` list), or
    - Any ancestor block in the author's own chain (reachable via `prev`), or
    - Any foreign-referenced block (listed in `refs`) or its ancestors (reachable via the foreign block's own `prev` and `refs`, recursively)
 5. **Non-empty operations.** The `ops` list MUST contain at least one operation.
 6. **Deterministic encoding.** The block MUST be encoded as valid dCBOR. See [03-encoding.md](03-encoding.md).
+7. **Fork detection.** If a node receives a block whose `prev` value matches the `prev` of another block already stored from the same `pub` key, the node MUST detect this as a chain fork. Fork handling strategy (reject, flag, accept-first-seen) is implementation-scoped.
 
 For private blocks, validation of rule 4 is only possible by entities that hold the decryption key.
 
@@ -156,10 +198,11 @@ Internal references to blocks (in `prev` and `refs` fields) use the raw SHA-256 
 - Timestamps are self-reported and untrusted. Implementations MUST NOT use timestamps for validation decisions. They are informational only.
 - Foreign block references expand the trust boundary: by referencing a foreign block, an author asserts that the foreign chain's history up to that block is available and relevant. See [05-processing-model.md](05-processing-model.md) for how foreign references affect Layer 2.
 - Private blocks hide operation content but expose chain structure (prev links, foreign refs). An observer can see that an author published a block and when, but not what it contains.
+- Chain forking: A malicious or buggy author could publish two blocks with the same `prev`, creating divergent histories. Implementations MUST detect forks (see Validation rule 7). The handling strategy is implementation-scoped.
 
 ## Examples
 
-### Genesis block with three operations
+### Genesis block with four operations
 
 A genesis block creating two atoms, one bond, and one molecule:
 
