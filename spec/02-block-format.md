@@ -10,9 +10,9 @@ This document defines the structure of Dialog blocks, the four operation types, 
 
 The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119).
 
-- **Author chain:** The linear sequence of blocks published by a single author, linked by `prev` hashes.
+- **Author chain:** The linear sequence of blocks published by a single author, linked by `prev` digests.
 - **Genesis block:** The first block in an author's chain (`prev` is null).
-- **Foreign block reference:** A hash pointing to a specific block in another author's chain that contains CIDs needed by the referencing block.
+- **Foreign block reference:** A 32-byte digest pointing to a specific block in another author's chain that defines entities needed by the referencing block.
 - **CID-providing block:** A block listed in `refs` whose operations define entities referenced by the current block.
 
 ## Overview
@@ -151,7 +151,7 @@ Creates a bond. The bond's identifier is `SHA-256(dCBOR({"template": <template>}
 
 Creates a molecule. The molecule's identifier is `SHA-256(dCBOR({"bond": <bond_digest>, "fillers": <fillers>}))`.
 
-The `bond` field and any atom/bond/molecule references in `fillers` MUST refer to entities that are **reachable** from this block (see Validation below). The number of fillers MUST equal the number of variables in the referenced bond template (see [01-data-model.md](01-data-model.md)).
+The `bond` field and any atom/bond/molecule references in `fillers` are 32-byte digests (see [03-encoding.md](03-encoding.md), "Internal references") and MUST refer to entities that are **reachable** from this block (see Validation below). The number of fillers MUST equal the number of variables in the referenced bond template (see [01-data-model.md](01-data-model.md)).
 
 #### rotate_key
 
@@ -180,7 +180,7 @@ A block is **valid** if and only if:
 1. **Version check.** The `v` field is a recognized protocol version.
 2. **Signature check.** The `sig` field is a valid Ed25519 signature over the block content, verified against the `pub` key. See [04-cryptography.md](04-cryptography.md).
 3. **Chain integrity.** If `prev` is not null, it MUST reference an existing, valid block with the same `pub` key. Within a single chain, all blocks MUST have the same `pub` field. A chain ends when a rotation block is published; the new key begins a separate chain.
-4. **Operation validity.** Every operation in `ops` MUST reference only entity CIDs that are **reachable** — defined in:
+4. **Operation validity.** Every operation in `ops` MUST reference only entity digests that are **reachable** — defined in:
    - The same block (an earlier operation in the `ops` list), or
    - Any ancestor block in the author's own chain (reachable via `prev`), or
    - Any CID-providing block listed in `refs`, or transitively through that block's own `refs` (demand-driven recursive resolution; see [05-processing-model.md](05-processing-model.md))
@@ -200,7 +200,7 @@ A block's CID is computed from its complete dCBOR encoding, including the signat
 block-cid = CID(dCBOR(block))
 ```
 
-Internal references to blocks (in `prev` and `refs` fields) use the raw SHA-256 digest (32 bytes), not the full CID.
+Internal references to blocks (in the `prev` and `refs` fields) use the raw SHA-256 digest (32 bytes), not the full CID. See [03-encoding.md](03-encoding.md), "Internal references".
 
 ## Security Considerations
 
@@ -231,10 +231,10 @@ A genesis block creating two atoms, one bond, and one molecule:
     {"op": "create_atom", "description": "France"},
     {"op": "create_bond", "template": "_A_ is the capital of _B_"},
     {"op": "create_molecule",
-     "bond": <SHA-256 of bond>,
+     "bond": <digest of bond>,
      "fillers": [
-       {"type": 0, "value": <SHA-256 of "Paris, the capital of France">},
-       {"type": 0, "value": <SHA-256 of "France">}
+       {"type": 0, "value": <digest of "Paris, the capital of France">},
+       {"type": 0, "value": <digest of "France">}
      ]}
   ]
 }
@@ -251,14 +251,14 @@ This block is valid because:
 {
   "v":    1,
   "type": "public",
-  "pub":  <author B's key>,
-  "sig":  <signature>,
-  "prev": <hash of author B's previous block>,
-  "refs": [<hash of a block in author A's chain>],
+  "pub":  <32 bytes: author B's Ed25519 public key>,
+  "sig":  <64 bytes: Ed25519 signature>,
+  "prev": <digest of author B's previous block>,
+  "refs": [<digest of a block in author A's chain>],
   "ts":   1740153600,
   "ops": [
     {"op": "create_molecule",
-     "bond": <SHA-256 of a bond defined in author A's chain>,
+     "bond": <digest of a bond defined in author A's chain>,
      "fillers": [...]}
   ]
 }

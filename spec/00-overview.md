@@ -46,7 +46,7 @@ Dialog processes data through three layers:
                       └───────────────────┘
 ```
 
-**Layer 1** stores raw blocks. Users subscribe to authors, determining which chains the node fetches and stores. Each author maintains their own chain of signed blocks. The `prev` field links each block to its predecessor in the same chain (ordering only). The `refs` field optionally references specific blocks in other chains that contain needed entity CIDs, forming a DAG.
+**Layer 1** stores raw blocks. Users subscribe to authors, determining which chains the node fetches and stores. Each author maintains their own chain of signed blocks. The `prev` field links each block to its predecessor in the same chain (ordering only). The `refs` field optionally references specific blocks in other chains that define the entities this block needs, forming a DAG. Both fields hold 32-byte block digests (see [03-encoding.md](03-encoding.md), "Internal references").
 
 **Layer 2** is the accumulated ontology graph. Operations are extracted from blocks and added to a single graph, tagged with authorship. No interpretation occurs — meta-molecules are stored as regular molecules.
 
@@ -86,6 +86,12 @@ This specification uses:
 - **CDDL** ([RFC 8610](https://datatracker.ietf.org/doc/html/rfc8610)) for CBOR schema definitions
 - **dCBOR** ([draft-mcnally-deterministic-cbor](https://datatracker.ietf.org/doc/draft-mcnally-deterministic-cbor/)) for deterministic encoding
 
+In examples, angle brackets denote placeholder values:
+
+- `<digest of X>` — the raw 32-byte SHA-256 digest of X. This is the form every reference inside a Dialog structure takes (see [03-encoding.md](03-encoding.md), "Internal references").
+- `<CID of X>` — the full 36-byte CIDv1 of X, used only where an external identifier is meant.
+- `<n bytes: ...>` — an opaque byte string of the stated length (keys, signatures, ciphertext).
+
 ## Fixed parameters
 
 The following parameters are fixed protocol-wide. Implementations MUST use exactly these values:
@@ -94,7 +100,8 @@ The following parameters are fixed protocol-wide. Implementations MUST use exact
 |-----------|-------|
 | Serialization | CBOR (dCBOR profile) |
 | Hash function | SHA-256 |
-| CID version | CIDv1, codec `dag-cbor` (0x71) |
+| CID version | CIDv1, codec `dag-cbor` (0x71) — external identifiers only |
+| Internal reference format | Raw 32-byte SHA-256 digest |
 | Signature algorithm | Ed25519 |
 | Key agreement | X25519 (Ed25519 keys converted) |
 | Symmetric encryption | XChaCha20-Poly1305 |

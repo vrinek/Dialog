@@ -10,7 +10,8 @@ This document defines the Dialog ontology data model: atoms, bonds, and molecule
 
 The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119).
 
-- **Content identifier (CID):** A self-describing hash pointer. See [03-encoding.md](03-encoding.md).
+- **Content identifier (CID):** A self-describing hash pointer, 36 bytes. Used for external identifiers only. See [03-encoding.md](03-encoding.md).
+- **Digest:** The raw 32-byte SHA-256 hash of an entity's dCBOR encoding. Every reference inside a Dialog structure is a digest, not a CID. See [03-encoding.md](03-encoding.md), "Internal references".
 - **dCBOR:** Deterministic CBOR encoding profile. See [03-encoding.md](03-encoding.md).
 
 ## Overview
@@ -128,7 +129,7 @@ Each filler has a type tag and a value:
 | IPFS URI | 3 | `tstr` | IPFS content identifier as string (e.g., `"bafyrei..."`) |
 | Scalar | 4 | `scalar-value` | A numeric value, optionally with a unit, or a datetime range |
 
-Filler types 0, 1, and 2 use the raw SHA-256 digest (32 bytes), not the full CID. This avoids redundancy since the CID parameters are fixed protocol-wide.
+Filler types 0, 1, and 2 use the raw SHA-256 digest (32 bytes), not the full CID, as does the molecule's `bond` field. See [03-encoding.md](03-encoding.md), "Internal references". Type 3 (IPFS URI) is not an internal reference — it carries an IPFS content identifier as a text string.
 
 #### Scalars
 
@@ -143,11 +144,11 @@ There are no plain dates in Dialog. The date "Thursday, Feb 20, 2026" is represe
 
 #### Content addressing
 
-The molecule's CID is computed from its dCBOR encoding, identically to atoms and bonds. Since the molecule references its bond and fillers by their content hashes, the same assertion by different authors produces the same molecule CID.
+The molecule's CID is computed from its dCBOR encoding, identically to atoms and bonds. Since the molecule references its bond and fillers by their SHA-256 digests, the same assertion by different authors produces the same molecule CID.
 
 ### Entity identification summary
 
-All entities are identified by: `CID(dCBOR(entity))`.
+All entities are identified by: `CID(dCBOR(entity))` externally, and by the raw digest `SHA-256(dCBOR(entity))` within Dialog structures. Both forms carry the same digest — see [03-encoding.md](03-encoding.md), "Internal references".
 
 | Entity | CBOR map | Hash input |
 |--------|----------|------------|
@@ -195,10 +196,10 @@ Creating the molecule "[Paris, the capital of France] is the capital of [France]
 
 ```
 Logical:   {
-             "bond": <SHA-256 of bond>,
+             "bond": <digest of bond>,
              "fillers": [
-               {"type": 0, "value": <SHA-256 of "Paris, the capital of France">},
-               {"type": 0, "value": <SHA-256 of "France">}
+               {"type": 0, "value": <digest of "Paris, the capital of France">},
+               {"type": 0, "value": <digest of "France">}
              ]
            }
 CBOR hex:  a264626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893

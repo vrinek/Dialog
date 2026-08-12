@@ -78,11 +78,11 @@ If an entity with the same CID already exists in L2 (because the same content wa
 
 #### Foreign chain loading (demand-driven)
 
-When a block references foreign blocks (via the `refs` field), the implementation resolves CIDs through demand-driven traversal of the explicit refs graph.
+When a block references foreign blocks (via the `refs` field), the implementation resolves the entity digests carried by the block's operations through demand-driven traversal of the explicit refs graph.
 
 ##### Reference semantics
 
-The `refs` field lists specific blocks that contain CIDs needed by the current block's operations. References are explicit CID providers — they point to the blocks where needed entities were created.
+The `refs` field lists specific blocks that define entities needed by the current block's operations. Each entry is a 32-byte block digest (see [03-encoding.md](03-encoding.md), "Internal references"). References are explicit CID providers — they point to the blocks where needed entities were created.
 
 The `prev` field is strictly for chain ordering (append-only semantics and fork detection). It is NOT used for CID resolution.
 
@@ -90,16 +90,16 @@ The `prev` field is strictly for chain ordering (append-only semantics and fork 
 
 To validate a block H:
 
-1. Extract all entity CIDs referenced by H's operations (bond digests, filler values)
-2. Check if each CID was created in H itself (an earlier operation in the same block)
-3. For unresolved CIDs, check ancestor blocks in the same chain (following `prev`)
-4. For still-unresolved CIDs, fetch blocks listed in H's `refs` and check if the CID was created there
+1. Extract all entity digests referenced by H's operations (bond digests, filler values)
+2. Check if each digest was created in H itself (an earlier operation in the same block)
+3. For unresolved digests, check ancestor blocks in the same chain (following `prev`)
+4. For still-unresolved digests, fetch blocks listed in H's `refs` and check if the entity was created there
 5. If a referenced block's entities themselves have unresolved transitive dependencies (e.g., a molecule references a bond not yet seen), recurse into that block's own `refs`
-6. Continue until all CIDs are transitively resolved, or the scan limit is reached
+6. Continue until all digests are transitively resolved, or the scan limit is reached
 
 ##### Scan limit
 
-Implementations MAY set a user-configurable limit on the number of foreign blocks scanned during recursive resolution. This limit SHOULD have a safe default. If the limit is reached before all CIDs resolve, the block MUST be treated as invalid (unresolvable references).
+Implementations MAY set a user-configurable limit on the number of foreign blocks scanned during recursive resolution. This limit SHOULD have a safe default. If the limit is reached before all digests resolve, the block MUST be treated as invalid (unresolvable references).
 
 ##### Public/private reference rules
 
@@ -214,10 +214,10 @@ Bob's chain:   block_A → block_B (refs: [Alice's block_2])
 
 When processing Bob's block_B:
   1. block_B has a create_molecule referencing a bond
-  2. Bond CID not found in block_B itself or Bob's block_A
+  2. Bond digest not found in block_B itself or Bob's block_A
   3. Check refs: Alice's block_2 is listed
   4. Fetch Alice's block_2 — bond was created there
-  5. All CIDs resolved — block_B is valid
+  5. All digests resolved — block_B is valid
   6. Alice's block_1 is NOT fetched (not needed for resolution)
 
 Alice's data in L2 is limited to what was actually needed.

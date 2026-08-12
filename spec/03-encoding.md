@@ -79,7 +79,16 @@ CID(entity) = 0x01 || 0x71 || 0x12 || 0x20 || SHA-256(dCBOR(entity))
 
 Within Dialog data structures (molecules referencing atoms, blocks referencing previous blocks), references use the **raw SHA-256 digest** (32 bytes), not the full CID. This avoids the 4-byte overhead per reference, since the CID parameters are fixed protocol-wide and carry no additional information.
 
-The full CID is used for external references (e.g., when communicating entity identifiers between systems, in logs, or in human-readable contexts).
+Every reference value carried inside a Dialog CBOR structure is a 32-byte digest, encoded as a CBOR byte string (`5820` followed by the 32 digest bytes). This includes:
+
+- The `prev` field of a block (or `null` for a genesis block)
+- Each entry in a block's `refs` list
+- The `bond` field of a molecule and of a `create_molecule` operation
+- Filler values of type 0 (atom), 1 (bond), and 2 (molecule)
+
+IPFS URI fillers (type 3) are not internal references: they carry an IPFS content identifier as a text string, whose format is defined by IPFS and is out of scope for this rule.
+
+The full 36-byte CID is used only for external references — communicating entity identifiers between systems, APIs, logs, and other human-readable contexts. It never appears in the fields listed above; the `bstr .size 32` constraint in each CDDL definition excludes it.
 
 ### Multihash format
 

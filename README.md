@@ -37,17 +37,19 @@ L2 distilled by filtering to subscribed authors, applying meta-molecule semantic
 
 All entities are content-addressed and author-independent:
 
-- **Atom:** `hash(description)` — a unique entity (e.g., "Paris, the capital of France")
-- **Bond:** `hash(template)` — a sentence template (e.g., "_A_ is the capital of _B_")
-- **Molecule:** `hash(bond_id, fillers...)` — a complete statement (e.g., "[Paris] is the capital of [France]")
+- **Atom:** `digest(description)` — a unique entity (e.g., "Paris, the capital of France")
+- **Bond:** `digest(template)` — a sentence template (e.g., "_A_ is the capital of _B_")
+- **Molecule:** `digest(bond_digest, fillers...)` — a complete statement (e.g., "[Paris] is the capital of [France]")
 
 Fillers can be: atom references, bond references, molecule references, IPFS URIs (files), or scalar literals (numbers, units, datetime ranges).
+
+References *inside* Dialog structures (`prev`, `refs`, a molecule's `bond`, and atom/bond/molecule fillers) are raw 32-byte SHA-256 digests. The full 36-byte CIDv1 is used only externally — APIs, logs, and human-readable identifiers. IPFS URI fillers are unaffected: they carry IPFS's own identifier as a string.
 
 ## Block format
 
 Three block types: `public`, `private`, `rotation`.
 
-A **public block** contains: protocol version, block type, author's public key, signature, previous block hash, foreign block references (CID-providing blocks), timestamp, and an ordered list of operations.
+A **public block** contains: protocol version, block type, author's public key, signature, previous block digest, foreign block references (digests of CID-providing blocks), timestamp, and an ordered list of operations.
 
 A **private block** encrypts `refs`, `ts`, and `ops` together into a single `enc` field. Only chain management fields (`v`, `type`, `pub`, `sig`, `prev`) remain in plaintext, minimizing metadata leakage. A `nonce` field provides the 192-bit XChaCha20 nonce.
 
@@ -55,7 +57,7 @@ A **rotation block** signals the end of the current key's chain. It contains exa
 
 Four operation types: `create_atom`, `create_bond`, `create_molecule`, `rotate_key`.
 
-The `prev` field is strictly for chain ordering (append-only semantics, fork detection) — NOT for CID resolution. The `refs` field lists specific CID-providing blocks whose operations define entities needed by the current block. A block is valid if all its operations reference entity CIDs reachable from the same block, ancestor blocks (via `prev`), or referenced blocks (via `refs`, resolved transitively). Fork detection is a normative requirement.
+The `prev` field is strictly for chain ordering (append-only semantics, fork detection) — NOT for CID resolution. The `refs` field lists specific CID-providing blocks whose operations define entities needed by the current block. A block is valid if all its operations reference entity digests reachable from the same block, ancestor blocks (via `prev`), or referenced blocks (via `refs`, resolved transitively). Fork detection is a normative requirement.
 
 ## Cryptography
 

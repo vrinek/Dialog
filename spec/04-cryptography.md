@@ -227,7 +227,7 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
 
 3. Compute AAD from plaintext block fields:
    aad = dCBOR({"v": 1, "type": "private", "pub": <32 bytes>,
-                "prev": <32 bytes or null>})
+                "prev": <digest of previous block, or null>})
 
 4. Encrypt:
    ciphertext = XChaCha20Poly1305_Encrypt(chain_key, nonce, plaintext, aad)
@@ -238,7 +238,7 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
      "type":  "private",
      "pub":   <32 bytes>,
      "sig":   <64 bytes>,
-     "prev":  <32 bytes or null>,
+     "prev":  <digest of previous block, or null>,
      "enc":   <ciphertext bytes>,
      "nonce": <24 bytes>
    }

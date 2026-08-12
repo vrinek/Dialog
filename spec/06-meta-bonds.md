@@ -23,7 +23,7 @@ Meta-molecules are created with the same `create_molecule` operation as any othe
 
 ### Standard meta-bond library
 
-Implementations MUST support the following five meta-bonds. These bonds are content-addressed like any other bond — their CIDs are computed from their template strings.
+Implementations MUST support the following five meta-bonds. These bonds are content-addressed like any other bond — their identifiers are computed from their template strings (see [03-encoding.md](03-encoding.md)).
 
 #### 1. Equivalence
 
@@ -95,7 +95,7 @@ The resolution strategy is implementation-scoped. See [05-processing-model.md](0
 
 Meta-molecules are published using `create_molecule` like any other molecule. They follow the same content-addressing rules, appear in L1 and L2 as regular molecules, and are only distinguished by their bond template matching a known meta-bond.
 
-The standard meta-bonds are identified by their content hashes (CIDs of their templates). An implementation recognizes a meta-molecule by checking whether its bond reference matches the CID of any known meta-bond template.
+The standard meta-bonds are identified by the SHA-256 digest of their dCBOR-encoded template. An implementation recognizes a meta-molecule by checking whether the molecule's `bond` field matches the digest of any known meta-bond template. The `bond` field holds a 32-byte digest, not a full CID — see [03-encoding.md](03-encoding.md), "Internal references".
 
 ### Extension process
 
@@ -125,17 +125,17 @@ Author A: create_atom("Paris, the capital of France")
   → CID: 017112206545050a...
 
 Author B: create_atom("Paris, France")
-  → CID: 01711220<different hash>...
+  → CID: 01711220<different digest>...
 ```
 
-Author C publishes an equivalence:
+The CIDs above are the external 36-byte form. Author C publishes an equivalence, in which the same entities are referenced by their raw 32-byte digests:
 
 ```
 create_molecule(
-  bond: <CID of "_A_ is the same as _B_">,
+  bond: <digest of "_A_ is the same as _B_">,
   fillers: [
-    {type: 0, value: <hash of "Paris, the capital of France">},
-    {type: 0, value: <hash of "Paris, France">}
+    {type: 0, value: <digest of "Paris, the capital of France">},
+    {type: 0, value: <digest of "Paris, France">}
   ]
 )
 ```
@@ -151,17 +151,17 @@ Author A: create_bond("_A_ is the capital of _B_")
   → CID: 01711220f295b892...
 
 Author B: create_bond("_A_ is the capital city of _B_")
-  → CID: 01711220<different hash>...
+  → CID: 01711220<different digest>...
 ```
 
 Author C declares the two bonds equivalent:
 
 ```
 create_molecule(
-  bond: <CID of "_A_ is the same as _B_">,
+  bond: <digest of "_A_ is the same as _B_">,
   fillers: [
-    {type: 1, value: <hash of "_A_ is the capital of _B_">},
-    {type: 1, value: <hash of "_A_ is the capital city of _B_">}
+    {type: 1, value: <digest of "_A_ is the capital of _B_">},
+    {type: 1, value: <digest of "_A_ is the capital city of _B_">}
   ]
 )
 ```
@@ -174,28 +174,28 @@ Two authors independently published molecules that state the same fact using dif
 
 ```
 Author A: create_molecule(
-  bond: <CID of "_A_ is the capital of _B_">,
-  fillers: [{type: 0, value: <hash of "Paris, the capital of France">},
-            {type: 0, value: <hash of "France">}]
+  bond: <digest of "_A_ is the capital of _B_">,
+  fillers: [{type: 0, value: <digest of "Paris, the capital of France">},
+            {type: 0, value: <digest of "France">}]
 )
   → CID: 01711220f9f124b0...
 
 Author B: create_molecule(
-  bond: <CID of "_A_ is the capital city of _B_">,
-  fillers: [{type: 0, value: <hash of "Paris, France">},
-            {type: 0, value: <hash of "The French Republic">}]
+  bond: <digest of "_A_ is the capital city of _B_">,
+  fillers: [{type: 0, value: <digest of "Paris, France">},
+            {type: 0, value: <digest of "The French Republic">}]
 )
-  → CID: 01711220<different hash>...
+  → CID: 01711220<different digest>...
 ```
 
 Author C declares the two molecules equivalent:
 
 ```
 create_molecule(
-  bond: <CID of "_A_ is the same as _B_">,
+  bond: <digest of "_A_ is the same as _B_">,
   fillers: [
-    {type: 2, value: <hash of Author A's molecule>},
-    {type: 2, value: <hash of Author B's molecule>}
+    {type: 2, value: <digest of Author A's molecule>},
+    {type: 2, value: <digest of Author B's molecule>}
   ]
 )
 ```
