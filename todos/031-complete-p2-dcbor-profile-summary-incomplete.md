@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "031"
 tags: [specification-gap, encoding, dcbor, interoperability]
@@ -141,12 +141,13 @@ decision:
 
 ## Acceptance Criteria
 
-- [ ] The profile section states whether NFC normalization is required, and of
-      whom (encoder, decoder, or both)
-- [ ] UTF-8 well-formedness is stated normatively
-- [ ] The treatment of booleans, `undefined` and other simple values is stated
-- [ ] `go/dcbor` matches the resolved rules
-- [ ] If NFC is adopted, conformance vectors include a non-NFC rejection case
+- [x] The profile section states whether NFC normalization is required, and of
+      whom (encoder, decoder, or both) — it is forbidden, of both
+- [x] UTF-8 well-formedness is stated normatively
+- [x] The treatment of booleans, `undefined` and other simple values is stated
+- [x] `go/dcbor` matches the resolved rules
+- [x] If NFC is adopted, conformance vectors include a non-NFC rejection case
+      — not applicable: NFC was rejected, so there is no such case
 
 ## Resources
 
@@ -164,6 +165,52 @@ decision:
 Found while implementing the strict `go/dcbor` decoder. Every rejection rule in
 the seven-point summary was implementable as written; these three questions had
 no answer in the spec and had to be decided in code.
+
+### 2026-08-12 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** the profile becomes self-contained (Option 1's
+framing), and Unicode normalization is **rejected** (Option 3's substance for
+gap 1). Dialog defines its own deterministic profile rather than incorporating
+draft-mcnally-deterministic-cbor by reference; that draft is inspiration, not
+normative.
+
+**Changes:**
+
+- `spec/03-encoding.md` § Deterministic CBOR is now defined as RFC 8949 §4.2.1
+  Core Deterministic Encoding Requirements plus Dialog's numbered restrictions,
+  and states outright that it is the complete definition — no other document is
+  needed to build a conforming codec. It also notes that the profile is
+  narrower than the deterministic profiles in circulation, so conformance to
+  one implies nothing about the other.
+- draft-mcnally-deterministic-cbor moved from Normative to Informative
+  references, described as the inspiration for this profile.
+- **Gap 1 (NFC), resolved: no normalization.** New normative subsection "Text
+  strings and Unicode": text strings MUST be valid UTF-8; content addressing
+  operates on raw UTF-8 bytes; implementations MUST NOT apply Unicode
+  normalization before hashing or comparison. Rationale (informative):
+  visually identical strings with different code points are distinct entities,
+  exactly as strings differing in case or whitespace are, and semantic
+  equivalence is asserted with the `_A_ is the same as _B_` meta-bond of
+  `06-meta-bonds.md` rather than decided by the codec. Authoring tools SHOULD
+  normalize user input to NFC at capture time, before the entity is created.
+  This also removes the Unicode dependency the zero-dependency rule in
+  `docs/plans/2026-08-12-go-reference-implementation.md` was in tension with.
+- **Gap 2 (UTF-8), resolved:** stated normatively in the same subsection, for
+  both encoders and decoders.
+- **Gap 3 (simple values), resolved:** rule 7 now reads "Null is the only
+  simple value" — `false`, `true`, `undefined` and every other major type 7
+  value MUST NOT be used and MUST be rejected. This states what the published
+  rule list already implied and what `go/dcbor` already did; no bytes change.
+- Security Considerations in both `03-encoding.md` and `01-data-model.md` now
+  cover confusable/homoglyph descriptions: implementations SHOULD surface them
+  and MUST NOT merge them silently.
+- `go/dcbor`: no behaviour change — UTF-8 validity enforced, no normalization,
+  all non-null simple values rejected — which is now exactly what the spec
+  requires. Doc comments were rewritten to present no-normalization as
+  intended behaviour rather than a known gap, and `TestTextIsNotNormalized`
+  pins that the precomposed and decomposed forms of "café" encode differently
+  and both round-trip byte for byte.
 
 ## Notes
 

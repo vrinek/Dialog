@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "030"
 tags: [specification-gap, encoding, cid, interoperability]
@@ -100,14 +100,15 @@ lowercase hex (`go/cid`: `Digest.String`, `CID.String`, `ParseDigestHex`,
 
 ## Acceptance Criteria
 
-- [ ] `spec/03-encoding.md` states the normative text form of a CID
-- [ ] The rule covers what implementations MUST emit and what they MUST accept
-- [ ] Case sensitivity and any prefix are specified
-- [ ] All CID renderings in the spec use the chosen form (or are labelled as
+- [x] `spec/03-encoding.md` states the normative text form of a CID
+- [x] The rule covers what implementations MUST emit and what they MUST accept
+- [x] Case sensitivity and any prefix are specified
+- [x] All CID renderings in the spec use the chosen form (or are labelled as
       byte dumps)
-- [ ] `go/cid` implements the chosen form, with the existing hex helpers kept or
+- [x] `go/cid` implements the chosen form, with the existing hex helpers kept or
       removed accordingly
 - [ ] The conformance vectors carry the text form alongside the bytes
+      *(deferred to phase 5, when `cmd/genvectors` lands)*
 
 ## Resources
 
@@ -125,6 +126,40 @@ Found while implementing `go/cid`. The binary form was unambiguous and the
 worked example reproduced byte for byte; the text form had to be chosen without
 guidance. Hex was implemented because it is what the spec's examples print, and
 this entry records that the choice is not backed by normative text.
+
+### 2026-08-12 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1. The canonical text representation of a
+CID is **multibase base32** — the lowercase RFC 4648 alphabet without padding,
+prefixed with the multibase code `b`, over all 36 CID bytes. That is the
+standard CIDv1 text form, so Dialog CIDs paste straight into IPFS and
+multiformats tooling. The form is exact on input: uppercase base32 (multibase
+`B`), padding, and bare hex are rejected rather than accepted as alternates.
+
+**Changes:**
+
+- `spec/03-encoding.md` § Content identifiers: new "Text representation"
+  subsection giving `text(CID) = "b" || base32-lower-nopad(<36 bytes>)`, the
+  fixed 59-character length and `bafyrei` prefix, the MUST-emit /
+  MUST-reject rules, and the statement that hexadecimal byte listings in the
+  specification illustrate the binary form and are not a wire or text format.
+- Worked example gained step 4, computed rather than guessed, and cross-checked
+  against the value recorded in this entry:
+  `bafyreihfo5q3iopobs5x554uekymz2jh27ibi7qauuubzqltwbdvkevyii`
+- `spec/01-data-model.md`: the Paris atom example now prints both the byte dump
+  and the text form (`bafyreidfiucqui6ufw55tl3dnis7w2rxhptk45pz3eufhhczinqjmvar7u`).
+  The truncated `→ CID: 01711220…` renderings in `06-meta-bonds.md` remain byte
+  dumps, which the new normative sentence covers explicitly.
+- Normative references: multiformats/multibase and RFC 4648 added.
+- `go/cid`: `CID.String` now returns the multibase base32 form; the previous
+  hex rendering is `CID.HexString`. New `ParseCIDString` rejects a missing or
+  wrong multibase prefix, uppercase base32, padding, wrong length, non-base32
+  characters, and any decoded bytes that fail the fixed-parameter validation.
+  `Digest.String`, `ParseDigestHex` and `ParseCIDHex` keep their hex behaviour.
+  New constants `MultibaseBase32` and `StringSize`.
+- Tests: the France CID round-trips through the base32 string, arbitrary CIDs
+  round-trip, and each rejection case above is covered.
 
 ## Notes
 

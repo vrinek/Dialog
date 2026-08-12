@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "032"
 tags: [specification-consistency, encoding, data-model, dcbor]
@@ -101,15 +101,16 @@ updating at that point.
 
 ## Acceptance Criteria
 
-- [ ] `spec/03-encoding.md` rule 6 names tag 4 as the sole exception and points
+- [x] `spec/03-encoding.md` rule 6 names tag 4 as the sole exception and points
       at `01-data-model.md`
-- [ ] The deterministic encoding of a tag 4 value is specified (head, array
+- [x] The deterministic encoding of a tag 4 value is specified (head, array
       length, element order, shortest-form elements)
-- [ ] The CBOR encoding reference table includes the tag 4 pattern
-- [ ] A worked example shows a decimal fraction end to end
-- [ ] `go/dcbor` gains a Decimal value type accepting exactly tag 4, still
+- [x] The CBOR encoding reference table includes the tag 4 pattern
+- [x] A worked example shows a decimal fraction end to end
+- [x] `go/dcbor` gains a Decimal value type accepting exactly tag 4, still
       rejecting every other tag
 - [ ] Conformance vectors include a scalar filler with a decimal value
+      *(deferred to phase 5, when `cmd/genvectors` lands)*
 
 ## Resources
 
@@ -127,6 +128,51 @@ updating at that point.
 Found while implementing the `go/dcbor` decoder against rule 6. Implemented the
 literal rule (reject every tag) and recorded the gap here rather than
 anticipating the data model from a document that does not mention it.
+
+### 2026-08-12 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1. Tag 4 (decimal fraction) is the single
+exception to the "no tags" rule, and its encoding is canonicalized so that
+each value has exactly one representation — a requirement content addressing
+imposes but RFC 8949 does not.
+
+**Ratified canonicalization rules (all normative MUSTs):**
+
+1. Tag 4 is used only for values not representable as a CBOR integer: the
+   exponent MUST be negative. Whole numbers are plain integers.
+2. The mantissa MUST NOT be divisible by 10 (trailing zeros are stripped into
+   the exponent) and MUST NOT be zero (zero is a whole number, rule 1).
+3. Decoders MUST reject tag-4 values violating these rules as non-canonical.
+
+**Changes:**
+
+- `spec/03-encoding.md`: rule 6 reworded to "No tags, with one exception",
+  naming tag 4 and pointing at `01-data-model.md`; new "Decimal fractions"
+  subsection giving the deterministic encoding (`c4`, definite two-element
+  array `[exponent, mantissa]`, shortest-form major type 0/1 integers) and the
+  three canonicalization rules; new encoding-reference row
+  (`c482` + exponent + mantissa); new worked example `3.14` → `c4 82 21
+  19 013a`.
+- `spec/01-data-model.md` § Scalars: cross-reference to the canonicalization
+  rules and a note that whole numbers use plain integer encoding. The CDDL
+  (`int / #6.4([int, int])`) is unchanged — it remains structurally correct.
+- `go/dcbor`: new `Decimal{Exponent, Mantissa int64}` value kind;
+  `NewDecimal` canonicalizes (strips trailing zeros, returns `Uint`/`Neg` when
+  the value is whole); `Encode` refuses to emit a non-canonical `Decimal`;
+  `Decode` accepts exactly `c4` + definite two-element array of shortest-form
+  integers and enforces all three rules with descriptive errors, still
+  rejecting every other tag. The int64 bound on both components is documented
+  on the type; widening it would need a big-integer value kind.
+- Tests: the worked example both ways, negative mantissa, int64 boundaries,
+  a decimal inside a filler-shaped map, and rejection cases for positive/zero
+  exponent, zero mantissa, mantissa divisible by 10, wrong array length,
+  floats/text/tags inside the array, indefinite array inside the tag,
+  non-shortest elements, and other tags. The former
+  `TestDecodeRejects/tag_4_(decimal_fraction)` case is replaced by the tag-4
+  acceptance and canonicalization cases; the remaining tag cases now expect
+  "except tag 4". Fuzz corpus seeded with canonical and non-canonical tag-4
+  inputs; `-fuzztime=10s` clean.
 
 ## Notes
 
