@@ -230,6 +230,43 @@ func TestNewDecimal(t *testing.T) {
 	}
 }
 
+// TestTextIsNotNormalized pins the rule of spec/03-encoding.md, "Text strings
+// and Unicode": content addressing operates on raw UTF-8 bytes, so the two
+// Unicode forms of "é" are different strings and therefore different entities.
+func TestTextIsNotNormalized(t *testing.T) {
+	const (
+		nfc = "café"  // é as U+00E9
+		nfd = "café" // e + combining acute
+	)
+	a, err := Encode(Text(nfc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Encode(Text(nfd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hex.EncodeToString(a) == hex.EncodeToString(b) {
+		t.Fatal("NFC and NFD forms encoded identically; the encoder must not normalize")
+	}
+	if want := "65636166c3a9"; hex.EncodeToString(a) != want {
+		t.Errorf("precomposed form encoded as %s, want %s", hex.EncodeToString(a), want)
+	}
+	if want := "6663616665cc81"; hex.EncodeToString(b) != want {
+		t.Errorf("decomposed form encoded as %s, want %s", hex.EncodeToString(b), want)
+	}
+	// Both forms are valid UTF-8 and must round-trip unchanged.
+	for _, s := range []string{nfc, nfd} {
+		v, err := Decode(MustEncode(Text(s)))
+		if err != nil {
+			t.Fatalf("Decode(%q): %v", s, err)
+		}
+		if !Equal(v, Text(s)) {
+			t.Errorf("Decode(Encode(%q)) = %#v; text must pass through byte for byte", s, v)
+		}
+	}
+}
+
 func TestEncodeSortsAndRejectsDuplicates(t *testing.T) {
 	t.Run("unsorted input is sorted", func(t *testing.T) {
 		unsorted := Map{{"z", Uint(1)}, {"a", Uint(0)}}

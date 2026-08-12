@@ -9,6 +9,18 @@
 // values, every tag but tag 4, and indefinite-length items — is outside the
 // profile and is rejected by both the encoder and the decoder.
 //
+// Dialog's profile is self-contained: it is RFC 8949 §4.2.1 Core
+// Deterministic Encoding plus the restrictions of spec/03-encoding.md. It is
+// narrower than the general-purpose deterministic CBOR profiles in
+// circulation, so conformance to one does not imply conformance to the other.
+//
+// Text strings are required to be well-formed UTF-8 and are otherwise passed
+// through unchanged. Unicode normalization is deliberately not applied: per
+// spec/03-encoding.md, "Text strings and Unicode", content addressing
+// operates on raw UTF-8 bytes, and strings differing in code points name
+// different entities. Callers that want NFC should normalize user input at
+// capture time, before an entity is built.
+//
 // Encoding is canonical: for any Value there is exactly one byte string, and
 // for any byte string this package accepts there is exactly one Value.
 // Concretely, for every v accepted by Encode:
@@ -255,9 +267,12 @@ func Equal(a, b Value) bool {
 	}
 }
 
-// validText reports an error for text that is not valid UTF-8. RFC 8949
-// requires text strings to be well-formed UTF-8; Dialog inherits that
-// requirement through the dCBOR profile.
+// validText reports an error for text that is not valid UTF-8
+// (spec/03-encoding.md, "Text strings and Unicode").
+//
+// Validity is the only check applied. Dialog forbids Unicode normalization
+// inside the protocol, so text passes through byte for byte; see the package
+// documentation.
 func validText(s string, what string) error {
 	if !utf8.ValidString(s) {
 		return fmt.Errorf("dcbor: %s is not valid UTF-8: %q", what, s)

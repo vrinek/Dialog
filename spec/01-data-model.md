@@ -161,6 +161,7 @@ All entities are identified by: `CID(dCBOR(entity))` externally, and by the raw 
 ## Security Considerations
 
 - Atom descriptions are free-form strings. Implementations SHOULD sanitize descriptions before display to prevent injection attacks.
+- Descriptions are content-addressed over their raw UTF-8 bytes with no Unicode normalization (see [03-encoding.md](03-encoding.md), "Text strings and Unicode"), so an attacker can create an atom that is visually indistinguishable from an existing one using homoglyphs or a different normalization form. Implementations SHOULD detect confusable descriptions and surface them to the user rather than merging them; equivalence between two such atoms is asserted explicitly with the `_A_ is the same as _B_` meta-bond.
 - Content addressing means that identical content always produces the same ID. An attacker cannot create a "different" atom with the same description — this is a feature, not a bug.
 - Hash collisions (two different entities producing the same CID) are computationally infeasible with SHA-256.
 

@@ -24,9 +24,11 @@ All three use fixed parameters with no implementor choice. Two conforming implem
 
 ### Deterministic CBOR
 
-All CBOR encoding in Dialog MUST conform to the dCBOR application profile as specified in [draft-mcnally-deterministic-cbor](https://datatracker.ietf.org/doc/draft-mcnally-deterministic-cbor/).
+Dialog defines its own deterministic encoding profile, specified in full by this section. It is the Core Deterministic Encoding Requirements of [RFC 8949 §4.2.1](https://datatracker.ietf.org/doc/html/rfc8949#section-4.2.1) plus the restrictions below. An implementation that satisfies RFC 8949 §4.2.1 and every rule in this section produces conforming Dialog bytes; no other document is needed to build a conforming codec.
 
-In summary, the following rules apply:
+The profile is deliberately **narrower** than the general-purpose deterministic CBOR profiles in circulation: it admits no floating-point values, no booleans, and exactly one tag. Conformance to another deterministic profile therefore neither implies nor is implied by conformance to this one.
+
+All CBOR encoding in Dialog MUST follow these rules:
 
 1. **Shortest integer encoding.** Integers MUST use the shortest possible encoding (major type 0 or 1 with the smallest additional information value).
 2. **Sorted map keys.** Map keys MUST be sorted in bytewise lexicographic order of their CBOR encoding.
@@ -34,7 +36,17 @@ In summary, the following rules apply:
 4. **No indefinite-length items.** All arrays, maps, byte strings, and text strings MUST use definite-length encoding.
 5. **No floating-point values.** Dialog CBOR documents MUST NOT contain floating-point values (major type 7, additional information 25-27). All numbers MUST be integers. Scalar values requiring decimal precision MUST use a fixed-point representation (integer value with an implicit or explicit scale factor).
 6. **No tags, with one exception.** CBOR tags (major type 6) MUST NOT be used, except tag 4 (decimal fraction) where [01-data-model.md](01-data-model.md) requires it for scalar filler values. Implementations MUST reject every other tag.
-7. **Null is allowed.** The CBOR null value (`0xf6`) MAY be used where the specification permits null (e.g., the `prev` field of a genesis block).
+7. **Null is the only simple value.** The CBOR null value (`0xf6`) MAY be used where this specification permits null (e.g., the `prev` field of a genesis block). Every other major type 7 value — `false` (`0xf4`), `true` (`0xf5`), `undefined` (`0xf7`), and all remaining simple values — MUST NOT be used, and implementations MUST reject them.
+
+#### Text strings and Unicode
+
+Text strings (major type 3) MUST be well-formed UTF-8, as [RFC 8949 §3.1](https://datatracker.ietf.org/doc/html/rfc8949#section-3.1) requires. Encoders MUST NOT emit, and decoders MUST reject, a text string whose bytes are not valid UTF-8.
+
+Content addressing operates on the **raw UTF-8 bytes** of a text string. Implementations MUST NOT apply Unicode normalization — Normalization Form C or any other — before hashing or comparison. Two text strings that differ in their code points are different strings, and the entities containing them have different digests and different CIDs.
+
+*Informative.* This is a deliberate decision, not an omission. Two visually identical strings built from different code points (for example `"é"` as U+00E9 versus U+0065 U+0301) are distinct entities under Dialog, exactly as `"France"` and `"france"` are, or `"New York"` and `"New  York"`. Dialog does not decide which strings mean the same thing; that judgement belongs to authors, and they express it with the `_A_ is the same as _B_` meta-bond of [06-meta-bonds.md](06-meta-bonds.md), which is transitive and subject to L3 filtering like any other assertion. Normalizing inside the protocol would silently merge entities their authors never equated, and would make every implementation's digests depend on the Unicode version it was built against.
+
+Authoring tools SHOULD normalize user input to NFC at capture time — before the entity is created — so that the same text typed on different platforms yields the same entity. That is a user-interface concern, outside the wire format.
 
 #### Decimal fractions
 
@@ -122,7 +134,8 @@ Total multihash size: **34 bytes** (2 prefix bytes + 32 digest bytes).
 
 ## Security Considerations
 
-- Deterministic encoding is critical for content addressing. Any deviation from dCBOR rules will produce different hashes for the same logical content, breaking interoperability.
+- Deterministic encoding is critical for content addressing. Any deviation from the rules of this document will produce different hashes for the same logical content, breaking interoperability.
+- Because content addressing operates on raw UTF-8 bytes with no normalization, visually confusable strings — different code points that render identically, whether through Unicode normalization forms or homoglyphs — produce different entities. Implementations SHOULD warn authors when a newly created entity is confusable with an existing one; they MUST NOT merge them silently.
 - SHA-256 provides 128-bit collision resistance, which is sufficient for the foreseeable future.
 - Locking down CID parameters to a single configuration eliminates a class of interoperability bugs where implementations use different hash functions or codecs.
 - If SHA-256 is ever broken, the multihash and CID formats allow migration to a new hash function by changing the hash function code. This would require a new protocol version.
@@ -186,12 +199,13 @@ Common CBOR patterns used in Dialog:
 ## References
 
 ### Normative
-- [RFC 8949: CBOR](https://datatracker.ietf.org/doc/html/rfc8949) — Concise Binary Object Representation
-- [draft-mcnally-deterministic-cbor](https://datatracker.ietf.org/doc/draft-mcnally-deterministic-cbor/) — Deterministic CBOR application profile
+- [RFC 8949: CBOR](https://datatracker.ietf.org/doc/html/rfc8949) — Concise Binary Object Representation, including §3.1 (text strings are UTF-8) and §4.2.1 (Core Deterministic Encoding Requirements), on which Dialog's profile is built
 - [multiformats/cid](https://github.com/multiformats/cid) — Content Identifier specification
 - [multiformats/multihash](https://github.com/multiformats/multihash) — Self-describing hash specification
 - [multiformats/unsigned-varint](https://github.com/multiformats/unsigned-varint) — Unsigned variable-length integer encoding
 - [RFC 8610: CDDL](https://datatracker.ietf.org/doc/html/rfc8610) — Concise Data Definition Language
 
 ### Informative
+- [draft-mcnally-deterministic-cbor](https://datatracker.ietf.org/doc/draft-mcnally-deterministic-cbor/) — the dCBOR application profile, which inspired Dialog's profile. Dialog's profile is narrower (no floating-point values, no booleans, one tag) and imposes no Unicode normalization, so the two are not interchangeable; this document, not the draft, is normative for Dialog.
+- [Unicode UAX #15](https://unicode.org/reports/tr15/) — Unicode normalization forms, referenced by the NFC-at-capture-time recommendation
 - [cbor.io](https://cbor.io/) — CBOR tools and implementations
