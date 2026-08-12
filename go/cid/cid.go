@@ -12,14 +12,22 @@
 // fillers of type 0, 1 and 2 — encoded as a CBOR byte string (5820 followed
 // by the 32 digest bytes). CID is used only at the API and display boundary.
 //
+// A CID is written as text in the canonical multibase base32 form of
+// spec/03-encoding.md, "Text representation": CID.String produces it and
+// ParseCIDString reads it. The hex helpers (CID.HexString, ParseCIDHex,
+// Digest.String, ParseDigestHex) render byte dumps, matching the
+// illustrations in the specification, and are not an interchange format.
+//
 // This package depends on the standard library only. Callers encode an entity
 // with the dcbor package and pass the resulting bytes to SumDigest or SumCID.
 package cid
 
 import (
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // Fixed CID parameters (spec/03-encoding.md, "Content identifiers"). All four
@@ -43,9 +51,22 @@ const (
 	MultihashSize = 2 + DigestSize
 )
 
+// MultibaseBase32 is the multibase code for lowercase, unpadded RFC 4648
+// base32 — the canonical text form of a CID (spec/03-encoding.md, "Text
+// representation").
+const MultibaseBase32 = "b"
+
+// StringSize is the length of a Dialog CID in its canonical text form: the
+// multibase prefix plus the base32 encoding of 36 bytes.
+const StringSize = len(MultibaseBase32) + (Size*8+4)/5 // 1 + 58 = 59
+
 // prefix is the fixed 4-byte CID prefix: varint(1) || varint(0x71) ||
 // varint(0x12) || varint(0x20).
 var prefix = [PrefixSize]byte{Version, CodecDAGCBOR, HashSHA256, DigestSize}
+
+// base32Lower is the RFC 4648 base32 alphabet in lowercase, without padding,
+// as the multibase "b" encoding requires.
+var base32Lower = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
 // A Digest is a raw 32-byte SHA-256 digest: the form every reference inside a
 // Dialog structure takes.
@@ -109,13 +130,23 @@ func (c CID) Bytes() []byte {
 	return b
 }
 
-// String returns the lowercase hex encoding of the CID.
+// String returns the canonical text form of the CID: its multibase base32
+// encoding, "b" followed by the lowercase unpadded RFC 4648 base32 encoding
+// of all 36 CID bytes (spec/03-encoding.md, "Text representation").
 //
-// The specification fixes the binary form of a CID but does not name a
-// canonical text form for it (see todos/030). Hex is used here because it is
-// what the worked examples in spec/03-encoding.md print; it is not a
-// multibase string.
-func (c CID) String() string { return hex.EncodeToString(c[:]) }
+// This is the standard CIDv1 text form, so a Dialog CID pastes directly into
+// IPFS and multiformats tooling. Every Dialog CID renders as 59 characters
+// beginning "bafyrei".
+func (c CID) String() string {
+	return MultibaseBase32 + base32Lower.EncodeToString(c[:])
+}
+
+// HexString returns the lowercase hex encoding of the 36 CID bytes.
+//
+// This is a byte dump, matching the illustrative hex listings in
+// spec/03-encoding.md. It is not a CID text form: use String for anything
+// that leaves the process.
+func (c CID) HexString() string { return hex.EncodeToString(c[:]) }
 
 // ParseDigest interprets b as a raw 32-byte digest.
 func ParseDigest(b []byte) (Digest, error) {
@@ -160,7 +191,39 @@ func ParseCID(b []byte) (CID, error) {
 	return c, nil
 }
 
-// ParseCIDHex interprets s as the hex encoding of a Dialog CID.
+// ParseCIDString interprets s as a CID in its canonical text form: the
+// multibase base32 encoding of spec/03-encoding.md, "Text representation".
+//
+// The form is exact. A missing or wrong multibase prefix, uppercase base32
+// (multibase "B"), padding, or a wrong length is an error, as is any string
+// whose decoded bytes fail the fixed-parameter validation of ParseCID.
+func ParseCIDString(s string) (CID, error) {
+	if s == "" {
+		return CID{}, fmt.Errorf("cid: empty CID string")
+	}
+	if !strings.HasPrefix(s, MultibaseBase32) {
+		return CID{}, fmt.Errorf("cid: CID string must start with the multibase code %q (base32, lowercase, unpadded), got %q", MultibaseBase32, s[:1])
+	}
+	body := s[len(MultibaseBase32):]
+	if strings.Contains(body, "=") {
+		return CID{}, fmt.Errorf("cid: CID string must not use base32 padding")
+	}
+	if body != strings.ToLower(body) {
+		return CID{}, fmt.Errorf("cid: CID string must use the lowercase base32 alphabet")
+	}
+	if len(s) != StringSize {
+		return CID{}, fmt.Errorf("cid: CID string is %d characters, want %d", len(s), StringSize)
+	}
+	b, err := base32Lower.DecodeString(body)
+	if err != nil {
+		return CID{}, fmt.Errorf("cid: invalid base32 in CID string: %w", err)
+	}
+	return ParseCID(b)
+}
+
+// ParseCIDHex interprets s as the hex encoding of the 36 CID bytes. It is the
+// inverse of CID.HexString and reads the byte dumps printed by
+// spec/03-encoding.md; ParseCIDString reads the canonical text form.
 func ParseCIDHex(s string) (CID, error) {
 	b, err := hex.DecodeString(s)
 	if err != nil {

@@ -13,6 +13,9 @@ const (
 	exampleCBOR   = "a16b6465736372697074696f6e664672616e6365"
 	exampleDigest = "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
 	exampleCID    = "01711220" + exampleDigest
+	// The canonical text form of the same CID (spec/03-encoding.md, "Text
+	// representation" and the step 4 of the worked example).
+	exampleCIDString = "bafyreihfo5q3iopobs5x554uekymz2jh27ibi7qauuubzqltwbdvkevyii"
 )
 
 // TestSpecWorkedExample reproduces the atom example of spec/03-encoding.md
@@ -32,8 +35,11 @@ func TestSpecWorkedExample(t *testing.T) {
 	}
 
 	c := digest.CID()
-	if got := c.String(); got != exampleCID {
-		t.Fatalf("step 3, CID = %s, want %s", got, exampleCID)
+	if got := c.HexString(); got != exampleCID {
+		t.Fatalf("step 3, CID bytes = %s, want %s", got, exampleCID)
+	}
+	if got := c.String(); got != exampleCIDString {
+		t.Fatalf("step 4, CID text = %s, want %s", got, exampleCIDString)
 	}
 	if got := SumCID(encoded); got != c {
 		t.Errorf("SumCID = %s, want %s", got, c)
@@ -145,8 +151,8 @@ func TestParseCIDAcceptsValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCID: %v", err)
 	}
-	if c.String() != exampleCID {
-		t.Errorf("ParseCID round trip = %s, want %s", c, exampleCID)
+	if c.HexString() != exampleCID {
+		t.Errorf("ParseCID round trip = %s, want %s", c.HexString(), exampleCID)
 	}
 	if c.Digest().String() != exampleDigest {
 		t.Errorf("Digest = %s, want %s", c.Digest(), exampleDigest)
@@ -169,6 +175,104 @@ func TestParseHexRoundTrip(t *testing.T) {
 	if c != d.CID() {
 		t.Errorf("ParseCIDHex = %s, want %s", c, d.CID())
 	}
+}
+
+// TestCIDStringRoundTrip checks the canonical text form of
+// spec/03-encoding.md, "Text representation", on the France atom of the
+// worked example.
+func TestCIDStringRoundTrip(t *testing.T) {
+	c, err := ParseCIDHex(exampleCID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := c.String()
+	if s != exampleCIDString {
+		t.Fatalf("CID.String = %s, want %s", s, exampleCIDString)
+	}
+	if len(s) != StringSize {
+		t.Errorf("CID string length = %d, want %d", len(s), StringSize)
+	}
+	if !strings.HasPrefix(s, "bafyrei") {
+		t.Errorf("CID string %s does not start with bafyrei", s)
+	}
+
+	back, err := ParseCIDString(s)
+	if err != nil {
+		t.Fatalf("ParseCIDString: %v", err)
+	}
+	if back != c {
+		t.Errorf("ParseCIDString round trip = %s, want %s", back.HexString(), c.HexString())
+	}
+	if back.Digest().String() != exampleDigest {
+		t.Errorf("digest after round trip = %s, want %s", back.Digest(), exampleDigest)
+	}
+
+	// Every CID renders and parses back to itself.
+	for _, in := range []string{"", "France", "Paris, the capital of France"} {
+		c := SumCID([]byte(in))
+		got, err := ParseCIDString(c.String())
+		if err != nil {
+			t.Fatalf("ParseCIDString(%s): %v", c, err)
+		}
+		if got != c {
+			t.Errorf("round trip of %s produced %s", c.HexString(), got.HexString())
+		}
+	}
+}
+
+func TestParseCIDStringRejects(t *testing.T) {
+	// The base32 body of the worked example, without its multibase prefix.
+	body := exampleCIDString[1:]
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", "empty CID string"},
+		{"no multibase prefix", body, "multibase code"},
+		{"wrong multibase prefix (base58btc)", "z" + body, "multibase code"},
+		{"wrong multibase prefix (base16)", "f" + exampleCID, "multibase code"},
+		{"uppercase multibase prefix", "B" + strings.ToUpper(body), "multibase code"},
+		{"uppercase body", "b" + strings.ToUpper(body), "lowercase base32"},
+		{"padded", "b" + body + "==", "padding"},
+		{"truncated", "b" + body[:len(body)-1], "want 59"},
+		{"too long", exampleCIDString + "a", "want 59"},
+		{"hex byte dump", exampleCID, "multibase code"},
+		{"non-base32 character", "b" + body[:len(body)-1] + "1", "invalid base32"},
+		{
+			// A well-formed base32 CID with the raw codec instead of dag-cbor.
+			"wrong codec",
+			mustCIDString(t, "01551220"+exampleDigest),
+			"content codec",
+		},
+		{
+			"wrong hash function",
+			mustCIDString(t, "01711320"+exampleDigest),
+			"hash function",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, err := ParseCIDString(tc.in); err == nil {
+				t.Fatalf("ParseCIDString(%q) = %s, want an error", tc.in, got.HexString())
+			} else if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ParseCIDString(%q) error = %v, want it to mention %q", tc.in, err, tc.want)
+			}
+		})
+	}
+}
+
+// mustCIDString base32-encodes arbitrary 36 bytes, bypassing ParseCID, so
+// that the parameter validation of ParseCIDString can be exercised.
+func mustCIDString(t *testing.T, hexBytes string) string {
+	t.Helper()
+	b, err := hex.DecodeString(hexBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return MultibaseBase32 + base32Lower.EncodeToString(b)
 }
 
 func TestParseHexErrors(t *testing.T) {

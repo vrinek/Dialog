@@ -94,6 +94,18 @@ CID = 0x01 || 0x71 || 0x12 || 0x20 || <32 bytes SHA-256 digest>
 
 Total CID size: **36 bytes** (4 prefix bytes + 32 digest bytes).
 
+#### Text representation
+
+The canonical text representation of a CID is its **multibase base32** encoding: the lowercase RFC 4648 base32 alphabet (`abcdefghijklmnopqrstuvwxyz234567`) without padding, prefixed with the multibase code `b`, applied to all 36 CID bytes. This is the standard text form of a CIDv1, as defined by [multiformats/cid](https://github.com/multiformats/cid) and [multiformats/multibase](https://github.com/multiformats/multibase).
+
+```
+text(CID) = "b" || base32-lower-nopad(<36 CID bytes>)
+```
+
+Implementations MUST emit this form wherever a CID is rendered as text — APIs, logs, user interfaces, and any interchange between systems. The encoding is 59 characters long for Dialog's fixed 36-byte CIDs, always begins with `bafyrei`, and is case-sensitive on input: uppercase base32 (multibase code `B`) and padded forms MUST be rejected, as MUST any string whose decoded bytes fail the parameter validation above.
+
+Hexadecimal byte listings in this specification's examples illustrate the **binary** form of a CID. They are a byte dump, not a wire or text format, and implementations MUST NOT treat bare hex as a CID string.
+
 ### Computing an entity's CID
 
 To compute the CID of any Dialog entity (atom, bond, molecule, or block):
@@ -156,10 +168,15 @@ Step 1 — dCBOR encode:
 Step 2 — SHA-256:
   e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842
 
-Step 3 — CID:
+Step 3 — CID (36 bytes, shown as a byte dump):
   01 71 12 20 e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b047
   5512b842
+
+Step 4 — canonical text form (multibase base32):
+  bafyreihfo5q3iopobs5x554uekymz2jh27ibi7qauuubzqltwbdvkevyii
 ```
+
+The byte dump in step 3 is illustration; `bafyreihfo5q3iopobs5x554uekymz2jh27ibi7qauuubzqltwbdvkevyii` is the CID as it is written down, passed through an API, or logged.
 
 ### Encoding a decimal fraction
 
@@ -202,6 +219,8 @@ Common CBOR patterns used in Dialog:
 - [RFC 8949: CBOR](https://datatracker.ietf.org/doc/html/rfc8949) — Concise Binary Object Representation, including §3.1 (text strings are UTF-8) and §4.2.1 (Core Deterministic Encoding Requirements), on which Dialog's profile is built
 - [multiformats/cid](https://github.com/multiformats/cid) — Content Identifier specification
 - [multiformats/multihash](https://github.com/multiformats/multihash) — Self-describing hash specification
+- [multiformats/multibase](https://github.com/multiformats/multibase) — Self-describing base encodings, source of the `b` (base32, lowercase, unpadded) text form of a CID
+- [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648) — Base32 alphabet used by the `b` multibase encoding
 - [multiformats/unsigned-varint](https://github.com/multiformats/unsigned-varint) — Unsigned variable-length integer encoding
 - [RFC 8610: CDDL](https://datatracker.ietf.org/doc/html/rfc8610) — Concise Data Definition Language
 

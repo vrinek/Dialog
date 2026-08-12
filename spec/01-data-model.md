@@ -176,9 +176,12 @@ Logical:   {"description": "Paris, the capital of France"}
 CBOR hex:  a16b6465736372697074696f6e781c50617269732c20746865206361706974616c
            206f66204672616e6365
 SHA-256:   6545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd
-CID:       017112206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360
+CID bytes: 017112206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360
            965411fd
+CID text:  bafyreidfiucqui6ufw55tl3dnis7w2rxhptk45pz3eufhhczinqjmvar7u
 ```
+
+The hex line is a byte dump; the text line is the canonical multibase base32 form in which a CID is written down. See [03-encoding.md](03-encoding.md), "Text representation".
 
 ### Bond
 
