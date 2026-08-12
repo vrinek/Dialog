@@ -52,6 +52,19 @@ var specTable = []canonical{
 	{"integer 0", Uint(0), "00"},
 	{"integer 1", Uint(1), "01"},
 	{"empty array", Array{}, "80"},
+	{"decimal fraction 3.14", Decimal{Exponent: -2, Mantissa: 314}, "c48221 19013a"},
+}
+
+// decimalTable covers the canonical tag 4 encoding
+// (spec/03-encoding.md, "Decimal fractions").
+var decimalTable = []canonical{
+	{"decimal -3.14", Decimal{Exponent: -2, Mantissa: -314}, "c4822139 0139"},
+	{"decimal 0.1", Decimal{Exponent: -1, Mantissa: 1}, "c4822001"},
+	{"decimal -0.1", Decimal{Exponent: -1, Mantissa: -1}, "c4822020"},
+	{"decimal smallest exponent", Decimal{Exponent: -1 << 63, Mantissa: 1}, "c4823b7fffffffffffffff01"},
+	{"decimal largest mantissa", Decimal{Exponent: -1, Mantissa: 1<<63 - 1}, "c482201b7fffffffffffffff"},
+	{"decimal most negative mantissa", Decimal{Exponent: -1, Mantissa: -1 << 63}, "c482203b7fffffffffffffff"},
+	{"decimal in a molecule filler", Map{{"type", Uint(4)}, {"value", Decimal{Exponent: -2, Mantissa: 314}}}, "a2647479706504 6576616c7565 c4822119013a"},
 }
 
 // intTable exercises every boundary of the shortest-form integer encoding.
@@ -109,6 +122,7 @@ func allTables() []canonical {
 	var all []canonical
 	all = append(all, specTable...)
 	all = append(all, intTable...)
+	all = append(all, decimalTable...)
 	all = append(all, structureTable...)
 	return all
 }
@@ -137,6 +151,82 @@ func TestSpecWorkedExample(t *testing.T) {
 	}
 	if hex.EncodeToString(got) != want {
 		t.Fatalf("dCBOR({\"description\": \"France\"}) = %s, want %s", hex.EncodeToString(got), want)
+	}
+}
+
+// TestSpecDecimalWorkedExample reproduces spec/03-encoding.md, "Encoding a
+// decimal fraction".
+func TestSpecDecimalWorkedExample(t *testing.T) {
+	const want = "c4822119013a"
+	got, err := Encode(Decimal{Exponent: -2, Mantissa: 314})
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if hex.EncodeToString(got) != want {
+		t.Fatalf("dCBOR(3.14) = %s, want %s", hex.EncodeToString(got), want)
+	}
+}
+
+// TestEncodeRejectsNonCanonicalDecimal checks that the raw Encode path never
+// emits a decimal fraction that violates the canonicalization rules of
+// spec/03-encoding.md.
+func TestEncodeRejectsNonCanonicalDecimal(t *testing.T) {
+	tests := []struct {
+		name string
+		val  Decimal
+		want string
+	}{
+		{"zero exponent", Decimal{Exponent: 0, Mantissa: 3}, "is not negative"},
+		{"positive exponent", Decimal{Exponent: 2, Mantissa: 314}, "is not negative"},
+		{"zero mantissa", Decimal{Exponent: -2, Mantissa: 0}, "mantissa is zero"},
+		{"mantissa divisible by 10", Decimal{Exponent: -3, Mantissa: 3140}, "divisible by 10"},
+		{"negative mantissa divisible by 10", Decimal{Exponent: -3, Mantissa: -3140}, "divisible by 10"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := Encode(tc.val); err == nil {
+				t.Fatalf("Encode(%+v) should have failed", tc.val)
+			} else if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Encode error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewDecimal(t *testing.T) {
+	tests := []struct {
+		name     string
+		exp, man int64
+		want     Value
+	}{
+		{"already canonical", -2, 314, Decimal{Exponent: -2, Mantissa: 314}},
+		{"strips trailing zeros", -3, 3140, Decimal{Exponent: -2, Mantissa: 314}},
+		{"strips several zeros", -5, 314000, Decimal{Exponent: -2, Mantissa: 314}},
+		{"negative mantissa", -3, -3140, Decimal{Exponent: -2, Mantissa: -314}},
+		{"whole number by cancellation", -2, 300, Uint(3)},
+		{"negative whole number", -2, -300, Int(-3)},
+		{"zero mantissa", -2, 0, Uint(0)},
+		{"zero exponent", 0, 42, Uint(42)},
+		{"positive exponent", 2, 314, Uint(31400)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewDecimal(tc.exp, tc.man)
+			if err != nil {
+				t.Fatalf("NewDecimal(%d, %d): %v", tc.exp, tc.man, err)
+			}
+			if !Equal(got, tc.want) {
+				t.Errorf("NewDecimal(%d, %d) = %#v, want %#v", tc.exp, tc.man, got, tc.want)
+			}
+			// Whatever it returns must be encodable.
+			if _, err := Encode(got); err != nil {
+				t.Errorf("Encode(NewDecimal(%d, %d)): %v", tc.exp, tc.man, err)
+			}
+		})
+	}
+
+	if _, err := NewDecimal(30, 1<<62); err == nil {
+		t.Error("NewDecimal should have reported int64 overflow")
 	}
 }
 
@@ -234,6 +324,10 @@ func TestEqual(t *testing.T) {
 		{"map different value", Map{{"a", Uint(0)}}, Map{{"a", Uint(1)}}, false},
 		{"map different key", Map{{"a", Uint(0)}}, Map{{"b", Uint(0)}}, false},
 		{"map duplicate keys not equal", Map{{"a", Uint(0)}, {"a", Uint(0)}}, Map{{"a", Uint(0)}, {"b", Uint(0)}}, false},
+		{"same decimal", Decimal{-2, 314}, Decimal{-2, 314}, true},
+		{"different decimal exponent", Decimal{-2, 314}, Decimal{-1, 314}, false},
+		{"different decimal mantissa", Decimal{-2, 314}, Decimal{-2, -314}, false},
+		{"decimal vs uint", Decimal{-2, 314}, Uint(314), false},
 		{"null", Null, Null, true},
 		{"null vs uint", Null, Uint(0), false},
 	}

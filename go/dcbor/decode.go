@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -24,10 +26,11 @@ func (e *SyntaxError) Error() string {
 //
 // Decode is a validator as much as a parser: it rejects anything that is not
 // the canonical encoding of the value it represents. That includes
-// floating-point values and every other major type 7 value except null, tags,
-// indefinite-length items, non-shortest integer and length encodings,
-// unsorted or duplicate map keys, non-text map keys, text that is not valid
-// UTF-8, truncated input, and trailing bytes after the top-level value.
+// floating-point values and every other major type 7 value except null, every
+// tag but tag 4, non-canonical tag 4 decimal fractions, indefinite-length
+// items, non-shortest integer and length encodings, unsorted or duplicate map
+// keys, non-text map keys, text that is not valid UTF-8, truncated input, and
+// trailing bytes after the top-level value.
 func Decode(b []byte) (Value, error) {
 	d := &decoder{data: b}
 	v, err := d.value(0)
@@ -112,12 +115,89 @@ func (d *decoder) value(depth int) (Value, error) {
 		return d.mapValue(start, ai, depth)
 
 	case majorTag:
-		return nil, d.errorAt(start, "CBOR tags (major type 6) are not permitted")
+		return d.tagValue(start, ai, depth)
 
 	case majorOther:
 		return d.simple(start, ai)
 	}
 	panic("unreachable")
+}
+
+// tagValue handles major type 6. Tag 4 (decimal fraction) is the sole tag
+// inside Dialog's profile; every other tag is rejected
+// (spec/03-encoding.md, "Deterministic CBOR" rule 6).
+func (d *decoder) tagValue(start int, ai byte, depth int) (Value, error) {
+	tag, err := d.argument(start, ai)
+	if err != nil {
+		return nil, err
+	}
+	if tag != tagDecimalFraction {
+		return nil, d.errorAt(start, fmt.Sprintf("CBOR tags (major type 6) are not permitted, except tag 4 (decimal fraction); got tag %d", tag))
+	}
+	if depth+1 > MaxDepth {
+		return nil, d.errorAt(start, fmt.Sprintf("nesting deeper than %d levels", MaxDepth))
+	}
+
+	// c4 82 <exponent> <mantissa> (spec/03-encoding.md, "Decimal fractions").
+	arrStart := d.pos
+	if d.pos >= len(d.data) {
+		return nil, d.errorAt(arrStart, "unexpected end of input in tag 4 content")
+	}
+	ib := d.data[d.pos]
+	d.pos++
+	major, arrAI := ib>>5, ib&0x1f
+	if major != majorArray {
+		return nil, d.errorAt(arrStart, "tag 4 content must be an array of exactly two integers")
+	}
+	n, err := d.count(arrStart, arrAI, "array")
+	if err != nil {
+		return nil, err
+	}
+	if n != 2 {
+		return nil, d.errorAt(arrStart, fmt.Sprintf("tag 4 content array has %d element(s), want exactly 2 ([exponent, mantissa])", n))
+	}
+
+	exponent, err := d.decimalInt("exponent")
+	if err != nil {
+		return nil, err
+	}
+	mantissa, err := d.decimalInt("mantissa")
+	if err != nil {
+		return nil, err
+	}
+
+	dec := Decimal{Exponent: exponent, Mantissa: mantissa}
+	if err := dec.checkCanonical(); err != nil {
+		// checkCanonical's messages are already specific; give them an offset.
+		return nil, d.errorAt(start, strings.TrimPrefix(err.Error(), "dcbor: "))
+	}
+	return dec, nil
+}
+
+// decimalInt decodes one element of a tag 4 content array, which must be a
+// shortest-form major type 0 or 1 integer within the int64 range.
+func (d *decoder) decimalInt(what string) (int64, error) {
+	start := d.pos
+	if d.pos >= len(d.data) {
+		return 0, d.errorAt(start, fmt.Sprintf("unexpected end of input in decimal fraction %s", what))
+	}
+	ib := d.data[d.pos]
+	d.pos++
+	major, ai := ib>>5, ib&0x1f
+	if major != majorUint && major != majorNeg {
+		return 0, d.errorAt(start, fmt.Sprintf("decimal fraction %s must be an integer (major type 0 or 1)", what))
+	}
+	arg, err := d.argument(start, ai)
+	if err != nil {
+		return 0, err
+	}
+	if arg > math.MaxInt64 {
+		return 0, d.errorAt(start, fmt.Sprintf("decimal fraction %s is outside the int64 range", what))
+	}
+	if major == majorNeg {
+		return -1 - int64(arg), nil
+	}
+	return int64(arg), nil
 }
 
 // simple handles major type 7. Only null is inside Dialog's profile.

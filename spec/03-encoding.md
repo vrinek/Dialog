@@ -33,8 +33,27 @@ In summary, the following rules apply:
 3. **No duplicate map keys.** Each map key MUST appear at most once.
 4. **No indefinite-length items.** All arrays, maps, byte strings, and text strings MUST use definite-length encoding.
 5. **No floating-point values.** Dialog CBOR documents MUST NOT contain floating-point values (major type 7, additional information 25-27). All numbers MUST be integers. Scalar values requiring decimal precision MUST use a fixed-point representation (integer value with an implicit or explicit scale factor).
-6. **No tags.** CBOR tags (major type 6) MUST NOT be used unless explicitly required by this specification.
+6. **No tags, with one exception.** CBOR tags (major type 6) MUST NOT be used, except tag 4 (decimal fraction) where [01-data-model.md](01-data-model.md) requires it for scalar filler values. Implementations MUST reject every other tag.
 7. **Null is allowed.** The CBOR null value (`0xf6`) MAY be used where the specification permits null (e.g., the `prev` field of a genesis block).
+
+#### Decimal fractions
+
+Tag 4 is the only tag permitted in a Dialog document (rule 6). Its deterministic encoding is:
+
+```
+c4                      ; tag 4 (decimal fraction)
+  82                    ; definite-length array of exactly 2 elements
+    <exponent>          ; shortest-form major type 0 or 1 integer
+    <mantissa>          ; shortest-form major type 0 or 1 integer
+```
+
+The array MUST have definite length and exactly two elements, exponent first. Neither element may itself be a tag, a float, or any type other than a major type 0 or 1 integer, and each MUST use the shortest-form encoding of rule 1. The value denoted is `mantissa × 10^exponent`.
+
+Because a CID is a hash of the encoded bytes, every value MUST have exactly one representation. The following canonicalization rules make the representation unique:
+
+1. Tag 4 MUST be used only for values that are not representable as a CBOR integer — that is, the exponent MUST be negative. Whole numbers MUST be encoded as plain integers (major type 0 or 1), never as a decimal fraction.
+2. The mantissa MUST NOT be divisible by 10: trailing decimal zeros MUST be stripped from the mantissa and absorbed into the exponent (`[-2, 3140]` is invalid; the same value is `[-1, 314]`). The mantissa MUST NOT be zero, since zero is a whole number and rule 1 requires it to be encoded as the integer `0`.
+3. Decoders MUST reject a tag 4 value that violates these rules as non-canonical, exactly as they reject a non-shortest integer encoding.
 
 ### Content identifiers (CIDs)
 
@@ -129,6 +148,24 @@ Step 3 — CID:
   5512b842
 ```
 
+### Encoding a decimal fraction
+
+The scalar value `3.14`, as it appears in a molecule's filler:
+
+```
+Logical:   3.14 = 314 × 10^-2  →  #6.4([-2, 314])
+
+dCBOR encode:
+  c4         ; tag 4 (decimal fraction)
+  82         ; array of 2 elements
+  21         ; -2   (major type 1, shortest form)
+  19 013a    ; 314  (major type 0, two-byte argument)
+
+CBOR hex:  c48221 19013a
+```
+
+The mantissa 314 is not divisible by 10 and the exponent is negative, so this is the canonical form. `#6.4([-1, 31])` denotes a different value (3.1); `#6.4([-3, 3140])` denotes the same value and is therefore **invalid** — decoders MUST reject it. The whole number `3` is encoded as the integer `03`, never as `#6.4([0, 3])`.
+
 ### CBOR encoding reference
 
 Common CBOR patterns used in Dialog:
@@ -144,6 +181,7 @@ Common CBOR patterns used in Dialog:
 | Integer 0 | `00` | Major type 0, value 0 |
 | Integer 1 | `01` | Major type 0, value 1 |
 | Empty array | `80` | Major type 4, length 0 |
+| Decimal fraction | `c482` + exponent + mantissa | Tag 4, 2-element array `[exponent, mantissa]` |
 
 ## References
 

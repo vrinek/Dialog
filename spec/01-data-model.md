@@ -140,6 +140,8 @@ A scalar is one of:
 
 Decimal fractions use CBOR tag 4, encoding the value as `[exponent, mantissa]` where both are integers. For example, `3.14` is encoded as `#6.4([-2, 314])`. This is dCBOR-compatible since both components are integers -- no IEEE 754 floats are used.
 
+Tag 4 is the only tag Dialog permits, and its encoding is canonicalized so that each value has exactly one representation: the exponent MUST be negative and the mantissa MUST NOT be zero or divisible by 10. Whole numbers are therefore always encoded as plain integers, never as decimal fractions. See [03-encoding.md](03-encoding.md), "Decimal fractions", for the normative rules.
+
 There are no plain dates in Dialog. The date "Thursday, Feb 20, 2026" is represented as a datetime range from `2026-02-20T00:00:00Z` to `2026-02-20T23:59:59Z`.
 
 #### Content addressing

@@ -3,11 +3,11 @@
 // spec/03-encoding.md ("Deterministic CBOR").
 //
 // The profile is deliberately small. Dialog structures are built from
-// unsigned and negative integers, text strings, byte strings, arrays, maps
-// with text-string keys, and null. Everything else — floating-point values,
-// booleans, undefined, other simple values, tags, and indefinite-length
-// items — is outside the profile and is rejected by both the encoder and the
-// decoder.
+// unsigned and negative integers, decimal fractions (CBOR tag 4), text
+// strings, byte strings, arrays, maps with text-string keys, and null.
+// Everything else — floating-point values, booleans, undefined, other simple
+// values, every tag but tag 4, and indefinite-length items — is outside the
+// profile and is rejected by both the encoder and the decoder.
 //
 // Encoding is canonical: for any Value there is exactly one byte string, and
 // for any byte string this package accepts there is exactly one Value.
@@ -35,7 +35,8 @@ import (
 const MaxDepth = 64
 
 // A Value is a CBOR value inside Dialog's dCBOR profile. The only
-// implementations are Uint, Neg, Text, Bytes, Array, Map, and NullValue.
+// implementations are Uint, Neg, Decimal, Text, Bytes, Array, Map, and
+// NullValue.
 type Value interface {
 	isValue()
 }
@@ -47,6 +48,76 @@ type Uint uint64
 // Neg is a negative CBOR integer (major type 1). It represents the value
 // -1 - Neg, and so covers the whole range -1..-2^64.
 type Neg uint64
+
+// Decimal is a CBOR decimal fraction (tag 4), denoting the exact value
+// Mantissa × 10^Exponent. It is the only tag inside Dialog's profile, and it
+// carries the non-integer scalar filler values of spec/01-data-model.md.
+//
+// Only the canonical form of spec/03-encoding.md ("Decimal fractions") is a
+// valid Decimal, so that each value has exactly one encoding:
+//
+//   - Exponent MUST be negative. Whole numbers are Uint or Neg, never Decimal.
+//   - Mantissa MUST NOT be zero and MUST NOT be divisible by 10.
+//
+// Encode rejects any other Decimal, and Decode rejects the corresponding
+// bytes. Use NewDecimal to build one from an arbitrary exponent/mantissa
+// pair: it performs the canonicalization and returns an integer Value when
+// the result is a whole number.
+//
+// Both components are int64. CBOR permits the full 64-bit unsigned range on
+// each side, so a decimal fraction whose exponent or mantissa lies outside
+// [-2^63, 2^63-1] is rejected rather than represented. That range covers
+// every value Dialog v1 needs; widening it would mean a big-integer
+// representation and a new value kind.
+type Decimal struct {
+	Exponent int64
+	Mantissa int64
+}
+
+// NewDecimal returns the canonical Value for mantissa × 10^exponent: a
+// Decimal when the value is not a whole number, and a Uint or Neg when it is.
+// Trailing zeros in the mantissa are absorbed into the exponent.
+//
+// It returns an error when the value is a whole number too large for an
+// int64, since Dialog's profile has no representation for it.
+func NewDecimal(exponent, mantissa int64) (Value, error) {
+	if mantissa == 0 {
+		return Uint(0), nil
+	}
+	// Strip trailing decimal zeros: [-2, 3140] and [-1, 314] denote the same
+	// value, and only the latter is canonical.
+	for exponent < 0 && mantissa%10 == 0 {
+		mantissa /= 10
+		exponent++
+	}
+	if exponent < 0 {
+		return Decimal{Exponent: exponent, Mantissa: mantissa}, nil
+	}
+	// A non-negative exponent means a whole number, which rule 1 requires to
+	// be a plain integer.
+	for ; exponent > 0; exponent-- {
+		scaled := mantissa * 10
+		if scaled/10 != mantissa {
+			return nil, fmt.Errorf("dcbor: decimal fraction %d×10^%d overflows int64", mantissa, exponent)
+		}
+		mantissa = scaled
+	}
+	return Int(mantissa), nil
+}
+
+// checkCanonical reports an error if d is not in the canonical form required
+// by spec/03-encoding.md, "Decimal fractions".
+func (d Decimal) checkCanonical() error {
+	switch {
+	case d.Exponent >= 0:
+		return fmt.Errorf("dcbor: decimal fraction exponent %d is not negative; whole numbers must be encoded as integers", d.Exponent)
+	case d.Mantissa == 0:
+		return fmt.Errorf("dcbor: decimal fraction mantissa is zero; zero must be encoded as the integer 0")
+	case d.Mantissa%10 == 0:
+		return fmt.Errorf("dcbor: decimal fraction mantissa %d is divisible by 10; trailing zeros must be stripped into the exponent", d.Mantissa)
+	}
+	return nil
+}
 
 // Text is a CBOR text string (major type 3). Its contents MUST be valid
 // UTF-8.
@@ -82,6 +153,7 @@ var Null = NullValue{}
 
 func (Uint) isValue()      {}
 func (Neg) isValue()       {}
+func (Decimal) isValue()   {}
 func (Text) isValue()      {}
 func (Bytes) isValue()     {}
 func (Array) isValue()     {}
@@ -135,6 +207,9 @@ func Equal(a, b Value) bool {
 		return ok && av == bv
 	case Neg:
 		bv, ok := b.(Neg)
+		return ok && av == bv
+	case Decimal:
+		bv, ok := b.(Decimal)
 		return ok && av == bv
 	case Text:
 		bv, ok := b.(Text)

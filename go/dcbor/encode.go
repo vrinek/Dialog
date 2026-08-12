@@ -22,10 +22,15 @@ const (
 // aiNull is the additional-information value of the simple value null (0xf6).
 const aiNull byte = 22
 
+// tagDecimalFraction is CBOR tag 4, the only tag inside Dialog's profile
+// (spec/03-encoding.md, "Deterministic CBOR" rule 6).
+const tagDecimalFraction uint64 = 4
+
 // Encode returns the canonical dCBOR encoding of v.
 //
 // It returns an error if v contains a duplicate map key, text that is not
-// valid UTF-8, a nil Value, or nesting deeper than MaxDepth.
+// valid UTF-8, a non-canonical Decimal, a nil Value, or nesting deeper than
+// MaxDepth.
 func Encode(v Value) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := encodeValue(&buf, v, 0); err != nil {
@@ -53,6 +58,20 @@ func encodeValue(buf *bytes.Buffer, v Value, depth int) error {
 		writeHead(buf, majorUint, uint64(val))
 	case Neg:
 		writeHead(buf, majorNeg, uint64(val))
+	case Decimal:
+		// c4 82 <exponent> <mantissa>, both shortest-form integers
+		// (spec/03-encoding.md, "Decimal fractions").
+		if err := val.checkCanonical(); err != nil {
+			return err
+		}
+		writeHead(buf, majorTag, tagDecimalFraction)
+		writeHead(buf, majorArray, 2)
+		if err := encodeValue(buf, Int(val.Exponent), depth+1); err != nil {
+			return err
+		}
+		if err := encodeValue(buf, Int(val.Mantissa), depth+1); err != nil {
+			return err
+		}
 	case Text:
 		if err := validText(string(val), "text string"); err != nil {
 			return err

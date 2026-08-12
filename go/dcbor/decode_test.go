@@ -73,9 +73,38 @@ func TestDecodeRejects(t *testing.T) {
 		{"one-byte simple value", "f8ff", "simple value"},
 		{"lone break", "ff", "break"},
 
-		// Tags.
-		{"tag 1 (epoch time)", "c11a514b67b0", "tags"},
-		{"tag 4 (decimal fraction)", "c48221196ab3", "tags"},
+		// Tags. Tag 4 is the sole exception (spec/03-encoding.md rule 6).
+		{"tag 0 (date/time string)", "c06161", "except tag 4"},
+		{"tag 1 (epoch time)", "c11a514b67b0", "except tag 4"},
+		{"tag 2 (bignum)", "c249010000000000000000", "except tag 4"},
+		{"tag 5 (bigfloat)", "c58221196ab3", "except tag 4"},
+		{"tag 42 (CID)", "d82a49000102030405060708", "except tag 4"},
+		{"non-shortest tag 4", "d8048221196ab3", "shortest form"},
+
+		// Tag 4 content rules (spec/03-encoding.md, "Decimal fractions").
+		{"tag 4 content not an array", "c41901f4", "must be an array of exactly two integers"},
+		{"tag 4 content map", "c4a1616100", "must be an array of exactly two integers"},
+		{"tag 4 array of 1", "c4812100", "want exactly 2"},
+		{"tag 4 array of 3", "c4832119013a00", "want exactly 2"},
+		{"tag 4 array of 0", "c480", "want exactly 2"},
+		{"tag 4 indefinite array", "c49f2119013aff", "indefinite-length array"},
+		{"tag 4 float exponent", "c482f93c0019013a", "exponent must be an integer"},
+		{"tag 4 float mantissa", "c48221fb3ff199999999999a", "mantissa must be an integer"},
+		{"tag 4 text mantissa", "c4822163616263", "mantissa must be an integer"},
+		{"tag 4 nested tag", "c482c4822119013a01", "exponent must be an integer"},
+		{"tag 4 non-shortest mantissa", "c4822119003a", "shortest form"},
+		{"tag 4 truncated array", "c48221", "exceeds"},
+		{"tag 4 truncated mantissa", "c482211901", "unexpected end of input"},
+		{"tag 4 truncated after head", "c4", "unexpected end of input in tag 4 content"},
+		{"tag 4 mantissa beyond int64", "c482201bffffffffffffffff", "outside the int64 range"},
+		{"tag 4 exponent beyond int64", "c4823bffffffffffffffff01", "outside the int64 range"},
+
+		// Tag 4 canonicalization rules.
+		{"tag 4 zero exponent", "c4820019013a", "is not negative"},
+		{"tag 4 positive exponent", "c4820219013a", "is not negative"},
+		{"tag 4 zero mantissa", "c4822100", "mantissa is zero"},
+		{"tag 4 mantissa divisible by 10", "c48222190c44", "divisible by 10"},
+		{"tag 4 negative mantissa divisible by 10", "c48222390c43", "divisible by 10"},
 
 		// Indefinite lengths.
 		{"indefinite byte string", "5f42010243030405ff", "indefinite-length byte string"},

@@ -24,6 +24,12 @@ func FuzzRoundTrip(f *testing.F) {
 	for _, s := range []string{
 		"", "1817", "f5", "fb3ff199999999999a", "c101", "9f01ff",
 		"a2616200616100", "a26161006161 00", "a10102", "6180", "0000", "ff",
+		// Tag 4 decimal fractions: the canonical form and each way of
+		// violating the canonicalization rules of spec/03-encoding.md.
+		"c4822119013a", "c482213901 39", "c4822001", "c4820019013a",
+		"c4820219013a", "c4822100", "c48222190c44", "c48121", "c4832119013a00",
+		"c49f2119013aff", "c482f93c0019013a", "c48221fb3ff199999999999a",
+		"c4822119003a", "d8048221196ab3", "c482201bffffffffffffffff",
 	} {
 		b, err := hex.DecodeString(strings.ReplaceAll(s, " ", ""))
 		if err != nil {
