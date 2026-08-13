@@ -319,7 +319,10 @@ func fillerKind(t entity.FillerType) EntityKind {
 //	rotate-key-op = { "op" => "rotate_key", "new_pub" => bstr .size 32 }
 //
 // It may appear only in a rotation block, which contains exactly one of them
-// and nothing else (spec/02-block-format.md, "Rotation block").
+// and nothing else: the operation rule a public or private block's ops list
+// follows does not include rotate_key, and a block of either type carrying one
+// is rejected (spec/02-block-format.md, "Operations", "Rotation block" and
+// "Validation dispatch"). Content.Validate is where that rejection happens.
 type RotateKey struct{ newPub [ed25519.PublicKeySize]byte }
 
 // NewRotateKey returns the operation rotating to newPub, which must be a raw

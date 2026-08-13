@@ -107,18 +107,20 @@ rotate-key-op = {
 
 Implementations MUST check the `type` field to determine block structure:
 
-- `"public"`: `ops` is a plaintext array, no `nonce` or `enc` field.
-- `"private"`: `enc` field contains ciphertext (refs + ts + ops), `nonce` field required. No plaintext `ops`, `refs`, or `ts` fields.
-- `"rotation"`: `ops` contains exactly one `rotate_key` operation.
+- `"public"`: `ops` is a plaintext array of `operation` values, no `nonce` or `enc` field. No `rotate_key` operation.
+- `"private"`: `enc` field contains ciphertext (refs + ts + ops), `nonce` field required. No plaintext `ops`, `refs`, or `ts` fields. The encrypted `ops` are `operation` values: a party that decrypts the payload MUST reject the block if it finds a `rotate_key` operation.
+- `"rotation"`: `ops` contains exactly one `rotate_key` operation and no other operation. This is the only block type in which a `rotate_key` operation may appear.
 
 A block map carries exactly the keys the definition for its `type` declares, and an operation map exactly the keys the definition for its `op` declares. This is the closed-map rule of [03-encoding.md](03-encoding.md), "Deterministic CBOR" rule 8, which governs every map in this specification. Implementations MUST reject a block or an operation that carries an undeclared key, and MUST reject one that omits a declared key. A field introduced by a later protocol version arrives in a block whose `v` value this version does not recognize, and is rejected by validation rule 1; it never arrives as an extra key in a v1 block.
 
 ### Operations
 
-There are exactly four operation types:
+There are exactly four operation types. Three of them may appear in the `ops`
+list of a public or private block; the fourth, `rotate_key`, may appear only in
+a rotation block:
 
 ```cddl
-operation = create-atom / create-bond / create-molecule / rotate-key
+operation = create-atom / create-bond / create-molecule
 
 create-atom = {
   "op"          => "create_atom",
@@ -137,7 +139,9 @@ create-molecule = {
 }
 ```
 
-The `filler` type is defined in [01-data-model.md](01-data-model.md).
+The `filler` type is defined in [01-data-model.md](01-data-model.md). The fourth operation, `rotate-key-op`, is defined with the [rotation block](#rotation-block) and is not part of the `operation` rule: the `ops` list of a public or private block MUST NOT contain a `rotate_key` operation, and implementations MUST reject a public or private block that carries one. For a private block the rule is enforced by every party that decrypts the payload, since only they can see its operations; a node without the key validates the block's structure and learns nothing about its `ops` either way.
+
+A chain therefore ends where the `type` field says it ends, and nowhere else. Chain-ending semantics belong to the rotation block type, which every node can read, and not to an operation that a private block would hide from all but its recipients.
 
 Operations in a block are ordered. The order determines evaluation sequence for validation purposes (an operation later in the list may reference entities created by earlier operations in the same block).
 
@@ -157,7 +161,7 @@ The `bond` field and any atom/bond/molecule references in `fillers` are 32-byte 
 
 #### rotate_key
 
-Rotates the author's key. The rotation block is the last block in the current key's chain. A new chain begins with a genesis block signed by the new key. The new key's genesis block SHOULD reference the rotation block via `refs` to establish verifiable key succession.
+Rotates the author's key. A `rotate_key` operation MUST appear only in a block whose `type` is `"rotation"`, and such a block contains exactly one of them and no other operation. The rotation block is the last block in the current key's chain. A new chain begins with a genesis block signed by the new key. The new key's genesis block SHOULD reference the rotation block via `refs` to establish verifiable key succession.
 
 Implementations MUST mark the old key as inactive after processing a rotation block. Implementations MUST NOT accept further blocks signed by the old key after the rotation block.
 

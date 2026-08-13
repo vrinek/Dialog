@@ -219,14 +219,16 @@ func (c Content) Validate() error {
 		if _, ok := c.Ops[0].(RotateKey); !ok {
 			return fmt.Errorf("block: the operation of a rotation block is %s; it must be %s", c.Ops[0].Op(), OpRotateKey)
 		}
-	case TypePublic:
-		// A rotate_key operation ends a chain, and spec/02-block-format.md
-		// gives that effect only to the rotation block type. Carrying one in a
-		// public block would make the chain's end depend on an operation the
-		// type field does not announce; see todos/038.
+	default:
+		// "A rotate_key operation MUST appear only in a block whose type is
+		// rotation" (spec/02-block-format.md, "Operations" and "rotate_key"):
+		// the operation rule the other two block types use does not include it,
+		// so a chain ends where the type field says it ends. The loop is
+		// vacuous for a private block, whose operations live inside enc; the
+		// same rule applies to the payload a holder of the key decrypts.
 		for i, op := range c.Ops {
 			if _, ok := op.(RotateKey); ok {
-				return fmt.Errorf("block: operation %d of a public block is %s; a rotate_key operation belongs in a rotation block", i, OpRotateKey)
+				return fmt.Errorf("block: operation %d of a %s block is %s; a rotate_key operation may appear only in a rotation block", i, c.Type, OpRotateKey)
 			}
 		}
 	}

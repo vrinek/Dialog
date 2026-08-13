@@ -359,6 +359,47 @@ func TestBuilderChain(t *testing.T) {
 	}
 }
 
+// TestRotateKeyOnlyInRotationBlocks covers the scope of the fourth operation:
+// the operation rule a public or private block's ops list follows does not
+// include rotate_key, and only a rotation block may carry one — exactly one,
+// and nothing else (spec/02-block-format.md, "Operations", "Validation
+// dispatch" and "rotate_key").
+func TestRotateKeyOnlyInRotationBlocks(t *testing.T) {
+	rotate := MustRotateKey(testPub(t, 2))
+
+	// Author side: a public block carrying one is never signed.
+	c := Content{Version: Version, Type: TypePublic, Pub: testPub(t, 1), TS: 1,
+		Ops: []Operation{MustCreateAtom("France"), rotate}}
+	if err := c.Validate(); err == nil {
+		t.Error("Content.Validate accepted a rotate_key operation in a public block")
+	}
+	if _, err := Sign(c, testKey(t, 1)); err == nil {
+		t.Error("Sign accepted a rotate_key operation in a public block")
+	}
+
+	// Wire side: the same block, correctly signed by the key it claims, is
+	// rejected for the operation and not for its signature.
+	m := validPublicMap(t, 1)
+	for i, e := range m {
+		if e.Key == keyOps {
+			m[i].Value = dcbor.Array{MustCreateAtom("France").Value(), rotate.Value()}
+		}
+	}
+	if b, err := Decode(rawBlock(t, testKey(t, 1), m)); err == nil {
+		t.Errorf("Decode accepted %s, a public block carrying a rotate_key operation", b)
+	}
+
+	// The same operation in the block type that announces the chain's end is
+	// the one place it belongs.
+	rotation, err := mustBuilder(t, 1).Rotation(1, nil, testPub(t, 2))
+	if err != nil {
+		t.Fatalf("Rotation: %v", err)
+	}
+	if op, ok := rotation.RotateKey(); !ok || !ed25519.PublicKey(op.NewPublicKey()).Equal(testPub(t, 2)) {
+		t.Errorf("the rotation block does not carry the rotate_key operation naming the successor key")
+	}
+}
+
 // TestContentValidateRejections is the table for the structural rules a
 // Content must satisfy before it can be signed at all.
 func TestContentValidateRejections(t *testing.T) {

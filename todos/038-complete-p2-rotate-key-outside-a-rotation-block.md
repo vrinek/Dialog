@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "038"
 tags: [specification-gap, block-format, key-rotation, security]
@@ -90,10 +90,10 @@ grammar rather than only in prose.
 
 ## Acceptance Criteria
 
-- [ ] The specification says whether a non-rotation block may carry a
+- [x] The specification says whether a non-rotation block may carry a
       `rotate_key` operation
-- [ ] If not, the CDDL for public and private blocks excludes it
-- [ ] `go/block` matches the ratified rule
+- [x] If not, the CDDL for public and private blocks excludes it
+- [x] `go/block` matches the ratified rule
 
 ## Work Log
 
@@ -105,6 +105,39 @@ that chain-ending semantics belong to the block type the `type` field
 announces. The choice is recorded here rather than presented as the
 specification's. The private case is not checkable at all until the privacy
 package exists, which is a second reason to forbid the operation outright.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1, with the grammar carrying the
+constraint. A `rotate_key` operation MUST appear only in a block whose `type`
+is `"rotation"`, and such a block contains exactly one of them and no other
+operation. A chain ends where the `type` field says it ends: chain-ending
+semantics belong to the block type every node can read, not to an operation a
+private block would hide from all but its recipients.
+
+**Changes:**
+
+- `spec/02-block-format.md` § "Operations": the `operation` rule is now
+  `create-atom / create-bond / create-molecule`; `rotate-key-op` stays defined
+  with the rotation block and outside the union. New prose states the MUST NOT
+  for public and private blocks and says who enforces it for a private one —
+  the parties that decrypt the payload, since nobody else can see its `ops`.
+- `spec/02-block-format.md` § "Validation dispatch": each of the three bullets
+  now says where `rotate_key` may and may not appear.
+- `spec/02-block-format.md` § "rotate_key": opens with the scope rule.
+- `go/block/block.go` (`Content.Validate`): the rejection now applies to every
+  non-rotation block type rather than to `TypePublic` alone (vacuous for a
+  private block, whose operations are inside `enc`), and cites the ratified
+  rule instead of `todos/038`.
+- `go/block/op.go`: `RotateKey`'s doc comment states the scope and names the
+  check that enforces it.
+- `go/block/block_test.go`: new `TestRotateKeyOnlyInRotationBlocks` covers the
+  author side (`Content.Validate`, `Sign`), the wire side (a correctly signed
+  public block carrying one is rejected for the operation, not the signature),
+  and the accepted case in a rotation block. The existing table entries
+  "public block carrying a rotate_key operation" and "public block with
+  rotate_key" remain.
 
 ## Notes
 
