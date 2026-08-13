@@ -222,11 +222,19 @@ func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 // validateLinkage is rule 3, plus the timestamp SHOULD that hangs off it. It
 // returns the predecessor block, or nil for a genesis block.
 //
-// The rule says prev must reference "an existing, valid block with the same
-// pub key" without saying how far validity recurses. This takes the cheap
-// reading — a block the source holds has been validated once, when it was
-// received — and leaves whole-chain validation to ValidateChain; see
-// todos/043.
+// Validity is inductive from the genesis block, and the induction is carried by
+// the source: a block the source holds was validated when it was received, so
+// rule 3 is a lookup among accepted blocks and not a re-validation of the
+// ancestry (spec/02-block-format.md, "Validation"; spec/05-processing-model.md,
+// "Block reception"). Validating a chain of n blocks therefore costs n
+// validations, which is what ValidateChain does, walking from the genesis block
+// forward.
+//
+// A block whose predecessor the source does not hold is neither valid nor
+// invalid: it is "stored but unvalidated" in the terms of
+// spec/05-processing-model.md, and its operations must not reach L2. That is
+// the ErrNotFound wrapped in the rule 3 error — errors.Is separates "I cannot
+// validate this yet" from "this block is wrong".
 func validateLinkage(b *Block, src Source, report *Report) (*Block, error) {
 	prevDigest, ok := b.Prev()
 	if !ok {

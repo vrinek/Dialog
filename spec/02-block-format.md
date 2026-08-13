@@ -212,11 +212,17 @@ Foreign block references (`refs`) create cross-chain links, forming a DAG (direc
 
 ### Validation
 
+Validity is defined **inductively, from the genesis block forward**. A block is valid if and only if it satisfies every rule below — one of which, rule 3, requires that its predecessor be valid. The genesis block is the base case: its `prev` is null, so it depends on no earlier block of its chain, and block *n*'s validity rests on block *n−1*'s, back to it.
+
+The definition does not ask an implementation to re-derive an ancestor's validity. Blocks are validated as they arrive, and a block a node has accepted at L1 was validated when it was received (see [05-processing-model.md](05-processing-model.md), "Block reception"), so rule 3 is a lookup in what the node already accepted, not a recursion. Validating a chain of *n* blocks costs *n* validations, not *n²*.
+
+A block whose ancestry is not available locally is neither valid nor invalid. It is **stored but unvalidated** (see [05-processing-model.md](05-processing-model.md), "Block reception"): the node may hold its bytes, but it MUST NOT treat the block as valid and MUST NOT let its operations reach L2 until the missing ancestors arrive and the block validates. Validity in this sense is relative to what a node holds — two nodes may disagree about a block until both have its ancestry — which is already true of rule 4's reachability.
+
 A block is **valid** if and only if:
 
 1. **Version check.** The `v` field is a recognized protocol version.
 2. **Signature check.** The `sig` field is a valid Ed25519 signature over the block content, verified against the `pub` key. See [04-cryptography.md](04-cryptography.md).
-3. **Chain integrity.** If `prev` is not null, it MUST reference an existing, valid block with the same `pub` key. Within a single chain, all blocks MUST have the same `pub` field. A chain ends when a rotation block is published; the new key begins a separate chain.
+3. **Chain integrity.** If `prev` is not null, it MUST reference a block the node holds and has accepted as valid, carrying the same `pub` key. A block whose predecessor is absent, or is itself stored but unvalidated, is not valid; it is stored but unvalidated in turn. Within a single chain, all blocks MUST have the same `pub` field. A chain ends when a rotation block is published; the new key begins a separate chain.
 4. **Operation validity.** Every operation in `ops` MUST reference only entity digests that are **reachable** — defined in:
    - The same block (an earlier operation in the `ops` list), or
    - Any ancestor block in the author's own chain (reachable via `prev`), or

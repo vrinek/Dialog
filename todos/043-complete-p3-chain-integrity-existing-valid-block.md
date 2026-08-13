@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "043"
 tags: [specification-gap, block-validation, processing-model]
@@ -91,10 +91,10 @@ case implementations actually hit.
 
 ## Acceptance Criteria
 
-- [ ] Rule 3 says what "valid" means for the predecessor and whether it
+- [x] Rule 3 says what "valid" means for the predecessor and whether it
       recurses
-- [ ] The treatment of a block whose ancestors are missing is stated
-- [ ] `go/block` matches the ratified reading
+- [x] The treatment of a block whose ancestors are missing is stated
+- [x] `go/block` matches the ratified reading
 
 ## Work Log
 
@@ -106,6 +106,49 @@ in the source, carries the same `pub`, and is not a rotation block, and leaves
 whole-chain validation to `ValidateChain`, which validates from the genesis
 block forward. An ancestor the source does not hold surfaces only if a
 reference actually needs it, and then as a rule 4 failure naming the gap.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1, phrased as an induction rather than as
+an appeal to the store. Validity is defined **inductively from the genesis
+block**: a block is valid iff it is structurally valid, correctly signed, and
+its `prev` predecessor — if it has one — is valid. The genesis block is the
+base case. Implementations validate incrementally as blocks arrive, so rule 3
+is a lookup among blocks the node has already accepted, not a re-derivation:
+the induction is carried by the store, and a chain of *n* blocks costs *n*
+validations rather than *n²*.
+
+A block whose ancestry is not locally available is neither valid nor invalid.
+It is **stored but unvalidated** at L1: the node MAY hold its bytes while it
+fetches the missing ancestors, or discard it, but it MUST NOT treat it as
+valid, MUST NOT contribute its operations to L2, and MUST NOT accept it as
+another block's predecessor under rule 3. Validity in this sense is relative to
+what a node holds — two nodes may disagree about a block until both have its
+ancestry — which was already true of rule 4's reachability.
+
+**Changes:**
+
+- `spec/02-block-format.md` § "Validation": three new paragraphs before the
+  numbered rules give the inductive definition, the incremental-validation
+  consequence, and the stored-but-unvalidated state; rule 3 now says the
+  predecessor must be a block the node holds *and has accepted as valid*, and
+  what a block whose predecessor is absent or unvalidated is instead.
+- `spec/05-processing-model.md` § "Block reception": a fourth reception step
+  for a block whose predecessor is missing, a paragraph on incremental
+  validation carrying the induction, and the definition of the
+  stored-but-unvalidated state, including that it never reaches L2 and is never
+  a rule 3 predecessor. § "Accumulation rules" says the same at the point of
+  use.
+- `go/block/validate.go` (`validateLinkage`) and `go/block/chain.go`
+  (`ValidateChain`): no behaviour change — this is what they already did — but
+  the doc comments state the ratified reading and name the
+  stored-but-unvalidated state instead of pointing at this issue.
+- `go/block/validate_test.go`: new `TestStoredButUnvalidated` — a block whose
+  ancestor is absent decodes but does not validate (rule 3 wrapping
+  ErrNotFound), the chain is not validatable while it is not anchored to a
+  genesis block, and both become valid, with nothing about the blocks
+  changing, once the ancestor arrives.
 
 ## Notes
 

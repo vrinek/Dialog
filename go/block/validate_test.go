@@ -790,6 +790,56 @@ func TestRotation(t *testing.T) {
 	})
 }
 
+// TestStoredButUnvalidated covers the inductive definition of validity: a
+// block whose ancestry a node does not hold is neither valid nor invalid but
+// stored but unvalidated, and it becomes valid — without anything about the
+// block changing — as soon as the missing ancestor arrives
+// (spec/02-block-format.md, "Validation"; spec/05-processing-model.md, "Block
+// reception").
+func TestStoredButUnvalidated(t *testing.T) {
+	author := mustBuilder(t, 1)
+	genesis, err := author.Public(1, nil, MustCreateAtom("France"))
+	if err != nil {
+		t.Fatalf("genesis: %v", err)
+	}
+	second, err := author.Public(2, nil, MustCreateAtom("Paris, the capital of France"))
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	third, err := author.Public(3, nil, MustCreateAtom("Lyon"))
+	if err != nil {
+		t.Fatalf("third: %v", err)
+	}
+
+	// The block's own bytes are beyond reproach: it decodes, so it is
+	// structurally valid and correctly signed. Only its ancestry is missing.
+	store := NewMemStore()
+	store.MustAdd(second, third)
+	if _, err := Decode(third.Bytes()); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+
+	// The immediate predecessor is held but was never validatable itself, and
+	// the tip's own rule 3 check is a lookup, so the gap surfaces where the
+	// induction actually breaks: at the block whose predecessor is absent.
+	if _, err := Validate(second, store, nil); !isRule(err, 3) || !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Validate(second) = %v, want a rule 3 violation wrapping ErrNotFound", err)
+	}
+	if _, err := ValidateChain(third.Digest(), store, nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ValidateChain = %v, want an error wrapping ErrNotFound: the chain is not anchored to a genesis block", err)
+	}
+
+	// The missing ancestor arrives; nothing else changes; the chain validates.
+	store.MustAdd(genesis)
+	chain, err := ValidateChain(third.Digest(), store, nil)
+	if err != nil {
+		t.Fatalf("ValidateChain after the ancestor arrived: %v", err)
+	}
+	if chain.Len() != 3 || chain.Genesis().Digest() != genesis.Digest() {
+		t.Errorf("chain = %s, want the three blocks from the genesis block to the tip", chain)
+	}
+}
+
 // TestValidateChainRejectsIncompleteChain checks that a chain missing a block
 // is an ErrNotFound rather than a silent truncation.
 func TestValidateChainRejectsIncompleteChain(t *testing.T) {

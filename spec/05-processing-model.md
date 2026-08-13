@@ -40,6 +40,11 @@ When a node receives a block, it MUST:
 1. Validate the block according to the rules in [02-block-format.md](02-block-format.md)
 2. If valid, store the block and make it available for L2 processing
 3. If invalid, reject the block
+4. If the block cannot be validated because its `prev` predecessor is not held, or is itself unvalidated, hold it as **stored but unvalidated**, or discard it — the choice is implementation-scoped
+
+Validation is incremental: because every block in the store was validated when it was received, checking a new block's chain integrity is a lookup among accepted blocks rather than a re-validation of its ancestry. Validity is therefore defined inductively from the genesis block, and the induction is carried by the store (see [02-block-format.md](02-block-format.md), "Validation").
+
+A **stored but unvalidated** block is one whose bytes a node holds and whose validity it has not been able to establish, because the block's ancestry has not arrived. Such a block is neither valid nor invalid. A node MAY keep it while it fetches the missing ancestors, and MUST validate it once they are available and validated; a node MAY instead discard it and re-request it later. A stored but unvalidated block MUST NOT be made available for L2 processing: its operations contribute nothing to the ontology graph until the block is validated. Nodes MUST NOT treat it as the predecessor of another block for the purposes of rule 3.
 
 #### Chain management
 
@@ -64,7 +69,7 @@ Layer 2 is a single, unified ontology graph built by extracting operations from 
 
 #### Accumulation rules
 
-For each valid block in L1, the node MUST:
+For each valid block in L1 — that is, each block whose validation succeeded, never one that is stored but unvalidated — the node MUST:
 
 1. Extract each operation from the block's `ops` list (for private blocks, decrypt the `enc` field first to recover `refs`, `ts`, and `ops` — see [04-cryptography.md](04-cryptography.md))
 2. Compute the CID of the resulting entity (atom, bond, or molecule) per [01-data-model.md](01-data-model.md) and [03-encoding.md](03-encoding.md)

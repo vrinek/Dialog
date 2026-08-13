@@ -64,8 +64,15 @@ func (c *Chain) String() string {
 // It walks prev from the tip to the genesis block, then validates each block
 // in publication order with Validate, so that every rule — signature, linkage,
 // reachability, fork detection — is checked with the ancestors already in
-// hand. The chain must be complete: a prev the source does not hold is an
-// error wrapping ErrNotFound.
+// hand. That order is the induction of spec/02-block-format.md, "Validation":
+// validity is defined from the genesis block forward, and each block is
+// validated once, so the whole chain costs n validations rather than n².
+//
+// The chain must be complete: a prev the source does not hold is an error
+// wrapping ErrNotFound. Such a tip is not invalid — it is stored but
+// unvalidated until its ancestry arrives (spec/05-processing-model.md, "Block
+// reception") — and errors.Is(err, ErrNotFound) is how a caller tells the two
+// apart.
 //
 // A chain ends when a rotation block is published, so a rotation block may
 // appear only as the tip; a block linked onto one is rejected by rule 3. The
