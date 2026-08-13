@@ -32,10 +32,15 @@
 // A private block's refs, ts and ops are encrypted into its enc field. This
 // package treats enc and nonce as opaque byte strings: it signs them, hashes
 // them, and validates everything that does not require reading them (rules 1,
-// 2, 3, 8 and 9 of spec/02-block-format.md, "Validation"). Encryption and
+// 2, 3, 7, 8 and 9 of spec/02-block-format.md, "Validation"). Encryption and
 // decryption belong to the privacy package, and the rules that need the
-// plaintext — 4, 5 and 6 — are reported as unvalidatable until it exists,
-// which is what spec/02 says of any node that lacks the key.
+// plaintext — 4, 5, 6 and 10 — are reported as unchecked, which is what spec/02
+// says of any node that lacks the key.
+//
+// What the plaintext is, once a key holder has it, is this package's business
+// again: Payload is the decrypted refs, ts and ops, with the same encoder and
+// the same strict decoder a public block's fields go through, and
+// ValidatePayload runs the four rules Validate left unchecked.
 package block
 
 import (
@@ -280,19 +285,10 @@ func (c Content) signingValue() dcbor.Map {
 		{Key: keyPrev, Value: prevValue(c.Prev)},
 	}
 	if c.Type.hasPlaintextPayload() {
-		refs := make(dcbor.Array, 0, len(c.Refs))
-		for _, r := range c.Refs {
-			refs = append(refs, dcbor.Bytes(r.Bytes()))
-		}
-		ops := make(dcbor.Array, 0, len(c.Ops))
-		for _, op := range c.Ops {
-			ops = append(ops, op.Value())
-		}
-		m = append(m,
-			dcbor.MapEntry{Key: keyRefs, Value: refs},
-			dcbor.MapEntry{Key: keyTS, Value: dcbor.Uint(c.TS)},
-			dcbor.MapEntry{Key: keyOps, Value: ops},
-		)
+		// The three fields a private block encrypts are encoded here exactly as
+		// they are encoded inside a private block's ciphertext: one encoder, so
+		// the two cannot drift apart (spec/02-block-format.md, "Private block").
+		m = append(m, Payload{Refs: c.Refs, TS: c.TS, Ops: c.Ops}.Value()...)
 	} else {
 		m = append(m,
 			dcbor.MapEntry{Key: keyEnc, Value: dcbor.Bytes(slices.Clone(c.Enc))},

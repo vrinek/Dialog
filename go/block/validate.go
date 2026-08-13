@@ -72,10 +72,11 @@ type Report struct {
 	// Scanned counts the foreign blocks fetched through the refs graph.
 	Scanned int
 	// Unchecked lists the numbered rules that could not be evaluated — rules
-	// 4, 5, 6 and 10 of a private block, whose refs and ops this package cannot
-	// read (spec/02-block-format.md: "For private blocks, validation of rules
-	// 4, 5, 6, and 10 is only possible by entities that hold the decryption
-	// key").
+	// 4, 5, 6 and 10 of a private block, whose refs and ops are inside its
+	// ciphertext (spec/02-block-format.md: "For private blocks, validation of
+	// rules 4, 5, 6, and 10 is only possible by entities that hold the
+	// decryption key"). A caller that holds the key decrypts the payload and
+	// passes it to ValidatePayload, which checks exactly these four.
 	Unchecked []int
 }
 
@@ -167,7 +168,9 @@ func ruleErr(rule int, b *Block, format string, args ...any) error {
 //
 // For a private block, rules 4, 5, 6 and 10 are listed in the report's
 // Unchecked field rather than evaluated: refs and ops are inside enc, which
-// this package treats as opaque.
+// this package treats as opaque. A caller holding the decryption key decrypts
+// the payload (see the privacy package) and passes it to ValidatePayload; the
+// two calls together are a complete validation of a private block.
 func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 	if b == nil {
 		return nil, fmt.Errorf("block: Validate called with a nil block")
@@ -193,8 +196,7 @@ func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 	}
 
 	// Rule 3 — chain integrity.
-	prev, err := validateLinkage(b, src, report)
-	if err != nil {
+	if _, err := validateLinkage(b, src, report); err != nil {
 		return nil, err
 	}
 
@@ -215,7 +217,7 @@ func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 		return report, nil
 	}
 
-	if err := validateReferences(b, prev, src, opts, report); err != nil {
+	if err := validateReferences(b, b.content.Refs, b.content.Ops, src, opts, report); err != nil {
 		return nil, err
 	}
 	return report, nil
@@ -286,9 +288,11 @@ func detectFork(b *Block, s Siblings) (Fork, bool) {
 	return f, true
 }
 
-// validateReferences is rules 4, 5, 6 and 10 for a block whose operations and
-// refs are in the clear.
-func validateReferences(b *Block, prev *Block, src Source, opts *Options, report *Report) error {
+// validateReferences is rules 4, 5, 6 and 10 for a block whose refs and ops are
+// at hand — a public or rotation block's own fields, or the payload a holder of
+// the decryption key has recovered from a private block, which is why the two
+// are parameters and not read off the block (see ValidatePayload).
+func validateReferences(b *Block, refs []cid.Digest, ops []Operation, src Source, opts *Options, report *Report) error {
 	r := &resolver{
 		block:  b,
 		src:    src,
@@ -297,8 +301,7 @@ func validateReferences(b *Block, prev *Block, src Source, opts *Options, report
 		cache:  make(map[cid.Digest]*Block),
 		report: report,
 	}
-	if prev != nil {
-		d, _ := b.Prev()
+	if d, ok := b.Prev(); ok {
 		r.nextAncestor = &d
 	}
 
@@ -310,7 +313,7 @@ func validateReferences(b *Block, prev *Block, src Source, opts *Options, report
 	// list"). Both are evaluated as a referenced block is resolved; an entry
 	// the source does not hold is reported as unchecked rather than rejected,
 	// which is what demand-driven resolution leaves possible.
-	for _, ref := range b.content.Refs {
+	for _, ref := range refs {
 		target, err := r.fetch(ref, true)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
@@ -340,11 +343,11 @@ func validateReferences(b *Block, prev *Block, src Source, opts *Options, report
 				ref, b.content.Pub[:8], keyRefs)
 		}
 	}
-	r.queue = slices.Clone(b.content.Refs)
+	r.queue = slices.Clone(refs)
 
 	// Rule 4 — every entity digest an operation carries must be reachable, and
 	// within this block only from an operation that precedes it.
-	for i, op := range b.content.Ops {
+	for i, op := range ops {
 		for _, ref := range op.References() {
 			rec, err := r.resolve(ref.Digest)
 			if err != nil {
