@@ -279,7 +279,7 @@ func TestPrivateBlockRejectsWrongNonceSize(t *testing.T) {
 // and the identity each one defines (spec/02-block-format.md, "Operations").
 func TestOperationEncodings(t *testing.T) {
 	atom := MustCreateAtom("France")
-	if got, want := hex.EncodeToString(Bytes(atom)), "a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e6365"; got != want {
+	if got, want := hex.EncodeToString(EncodeOperation(atom)), "a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e6365"; got != want {
 		t.Errorf("create_atom encoding = %s, want %s", got, want)
 	}
 	// The identity is the atom's, not the operation's: the "op" key is not
@@ -315,7 +315,7 @@ func TestOperationEncodings(t *testing.T) {
 	}
 	// a2 | "op" -> "rotate_key" | "new_pub" -> 32 bytes
 	wantRotate := "a2626f706a726f746174655f6b6579676e65775f7075625820" + hex.EncodeToString(testPub(t, 9))
-	if got := hex.EncodeToString(Bytes(rotate)); got != wantRotate {
+	if got := hex.EncodeToString(EncodeOperation(rotate)); got != wantRotate {
 		t.Errorf("rotate_key encoding = %s, want %s", got, wantRotate)
 	}
 }

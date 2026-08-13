@@ -91,10 +91,10 @@ type Operation interface {
 	isOperation()
 }
 
-// Bytes returns the canonical dCBOR encoding of an operation. Operations are
-// not content-addressed on their own — they are encoded as part of a block —
-// but their bytes are useful for tests and conformance vectors.
-func Bytes(op Operation) []byte { return dcbor.MustEncode(op.Value()) }
+// EncodeOperation returns the canonical dCBOR encoding of an operation.
+// Operations are not content-addressed on their own — they are encoded as part
+// of a block — but their bytes are useful for tests and conformance vectors.
+func EncodeOperation(op Operation) []byte { return dcbor.MustEncode(op.Value()) }
 
 // A CreateAtom operation creates an atom:
 //
