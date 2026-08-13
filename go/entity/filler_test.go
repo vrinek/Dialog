@@ -215,6 +215,10 @@ func TestValidateTimestamp(t *testing.T) {
 		{"epoch", "1970-01-01T00:00:00Z"},
 		{"year 0000", "0000-01-01T00:00:00Z"},
 		{"year 9999", "9999-12-31T23:59:59Z"},
+		// Proleptic Gregorian calendar: 1600 and 0000 are divisible by 400
+		// and so are leap years, before the calendar existed as well as after.
+		{"leap day of 1600", "1600-02-29T00:00:00Z"},
+		{"leap day of year 0000", "0000-02-29T00:00:00Z"},
 	}
 	for _, tc := range valid {
 		t.Run("accept/"+tc.name, func(t *testing.T) {
@@ -255,6 +259,11 @@ func TestValidateTimestamp(t *testing.T) {
 		{"no such day", "2026-02-30T00:00:00Z"},
 		{"day 31 in April", "2026-04-31T00:00:00Z"},
 		{"not a leap year", "2026-02-29T00:00:00Z"},
+		// Proleptic Gregorian: 1500 and 1900 are divisible by 100 but not by
+		// 400, so February had 28 days in both, whatever the calendar in civil
+		// use at the time said (spec/01-data-model.md, "Datetime ranges").
+		{"Julian leap day of 1500", "1500-02-29T00:00:00Z"},
+		{"not a leap year in 1900", "1900-02-29T00:00:00Z"},
 		{"month 13", "2026-13-01T00:00:00Z"},
 		{"month 00", "2026-00-01T00:00:00Z"},
 		{"day 00", "2026-01-00T00:00:00Z"},

@@ -546,10 +546,13 @@ const timestampLen = 20
 // CID for the same statement. Times recorded in another zone or at another
 // precision are converted before the entity is created.
 //
-// Calendar validity is time.Parse's, which is the proleptic Gregorian calendar
-// for every year — so 1500-02-29, a real date in the Julian calendar then in
-// civil use, is rejected. The specification does not yet name a calendar for
-// dates before the Gregorian reform; the question is filed as todos/036.
+// Days are counted in the proleptic Gregorian calendar, which is the calendar
+// RFC 3339 uses and the one spec/01-data-model.md names: the Gregorian
+// leap-year rules apply to every year, including those before the calendar's
+// introduction in 1582. So 1500-02-29 is rejected, though it is a real date in
+// the Julian calendar then in civil use, and 1600-02-29 is accepted. The year
+// 0000 is a permitted year and a leap year. This is time.Parse's calendar too,
+// so the check is delegated to it.
 func ValidateTimestamp(s string) error {
 	if s == "" {
 		return fmt.Errorf("timestamp is empty; it must have the form YYYY-MM-DDTHH:MM:SSZ")

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "036"
 tags: [specification-gap, data-model, encoding, content-addressing]
@@ -114,11 +114,11 @@ happens to link.
 
 ## Acceptance Criteria
 
-- [ ] `spec/01-data-model.md` names the calendar in which a timestamp's date
+- [x] `spec/01-data-model.md` names the calendar in which a timestamp's date
       components are interpreted
-- [ ] Whether the year `0000` is a permitted year is stated
-- [ ] `go/entity` matches the resolved rule and its doc comment cites it
-- [ ] Tests cover a pre-reform leap day in each direction (`1500-02-29`,
+- [x] Whether the year `0000` is a permitted year is stated
+- [x] `go/entity` matches the resolved rule and its doc comment cites it
+- [x] Tests cover a pre-reform leap day in each direction (`1500-02-29`,
       `1600-02-29`)
 
 ## Resources
@@ -142,6 +142,34 @@ that month of that year" was the only one that required the implementation to
 supply a fact the specification does not state, and Go's answer (proleptic
 Gregorian) is recorded here rather than presented as the specification's
 intent.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1. A timestamp's date components are
+interpreted in the **proleptic Gregorian calendar** — the calendar RFC 3339
+itself uses — with its leap-year rules applied to every year, including those
+before the calendar's 1582 introduction. `1500-02-29T00:00:00Z` is therefore
+not a Dialog timestamp and `1600-02-29T00:00:00Z` is one. The second question
+is settled in the same breath: the year `0000` is permitted, as the
+`timestamp` regexp already allows, and is a leap year like any other year
+divisible by 400. Nothing about a Dialog timestamp depends on a switchover
+date, so validation stays a pure function of the string in every language.
+A date taken from a Julian-calendar source is converted before the entity is
+created, the same trade already made for time zones in issue #34.
+
+**Changes:**
+
+- `spec/01-data-model.md` § "Datetime ranges", rule 6: now names the calendar,
+  gives the `1500-02-29` / `1600-02-29` pair as the worked example, states that
+  the year `0000` is permitted and a leap year, and notes that conversion from
+  a Julian source is the author's responsibility.
+- `go/entity/filler.go` (`ValidateTimestamp`): the doc comment cites the
+  specification's rule instead of recording Go's behaviour as a guess. No
+  behaviour change — `time.Parse` was already proleptic Gregorian, which is
+  what the ratified rule requires.
+- `go/entity/filler_test.go` (`TestValidateTimestamp`): accepts `1600-02-29`
+  and `0000-02-29`, rejects `1500-02-29` and `1900-02-29`.
 
 ## Notes
 
