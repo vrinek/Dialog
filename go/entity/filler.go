@@ -67,13 +67,18 @@ func (t FillerType) String() string {
 }
 
 // A Filler fills one variable of a bond template. On the wire it is a
-// two-key map — the type tag and the value it selects:
+// two-key map — the type tag and the value that tag selects. The CDDL of
+// spec/01-data-model.md is a discriminated union: each type tag is bound to
+// exactly one value shape, and a filler pairing a tag with any other shape is
+// invalid.
 //
-//	filler = { "type" => filler-type, "value" => filler-value }
-//
-// The value's shape is fixed by the type: a 32-byte digest for types 0, 1 and
-// 2, a text string for type 3, and a scalar map for type 4
-// (spec/01-data-model.md, "Filler types").
+//	filler          = atom-filler / bond-filler / molecule-filler
+//	                / ipfs-filler / scalar-filler
+//	atom-filler     = { "type" => 0, "value" => bstr .size 32 }
+//	bond-filler     = { "type" => 1, "value" => bstr .size 32 }
+//	molecule-filler = { "type" => 2, "value" => bstr .size 32 }
+//	ipfs-filler     = { "type" => 3, "value" => tstr .size (1..) }
+//	scalar-filler   = { "type" => 4, "value" => scalar-value }
 //
 // A Filler holds exactly one of those three payloads, selected by Type. Build
 // one with AtomFiller, BondFiller, MoleculeFiller, RefFiller, IPFSFiller or
@@ -106,11 +111,11 @@ func RefFiller(t FillerType, d cid.Digest) (Filler, error) {
 
 // IPFSFiller returns a type 3 filler carrying an IPFS content identifier.
 //
-// The specification defers the string's format to IPFS and puts it out of
-// scope for Dialog (spec/03-encoding.md, "Internal references"), so the URI
-// is treated as opaque: it must be non-empty, valid UTF-8 text, and nothing
-// more is assumed about it. See todos/035 for the unstated question of
-// whether an empty string is permitted, which this rejects.
+// The URI MUST NOT be empty (spec/01-data-model.md, "Filler types"): an empty
+// content identifier addresses nothing. Beyond that the specification defers
+// the string's format to IPFS and puts it out of scope for Dialog
+// (spec/03-encoding.md, "Internal references"), so it is treated as opaque
+// UTF-8 text.
 func IPFSFiller(uri string) (Filler, error) {
 	if uri == "" {
 		return Filler{}, fmt.Errorf("entity: IPFS URI filler is empty")

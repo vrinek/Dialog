@@ -88,20 +88,16 @@ molecule = {
   "fillers" => [+ filler]     ; ordered list, one per variable
 }
 
-filler = {
-  "type" => filler-type,
-  "value" => filler-value
-}
+; A filler is one of five alternatives, each binding a type tag to the one
+; value shape that tag permits.
+filler = atom-filler / bond-filler / molecule-filler / ipfs-filler
+       / scalar-filler
 
-filler-type = &(
-  atom: 0,
-  bond: 1,
-  molecule: 2,
-  ipfs-uri: 3,
-  scalar: 4
-)
-
-filler-value = bstr / tstr / scalar-value
+atom-filler     = { "type" => 0, "value" => bstr .size 32 }  ; digest of an atom
+bond-filler     = { "type" => 1, "value" => bstr .size 32 }  ; digest of a bond
+molecule-filler = { "type" => 2, "value" => bstr .size 32 }  ; digest of a molecule
+ipfs-filler     = { "type" => 3, "value" => tstr .size (1..) }  ; non-empty IPFS URI
+scalar-filler   = { "type" => 4, "value" => scalar-value }
 
 scalar-value = {
   ? "unit" => bstr .size 32,  ; SHA-256 digest of a unit atom
@@ -134,17 +130,19 @@ Each filler has a type tag and a value:
 | Atom reference | 0 | `bstr .size 32` | SHA-256 digest of the referenced atom |
 | Bond reference | 1 | `bstr .size 32` | SHA-256 digest of the referenced bond |
 | Molecule reference | 2 | `bstr .size 32` | SHA-256 digest of the referenced molecule |
-| IPFS URI | 3 | `tstr` | IPFS content identifier as string (e.g., `"bafyrei..."`) |
+| IPFS URI | 3 | `tstr .size (1..)` | IPFS content identifier as string (e.g., `"bafyrei..."`) |
 | Scalar | 4 | `scalar-value` | A numeric value, optionally with a unit, or a datetime range |
 
-Filler types 0, 1, and 2 use the raw SHA-256 digest (32 bytes), not the full CID, as does the molecule's `bond` field. See [03-encoding.md](03-encoding.md), "Internal references". Type 3 (IPFS URI) is not an internal reference — it carries an IPFS content identifier as a text string.
+The type tag and the value are not independent: the CDDL above binds each tag to exactly one value shape, and this table restates that binding. Implementations MUST reject a filler whose value does not match its type tag — a type 0, 1 or 2 filler whose value is not a 32-byte byte string, a type 3 filler whose value is not a text string, a type 4 filler whose value is not a `scalar-value` — and MUST reject any type tag other than 0 to 4.
+
+Filler types 0, 1, and 2 use the raw SHA-256 digest (32 bytes), not the full CID, as does the molecule's `bond` field. See [03-encoding.md](03-encoding.md), "Internal references". Type 3 (IPFS URI) is not an internal reference — it carries an IPFS content identifier as a text string. That string MUST NOT be empty; an empty content identifier addresses nothing, and implementations MUST reject it. Its format beyond that is defined by IPFS and is out of scope for this specification.
 
 #### Scalars
 
 A scalar is one of:
 - A unitless integer, or a decimal fraction encoded as CBOR tag 4 (`[exponent, mantissa]`, both integers)
 - An integer or decimal fraction with a unit (the unit is an atom, referenced by its SHA-256 digest)
-- A datetime range (two RFC 3339 timestamps)
+- A datetime range (two timestamps in the canonical form defined below)
 
 Decimal fractions use CBOR tag 4, encoding the value as `[exponent, mantissa]` where both are integers. For example, `3.14` is encoded as `#6.4([-2, 314])`. This is dCBOR-compatible since both components are integers -- no IEEE 754 floats are used.
 

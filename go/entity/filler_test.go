@@ -301,6 +301,71 @@ func TestDatetimeRangeOrdering(t *testing.T) {
 	}
 }
 
+// TestDecodeFillerTypeValueMismatch checks that the type tag and the value are
+// not independent: the CDDL of spec/01-data-model.md, "Molecules", is a
+// discriminated union, so every pairing outside the five alternatives is
+// rejected. A value that is well-formed under one alternative is still invalid
+// under another — a text string is a legal type 3 value and an illegal type 0
+// one.
+func TestDecodeFillerTypeValueMismatch(t *testing.T) {
+	digest := dcbor.Bytes(testDigest(0x11).Bytes())
+	scalar := dcbor.Map{{Key: keyValue, Value: dcbor.Uint(1)}}
+
+	// Types 0, 1 and 2 take a 32-byte digest and nothing else.
+	for _, typ := range []FillerType{FillerAtom, FillerBond, FillerMolecule} {
+		for _, tc := range []struct {
+			name    string
+			value   dcbor.Value
+			wantErr string
+		}{
+			{"text", dcbor.Text("bafyrei"), "must be a byte string"},
+			{"integer", dcbor.Uint(1), "must be a byte string"},
+			{"scalar map", scalar, "must be a byte string"},
+			{"array", dcbor.Array{digest}, "must be a byte string"},
+			{"null", dcbor.Null, "must be a byte string"},
+			{"empty bytes", dcbor.Bytes{}, "digest is 0 bytes"},
+			{"31 bytes", dcbor.Bytes(make([]byte, 31)), "digest is 31 bytes"},
+			{"33 bytes", dcbor.Bytes(make([]byte, 33)), "digest is 33 bytes"},
+			// A 36-byte CID pasted where a digest belongs: the case
+			// spec/03-encoding.md, "Internal references", exists to forbid.
+			{"36-byte CID", dcbor.Bytes(make([]byte, 36)), "digest is 36 bytes"},
+		} {
+			t.Run(typ.String()+"/"+tc.name, func(t *testing.T) {
+				b := dcbor.MustEncode(fillerMap(typ, tc.value))
+				if _, err := DecodeFiller(b); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("DecodeFiller(%x) error = %v, want one containing %q", b, err, tc.wantErr)
+				}
+			})
+		}
+	}
+
+	// Type 3 takes a non-empty text string; type 4 a scalar map.
+	for _, tc := range []struct {
+		name    string
+		typ     FillerType
+		value   dcbor.Value
+		wantErr string
+	}{
+		{"ipfs/digest", FillerIPFSURI, digest, "must carry a text string"},
+		{"ipfs/integer", FillerIPFSURI, dcbor.Uint(3), "must carry a text string"},
+		{"ipfs/scalar map", FillerIPFSURI, scalar, "must carry a text string"},
+		{"ipfs/null", FillerIPFSURI, dcbor.Null, "must carry a text string"},
+		{"ipfs/empty string", FillerIPFSURI, dcbor.Text(""), "IPFS URI filler is empty"},
+		{"scalar/digest", FillerScalar, digest, "must be a CBOR map"},
+		{"scalar/text", FillerScalar, dcbor.Text("42"), "must be a CBOR map"},
+		{"scalar/integer", FillerScalar, dcbor.Uint(42), "must be a CBOR map"},
+		{"scalar/array", FillerScalar, dcbor.Array{dcbor.Uint(42)}, "must be a CBOR map"},
+		{"scalar/null", FillerScalar, dcbor.Null, "must be a CBOR map"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := dcbor.MustEncode(fillerMap(tc.typ, tc.value))
+			if _, err := DecodeFiller(b); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("DecodeFiller(%x) error = %v, want one containing %q", b, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestDecodeFillerRejects is the wire-format rejection table for fillers and
 // their scalar values.
 func TestDecodeFillerRejects(t *testing.T) {
