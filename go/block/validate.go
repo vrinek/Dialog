@@ -30,6 +30,12 @@ type Options struct {
 	// resolving one block's references. Zero means DefaultScanLimit; a
 	// negative value means no limit.
 	ScanLimit int
+	// Decrypter, when set, lets reference resolution read the operations of
+	// private blocks the caller holds keys for. Without it a private block
+	// resolution meets — an ancestor of the block being validated, or a block
+	// its refs name — contributes no definitions, since this package holds no
+	// keys.
+	Decrypter Decrypter
 }
 
 func (o *Options) scanLimit() int {
@@ -38,6 +44,37 @@ func (o *Options) scanLimit() int {
 	}
 	return o.ScanLimit
 }
+
+func (o *Options) decrypter() Decrypter {
+	if o == nil {
+		return nil
+	}
+	return o.Decrypter
+}
+
+// A Decrypter supplies the decrypted payload of a private block to reference
+// resolution. This package holds no keys; a caller that does implements this so
+// that a chain's own private ancestors, and private blocks its refs name, can
+// define the entities its operations reference.
+//
+// It is the mechanism behind spec/05-processing-model.md, "Undecryptable
+// reference handling": a node that can decrypt a block but not one the block
+// depends on MUST surface the error and MUST NOT accept the block on partial
+// validation. Returning ok false for a block the caller has no key for is what
+// produces that error, once a digest actually needs the block.
+type Decrypter interface {
+	// DecryptPayload returns the payload of a private block. ok is false when
+	// no key for the block is held, which is not an error; an error is a
+	// failure to decrypt with a key that should have worked.
+	DecryptPayload(b *Block) (p Payload, ok bool, err error)
+}
+
+// PrivateBlockNotice is the text of the warning Validate records on a private
+// block: the four rules it cannot check are listed in the report's Unchecked
+// field, and this says so in words. A caller that goes on to check them with
+// ValidatePayload drops the warning, which is why the text is a constant
+// rather than a literal.
+const PrivateBlockNotice = "this is a private block: rules 4, 5, 6 and 10 can only be checked by a holder of the decryption key"
 
 // A Warning is something a validator is asked to notice but not to reject —
 // a non-monotonic timestamp, a rule it could not check, a SHOULD an author did
@@ -213,7 +250,7 @@ func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 	// Rules 4, 5, 6 and 10 need the operations and refs in the clear.
 	if b.content.Type == TypePrivate {
 		report.Unchecked = append(report.Unchecked, 4, 5, 6, 10)
-		report.warn(0, d, "this is a private block: rules 4, 5, 6 and 10 can only be checked by a holder of the decryption key")
+		report.warn(0, d, "%s", PrivateBlockNotice)
 		return report, nil
 	}
 
@@ -294,12 +331,13 @@ func detectFork(b *Block, s Siblings) (Fork, bool) {
 // are parameters and not read off the block (see ValidatePayload).
 func validateReferences(b *Block, refs []cid.Digest, ops []Operation, src Source, opts *Options, report *Report) error {
 	r := &resolver{
-		block:  b,
-		src:    src,
-		limit:  opts.scanLimit(),
-		defs:   make(map[cid.Digest]record),
-		cache:  make(map[cid.Digest]*Block),
-		report: report,
+		block:     b,
+		src:       src,
+		limit:     opts.scanLimit(),
+		decrypter: opts.decrypter(),
+		defs:      make(map[cid.Digest]record),
+		cache:     make(map[cid.Digest]*Block),
+		report:    report,
 	}
 	if d, ok := b.Prev(); ok {
 		r.nextAncestor = &d
@@ -399,10 +437,11 @@ type record struct {
 // between lookups, so a block whose first operation resolves from its own
 // chain never fetches a foreign block at all.
 type resolver struct {
-	block  *Block
-	src    Source
-	limit  int
-	report *Report
+	block     *Block
+	src       Source
+	limit     int
+	decrypter Decrypter
+	report    *Report
 
 	defs  map[cid.Digest]record
 	cache map[cid.Digest]*Block
@@ -460,17 +499,46 @@ func (r *resolver) extendAncestors() error {
 		}
 		return err
 	}
+	ops := ancestor.content.Ops
 	if ancestor.content.Type == TypePrivate {
-		if !r.privateWarned {
-			r.report.warn(4, r.block.Digest(), "ancestor block %s is private, so the entities its operations define are not visible to this package and cannot satisfy a reference", d)
+		p, ok, err := r.decrypt(ancestor)
+		if err != nil {
+			return err
+		}
+		if ok {
+			// A key holder validating its own private chain resolves through
+			// its own earlier blocks, exactly as a public chain does.
+			ops = p.Ops
+		} else if !r.privateWarned {
+			r.report.warn(4, r.block.Digest(), "ancestor block %s is private and no decryption key for it was supplied, so the entities its operations define cannot satisfy a reference", d)
 			r.privateWarned = true
 		}
 	}
-	for _, op := range ancestor.content.Ops {
+	for _, op := range ops {
 		r.define(op)
 	}
 	r.nextAncestor = ancestor.content.Prev
 	return nil
+}
+
+// decrypt asks the caller's Decrypter for a private block's payload. Without
+// one, no private block is readable, which is the honest answer for a package
+// that holds no keys.
+func (r *resolver) decrypt(b *Block) (Payload, bool, error) {
+	if r.decrypter == nil {
+		return Payload{}, false, nil
+	}
+	p, ok, err := r.decrypter.DecryptPayload(b)
+	if err != nil {
+		return Payload{}, false, fmt.Errorf("block: decrypting %s: %w", b.Digest(), err)
+	}
+	if !ok {
+		return Payload{}, false, nil
+	}
+	if err := p.Validate(); err != nil {
+		return Payload{}, false, err
+	}
+	return p, true, nil
 }
 
 // extendRefs folds one more block of the refs graph into the definitions and
@@ -497,18 +565,26 @@ func (r *resolver) extendRefs() error {
 		}
 		return err
 	}
+	ops, refs := target.content.Ops, target.content.Refs
 	if target.content.Type == TypePrivate {
-		// The operations are encrypted; this package cannot read them, so the
-		// block contributes no definitions. spec/05-processing-model.md,
-		// "Undecryptable reference handling", makes that a validation error
-		// once a digest actually needs it, which is what resolve reports.
-		r.report.warn(4, r.block.Digest(), "referenced block %s is private; its operations are not visible to this package", d)
-		return nil
+		p, ok, err := r.decrypt(target)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			// The operations are encrypted and no key for them was supplied, so
+			// the block contributes no definitions. spec/05-processing-model.md,
+			// "Undecryptable reference handling", makes that a validation error
+			// once a digest actually needs it, which is what resolve reports.
+			r.report.warn(4, r.block.Digest(), "referenced block %s is private and no decryption key for it was supplied; its operations are not visible", d)
+			return nil
+		}
+		ops, refs = p.Ops, p.Refs
 	}
-	for _, op := range target.content.Ops {
+	for _, op := range ops {
 		r.define(op)
 	}
-	r.queue = append(r.queue, target.content.Refs...)
+	r.queue = append(r.queue, refs...)
 	return nil
 }
 
