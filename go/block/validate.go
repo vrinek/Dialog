@@ -149,8 +149,10 @@ func ruleErr(rule int, b *Block, format string, args ...any) error {
 //  5. Data model conformance — here: each create_molecule's filler count
 //     matches its bond's template, and each digest resolves to an entity of
 //     the kind its position names.
-//  6. Public/private reference rules — here: a public block's refs list only
-//     public blocks.
+//  6. Public/private reference rules — here: a public block's refs do not name
+//     a private block. Public and rotation blocks may be named; only a private
+//     block is excluded, being the one target a node without the decryption key
+//     cannot validate.
 //  7. Non-empty operations — at Decode and in Content.Validate.
 //  8. Deterministic encoding — at Decode, which rejects any non-canonical
 //     encoding, and by construction for a block this package built.
@@ -301,8 +303,8 @@ func validateReferences(b *Block, prev *Block, src Source, opts *Options, report
 	}
 
 	// Rules 6 and 10 are both properties of a referenced block rather than of
-	// this one, so they share a single pass over refs: a public block must
-	// reference only public blocks, and no block may reference a block of its
+	// this one, so they share a single pass over refs: a public block's refs
+	// must not name a private block, and no block may reference a block of its
 	// author's own chain — which, every block of a chain carrying the same pub,
 	// is a comparison of the two keys (spec/02-block-format.md, "The refs
 	// list"). Both are evaluated as a referenced block is resolved; an entry
@@ -324,8 +326,14 @@ func validateReferences(b *Block, prev *Block, src Source, opts *Options, report
 			}
 			return err
 		}
+		// Rule 6 excludes exactly one kind of target: the private block, whose
+		// operations a node without the decryption key cannot read. A rotation
+		// block is in the clear for every node, so a public block may name one —
+		// which is what a successor chain's genesis block does
+		// (spec/02-block-format.md, "Validation" rule 6, and "rotate_key",
+		// "Verifiable succession").
 		if b.content.Type == TypePublic && target.content.Type == TypePrivate {
-			return ruleErr(6, b, "refs entry %s is a private block; a public block must only reference public blocks", ref)
+			return ruleErr(6, b, "refs entry %s is a private block; a public block's %q must not name one, since a node without the decryption key cannot validate what it depends on", ref, keyRefs)
 		}
 		if target.SameAuthor(b) {
 			return ruleErr(10, b, "refs entry %s is signed by this block's own author %x, so it is a block of this chain; the author's own ancestry is already a resolution path and must not be listed in %q",

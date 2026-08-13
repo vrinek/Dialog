@@ -146,13 +146,24 @@ func fetchChecked(src Source, d cid.Digest) (*Block, error) {
 // (spec/02-block-format.md, "rotate_key", "Verifiable succession", and
 // spec/05-processing-model.md, "Chain succession").
 //
-// Four things are required, and each is an error: rotation must be a rotation
-// block, genesis must be a genesis block (its prev is null), genesis must be
-// signed by the key the rotate_key operation names, and genesis must list the
-// rotation block's digest in its refs. The last is what makes the succession
-// checkable from the blocks alone — the new key's own signature covers the
-// reference — and a chain that omits it is not the successor of that rotation,
-// whatever key signed it.
+// Five things are required, and each is an error: rotation must be a rotation
+// block, genesis must be a genesis block (its prev is null), genesis must be a
+// public block, genesis must be signed by the key the rotate_key operation
+// names, and genesis must list the rotation block's digest in its refs. The
+// last is what makes the succession checkable from the blocks alone — the new
+// key's own signature covers the reference — and a chain that omits it is not
+// the successor of that rotation, whatever key signed it.
+//
+// The successor's genesis block MUST be public (spec/02-block-format.md,
+// "Verifiable succession"): every node is asked to act on the reference, and a
+// private block's refs are inside its enc field, so a node without the
+// decryption key would be acting on evidence it cannot read. Confidential
+// succession is deferred to a future protocol version; the blocks after the
+// genesis block may be private.
+//
+// A public genesis block naming a rotation block in its refs is what rule 6
+// permits: the rule excludes private targets only (spec/02-block-format.md,
+// "Validation" rule 6).
 //
 // A rotation block naming its own key is impossible here: Content.Validate
 // rejects one, so no such *Block exists.
@@ -164,6 +175,14 @@ func ValidateSuccession(rotation, genesis *Block) (*Report, error) {
 	}
 	if !genesis.IsGenesis() {
 		return nil, fmt.Errorf("block: %s is not a genesis block, so it cannot begin the successor chain; its %q field must be null", genesis.CID(), keyPrev)
+	}
+	if genesis.content.Type != TypePublic {
+		if genesis.content.Type == TypePrivate {
+			return nil, fmt.Errorf("block: %s is a private block, so it cannot begin a successor chain; its %q are inside %q and a node without the decryption key cannot read the reference the succession rests on",
+				genesis.CID(), keyRefs, keyEnc)
+		}
+		return nil, fmt.Errorf("block: %s is a %s block, so it cannot begin a successor chain; the genesis block of a successor chain must be a %s block",
+			genesis.CID(), genesis.content.Type, TypePublic)
 	}
 	if !slices.Equal(genesis.content.Pub, op.NewPublicKey()) {
 		return nil, fmt.Errorf("block: the rotation block hands over to %x, but the successor genesis block is signed by %x",
@@ -177,8 +196,12 @@ func ValidateSuccession(rotation, genesis *Block) (*Report, error) {
 }
 
 // Successors finds the genesis blocks that claim to continue a rotation
-// block's chain: the stored blocks that name it in refs, are genesis blocks,
-// and are signed by the key its rotate_key operation appoints.
+// block's chain: the stored blocks that name it in refs, are public genesis
+// blocks, and are signed by the key its rotate_key operation appoints. The type
+// is part of the question, not an afterthought — only a public block can begin
+// a successor chain (spec/02-block-format.md, "Verifiable succession") — so a
+// block of another type claiming the position is no successor and is not
+// counted as one.
 //
 // Only one chain can succeed a rotation. More than one is an ambiguous
 // succession, which spec/02-block-format.md, "Verifiable succession", makes a
@@ -207,7 +230,7 @@ func Successors(rotation *Block, src Source) (successors []cid.Digest, fork *For
 			}
 			return nil, nil, err
 		}
-		if candidate.IsGenesis() && slices.Equal(candidate.content.Pub, newPub) {
+		if candidate.IsGenesis() && candidate.content.Type == TypePublic && slices.Equal(candidate.content.Pub, newPub) {
 			successors = append(successors, d)
 		}
 	}

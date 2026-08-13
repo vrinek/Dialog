@@ -659,6 +659,10 @@ func TestRotation(t *testing.T) {
 		for _, w := range chains[1].Report.Warnings {
 			t.Errorf("unexpected warning on a well-linked succession: %s", w)
 		}
+		// Rule 6 excludes private targets only, so the mandatory reference from
+		// a public genesis block to a rotation block is legal by construction
+		// (spec/02-block-format.md, "Validation" rule 6).
+		mustValidate(t, newGenesis, store, nil)
 	})
 
 	t.Run("appending after a rotation block", func(t *testing.T) {
@@ -697,6 +701,81 @@ func TestRotation(t *testing.T) {
 		store := NewMemStore()
 		store.MustAdd(g)
 		mustValidate(t, g, store, nil)
+	})
+
+	t.Run("private successor genesis", func(t *testing.T) {
+		// The genesis block of a successor chain MUST be a public block: every
+		// node is asked to act on its reference to the rotation block, and a
+		// private block's refs are inside enc, so a node without the decryption
+		// key would be acting on evidence it cannot read
+		// (spec/02-block-format.md, "Verifiable succession").
+		hidden := mustBuilder(t, 2)
+		if err := hidden.Succeeds(rotation); err != nil {
+			t.Fatalf("Succeeds: %v", err)
+		}
+		if _, err := hidden.Private(testCiphertext("successor"), make([]byte, NonceSize)); err == nil {
+			t.Error("the builder must refuse to open a successor chain with a private genesis block")
+		}
+		// An author who bypasses the builder is caught at validation.
+		privateGenesis, err := Sign(Content{
+			Version: Version, Type: TypePrivate,
+			Enc: testCiphertext("successor"), Nonce: make([]byte, NonceSize),
+		}, testKey(t, 2))
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		if _, err := ValidateSuccession(rotation, privateGenesis); err == nil {
+			t.Error("a private block must not be accepted as the genesis block of a successor chain")
+		} else if !strings.Contains(err.Error(), "private") {
+			t.Errorf("ValidateSuccession = %v, want an error naming the block's type", err)
+		}
+		// The block itself is a perfectly good private genesis block; what it
+		// cannot be is the successor of a rotation.
+		own := NewMemStore()
+		own.MustAdd(privateGenesis)
+		mustValidate(t, privateGenesis, own, nil)
+	})
+
+	t.Run("rotation block as successor genesis", func(t *testing.T) {
+		// A successor chain begins with a public block, so no other type may
+		// stand in the genesis position — including a rotation block, whose refs
+		// are in the clear but which is not what the rule admits.
+		immediate := mustBuilder(t, 2)
+		if err := immediate.Succeeds(rotation); err != nil {
+			t.Fatalf("Succeeds: %v", err)
+		}
+		if _, err := immediate.Rotation(3000, nil, testPub(t, 8)); err == nil {
+			t.Error("the builder must refuse to open a successor chain with a rotation genesis block")
+		}
+		rotationGenesis, err := Sign(Content{
+			Version: Version, Type: TypeRotation, TS: 3000,
+			Refs: []cid.Digest{rotation.Digest()},
+			Ops:  []Operation{MustRotateKey(testPub(t, 8))},
+		}, testKey(t, 2))
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		if _, err := ValidateSuccession(rotation, rotationGenesis); err == nil {
+			t.Error("a rotation block must not be accepted as the genesis block of a successor chain")
+		}
+		// Nor is it counted as a claimant when the successors of a rotation are
+		// enumerated: it cannot be one, so it makes no ambiguity.
+		claimed := NewMemStore()
+		claimed.MustAdd(genesis, rotation, newGenesis)
+		// Two blocks in the successor key's genesis position are a fork under
+		// rule 9, which the store reports as it stores the second; what matters
+		// here is that only the public one is a candidate successor.
+		var forkErr *ForkError
+		if err := claimed.Add(rotationGenesis); !errors.As(err, &forkErr) {
+			t.Fatalf("storing a second block in the genesis position = %v, want a *ForkError", err)
+		}
+		successors, fork, err := Successors(rotation, claimed)
+		if err != nil {
+			t.Fatalf("Successors: %v", err)
+		}
+		if len(successors) != 1 || fork != nil {
+			t.Errorf("Successors = %v, fork %v, want only the public genesis block", successors, fork)
+		}
 	})
 
 	t.Run("rotation to the same key", func(t *testing.T) {

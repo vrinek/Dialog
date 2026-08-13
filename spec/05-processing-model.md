@@ -61,7 +61,7 @@ When a node processes a rotation block (see [02-block-format.md](02-block-format
 3. If the user subscribes to the old key's author, the implementation SHOULD auto-subscribe to the new key's chain, treating it as the same logical author
 4. Author identity (mapping multiple keys to a single author) is implementation-scoped
 
-The new key's genesis block MUST reference the rotation block via `refs`; a chain whose genesis block does not is not the successor of that rotation, whatever key signed it (see [02-block-format.md](02-block-format.md), "rotate_key"). Steps 2 and 3 apply to the chain that carries the reference. If more than one genesis block references the same rotation block, the succession is ambiguous: the node MUST surface the conflict as it surfaces a fork, and MUST NOT pick a successor on its own.
+The new key's genesis block MUST be a public block and MUST reference the rotation block via `refs`; a chain whose genesis block does not is not the successor of that rotation, whatever key signed it (see [02-block-format.md](02-block-format.md), "rotate_key"). The genesis block is public so that every node can read the reference these steps ask it to act on; the blocks after it MAY be private. Steps 2 and 3 apply to the chain that carries the reference. If more than one genesis block references the same rotation block, the succession is ambiguous: the node MUST surface the conflict as it surfaces a fork, and MUST NOT pick a successor on its own.
 
 ### Layer 2 — Ontology graph accumulation
 
@@ -108,8 +108,8 @@ Implementations MAY set a user-configurable limit on the number of foreign block
 
 ##### Public/private reference rules
 
-- Public blocks MUST only reference public blocks in their `refs` field
-- Private blocks MAY reference either public or private blocks
+- A public block's `refs` MUST NOT name a private block; public and rotation blocks MAY be named, a rotation block being in the clear for every node
+- A private block's `refs` MAY name a block of any type
 - Non-recipient nodes (those without the decryption key) MAY safely drop private blocks they cannot decrypt
 
 The first rule is evaluated as each referenced block is resolved, not by fetching every entry of `refs` in advance: a node that resolves a referenced block and finds it private MUST reject the referencing public block, and reports the rule as unchecked for an entry it does not hold. Resolution is demand-driven, so an entry that resolution never needs may never be fetched. The same applies to the own-chain half of validation rule 10 (see [02-block-format.md](02-block-format.md), "The refs list").

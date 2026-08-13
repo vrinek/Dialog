@@ -60,6 +60,12 @@ func (b *Builder) Tip() (cid.Digest, bool) {
 // successor chain calls this before signing the genesis block; one who is
 // starting a chain of their own does not.
 //
+// The genesis block of a successor chain must be a public block: every node is
+// asked to act on the reference, and a private block's refs are inside its enc
+// field (spec/02-block-format.md, "Verifiable succession"). A Builder that has
+// been told it succeeds a rotation therefore signs a public block first; the
+// blocks after it may be private.
+//
 // It is an error to call Succeeds after the genesis block has been signed, or
 // with a block that is not a rotation block naming this Builder's key.
 func (b *Builder) Succeeds(rotation *Block) error {
@@ -122,7 +128,12 @@ func (b *Builder) build(c Content) (*Block, error) {
 		c.Prev = &prev
 	} else if len(b.genesisRefs) > 0 {
 		// The genesis block of a successor chain references the rotation block
-		// that ended the previous one.
+		// that ended the previous one, and MUST be a public block so that every
+		// node can read that reference (spec/02-block-format.md, "Verifiable
+		// succession").
+		if c.Type != TypePublic {
+			return nil, fmt.Errorf("block: this chain succeeds a rotation, so its genesis block must be a %s block, not a %s one; a node without the decryption key must be able to read the reference to the rotation block", TypePublic, c.Type)
+		}
 		c.Refs = append(slices.Clone(b.genesisRefs), c.Refs...)
 	}
 	blk, err := Sign(c, b.priv)
