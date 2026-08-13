@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "035"
 tags: [specification-gap, data-model, cddl, validation]
@@ -122,13 +122,15 @@ comparison).
 
 ## Acceptance Criteria
 
-- [ ] The CDDL binds each filler type to the shape of its value, or a
+- [x] The CDDL binds each filler type to the shape of its value, or a
       normative sentence does
-- [ ] The 32-byte constraint on reference filler values appears in the CDDL,
+- [x] The 32-byte constraint on reference filler values appears in the CDDL,
       as `spec/03-encoding.md` § "Internal references" already claims
-- [ ] Whether an empty type 3 string is permitted is stated
-- [ ] `go/entity` matches the resolved rules
-- [ ] Conformance vectors include a rejected type/value mismatch
+- [x] Whether an empty type 3 string is permitted is stated
+- [x] `go/entity` matches the resolved rules
+- [x] Conformance vectors include a rejected type/value mismatch
+      (`TestDecodeFillerTypeValueMismatch` walks the full matrix; the
+      `vectors/` files land in phase 5 and are generated from these values)
 
 ## Resources
 
@@ -147,6 +149,42 @@ Found while writing the filler decoder in `go/entity`. Validating strictly
 against the filler-type table was the obvious reading, but it is strictly
 narrower than the published CDDL, and the gap is invisible to anyone who
 implements from the schema alone.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1, with the type 3 question settled as
+recommended. The `filler` rule becomes a discriminated union of five group
+alternatives, each binding one type tag to the one value shape it permits:
+types 0, 1 and 2 to `bstr .size 32`, type 3 to `tstr .size (1..)`, type 4 to
+`scalar-value`. An empty IPFS URI is forbidden — an empty content identifier
+addresses nothing — and implementations MUST reject one. The filler-type table
+survives as a restatement of the schema rather than as a second source of
+truth.
+
+**Changes:**
+
+- `spec/01-data-model.md` § Molecules: the `filler`, `filler-type` and
+  `filler-value` rules are replaced by `filler = atom-filler / bond-filler /
+  molecule-filler / ipfs-filler / scalar-filler` and the five per-type groups.
+  The `.size 32` constraint that `spec/03-encoding.md` § "Internal references"
+  already claimed to exist now does, so a 36-byte CID pasted into a filler
+  value fails the schema and not merely the prose.
+- `spec/01-data-model.md` § "Filler types": the table's type 3 row becomes
+  `tstr .size (1..)`; a new paragraph states that the tag and the value are not
+  independent and that implementations MUST reject both a mismatched value and
+  a type tag outside 0-4; the paragraph below states the empty-URI rule and
+  keeps the rest of the URI's format out of scope.
+- `go/entity/filler.go`: no behaviour change — the decoder already validated
+  against the table — but the `Filler` doc comment now quotes the
+  discriminated CDDL, and `IPFSFiller` cites the ratified non-empty rule
+  instead of recording it as an invention.
+- `go/entity/filler_test.go`: `TestDecodeFillerTypeValueMismatch` walks the
+  matrix the union forbids — each reference type against text, integer, map,
+  array, null and byte strings of 0, 31, 33 and 36 bytes; type 3 against
+  non-text values and the empty string; type 4 against every non-map value —
+  so a value that is legal under one alternative is shown to be rejected under
+  the others.
 
 ## Notes
 

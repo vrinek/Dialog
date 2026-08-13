@@ -545,6 +545,11 @@ const timestampLen = 20
 // raw bytes, so admitting a second spelling of an instant would admit a second
 // CID for the same statement. Times recorded in another zone or at another
 // precision are converted before the entity is created.
+//
+// Calendar validity is time.Parse's, which is the proleptic Gregorian calendar
+// for every year — so 1500-02-29, a real date in the Julian calendar then in
+// civil use, is rejected. The specification does not yet name a calendar for
+// dates before the Gregorian reform; the question is filed as todos/036.
 func ValidateTimestamp(s string) error {
 	if s == "" {
 		return fmt.Errorf("timestamp is empty; it must have the form YYYY-MM-DDTHH:MM:SSZ")
