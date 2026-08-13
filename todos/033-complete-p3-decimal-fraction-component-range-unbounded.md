@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "033"
 tags: [specification-gap, encoding, data-model, dcbor]
@@ -99,13 +99,15 @@ never produces a wrong value, only refuses one it cannot represent.
 
 ## Acceptance Criteria
 
-- [ ] `spec/03-encoding.md` states the permitted range of the exponent and the
+- [x] `spec/03-encoding.md` states the permitted range of the exponent and the
       mantissa, or states explicitly that both are unbounded within CBOR's
       `int`
-- [ ] The CDDL in `spec/01-data-model.md` agrees with that range
-- [ ] `go/dcbor` matches the resolved rule, and the doc comment on `Decimal`
+- [x] The CDDL in `spec/01-data-model.md` agrees with that range
+- [x] `go/dcbor` matches the resolved rule, and the doc comment on `Decimal`
       cites the spec rather than describing a local limit
-- [ ] Conformance vectors include a boundary case at each end of the range
+- [x] Conformance vectors include a boundary case at each end of the range
+      (encoder tests cover the four boundary values; the `vectors/` files
+      themselves land in phase 5 and are generated from these values)
 
 ## Resources
 
@@ -124,6 +126,34 @@ Surfaced while implementing the ratified tag 4 rules of issue #32. The three
 canonicalization rules were implementable exactly as written; the magnitude of
 the two components was the one property the decision did not settle, and the
 implementation had to pick a representation before it could decode anything.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1. The exponent and the mantissa of a tag 4
+decimal fraction are each bounded to the signed 64-bit range
+`-2^63 … 2^63-1`; decoders MUST reject a decimal fraction whose components
+fall outside it. This is exactly what `go/dcbor` already enforced, so the
+rejection is now a spec rule rather than an implementation limit.
+
+**Changes:**
+
+- `spec/03-encoding.md` § "Decimal fractions": new normative paragraph after
+  the structural rules stating the bound as a MUST for encoders and decoders,
+  with the rationale (native 64-bit signed integers everywhere, no bignum path
+  in any language binding) and a note that a future protocol version may raise
+  it.
+- `spec/01-data-model.md` § Scalars: the same bound stated in prose, and a
+  comment on the `scalar-value` CDDL pointing at the encoding document. The
+  CDDL structure (`int / #6.4([int, int])`) is unchanged.
+- `go/dcbor/value.go`: the `Decimal` doc comment now cites the spec rule
+  instead of describing a local representation limit.
+- `go/dcbor/decode_test.go`: rejection cases now cover both directions for
+  both components — mantissa above and below the range, exponent above and
+  below it — plus the two just-past-the-boundary values
+  (`1b8000000000000000` and `3b8000000000000000`). The in-range boundary
+  values (exponent `-2^63`, mantissa `2^63-1` and `-2^63`) were already
+  covered by the encoder round-trip table.
 
 ## Notes
 

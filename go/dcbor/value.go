@@ -76,11 +76,11 @@ type Neg uint64
 // pair: it performs the canonicalization and returns an integer Value when
 // the result is a whole number.
 //
-// Both components are int64. CBOR permits the full 64-bit unsigned range on
-// each side, so a decimal fraction whose exponent or mantissa lies outside
-// [-2^63, 2^63-1] is rejected rather than represented. That range covers
-// every value Dialog v1 needs; widening it would mean a big-integer
-// representation and a new value kind.
+// Both components are int64 because spec/03-encoding.md, "Decimal fractions",
+// bounds the exponent and the mantissa to the signed 64-bit range
+// [-2^63, 2^63-1] and requires decoders to reject anything outside it. CBOR's
+// integer types can express larger magnitudes; such a decimal fraction is not
+// a Dialog document, and Decode refuses it.
 type Decimal struct {
 	Exponent int64
 	Mantissa int64

@@ -61,6 +61,8 @@ c4                      ; tag 4 (decimal fraction)
 
 The array MUST have definite length and exactly two elements, exponent first. Neither element may itself be a tag, a float, or any type other than a major type 0 or 1 integer, and each MUST use the shortest-form encoding of rule 1. The value denoted is `mantissa × 10^exponent`.
 
+Both components are bounded to the signed 64-bit range. The exponent and the mantissa MUST each lie in `-2^63 … 2^63-1`. Encoders MUST NOT emit, and decoders MUST reject, a decimal fraction whose exponent or mantissa falls outside that range, even though CBOR's integer types can express larger magnitudes. The bound lets every implementation hold both components in its native signed 64-bit integer type; no Dialog v1 scalar needs more, and a wider range would force arbitrary-precision arithmetic into every language binding. A future protocol version may raise the bound.
+
 Because a CID is a hash of the encoded bytes, every value MUST have exactly one representation. The following canonicalization rules make the representation unique:
 
 1. Tag 4 MUST be used only for values that are not representable as a CBOR integer — that is, the exponent MUST be negative. Whole numbers MUST be encoded as plain integers (major type 0 or 1), never as a decimal fraction.

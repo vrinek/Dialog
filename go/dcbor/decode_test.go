@@ -96,8 +96,14 @@ func TestDecodeRejects(t *testing.T) {
 		{"tag 4 truncated array", "c48221", "exceeds"},
 		{"tag 4 truncated mantissa", "c482211901", "unexpected end of input"},
 		{"tag 4 truncated after head", "c4", "unexpected end of input in tag 4 content"},
-		{"tag 4 mantissa beyond int64", "c482201bffffffffffffffff", "outside the int64 range"},
-		{"tag 4 exponent beyond int64", "c4823bffffffffffffffff01", "outside the int64 range"},
+		// Component range (spec/03-encoding.md: both components MUST lie in
+		// -2^63 .. 2^63-1); each component is checked in both directions.
+		{"tag 4 mantissa above int64 range", "c482201bffffffffffffffff", "outside the int64 range"},
+		{"tag 4 mantissa below int64 range", "c482203bffffffffffffffff", "outside the int64 range"},
+		{"tag 4 exponent above int64 range", "c4821bffffffffffffffff01", "outside the int64 range"},
+		{"tag 4 exponent below int64 range", "c4823bffffffffffffffff01", "outside the int64 range"},
+		{"tag 4 mantissa just above int64 range", "c482201b8000000000000000", "outside the int64 range"},
+		{"tag 4 exponent just below int64 range", "c4823b800000000000000001", "outside the int64 range"},
 
 		// Tag 4 canonicalization rules.
 		{"tag 4 zero exponent", "c4820019013a", "is not negative"},
