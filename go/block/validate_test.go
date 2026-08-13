@@ -677,7 +677,9 @@ func TestRotation(t *testing.T) {
 	})
 
 	t.Run("successor genesis without the rotation reference", func(t *testing.T) {
-		// The reference is a SHOULD, so this is valid — and warned about.
+		// The back-reference is a MUST: a chain whose genesis block omits it is
+		// a valid chain, but it is not the successor of that rotation
+		// (spec/02-block-format.md, "Verifiable succession").
 		unlinked := mustBuilder(t, 3)
 		g, err := unlinked.Public(3000, nil, MustCreateAtom("a chain of its own"))
 		if err != nil {
@@ -687,12 +689,67 @@ func TestRotation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("rotation: %v", err)
 		}
-		report, err := ValidateSuccession(rot, g)
-		if err != nil {
-			t.Fatalf("ValidateSuccession = %v, want nil: the reference is a SHOULD", err)
+		if _, err := ValidateSuccession(rot, g); err == nil {
+			t.Error("a successor chain whose genesis block does not reference the rotation block must be rejected")
 		}
-		if len(report.Warnings) != 1 {
-			t.Errorf("warnings = %v, want one about the missing rotation reference", report.Warnings)
+		// The block itself is untouched by this: it validates as the genesis
+		// block of an unrelated author's chain.
+		store := NewMemStore()
+		store.MustAdd(g)
+		mustValidate(t, g, store, nil)
+	})
+
+	t.Run("rotation to the same key", func(t *testing.T) {
+		// new_pub MUST NOT equal pub (spec/02-block-format.md, "Rotation
+		// block"), so no such block can be built or decoded.
+		if _, err := mustBuilder(t, 7).Rotation(1000, nil, testPub(t, 7)); err == nil {
+			t.Error("a rotation block naming its own key must be rejected")
+		}
+	})
+
+	t.Run("two chains claiming one rotation", func(t *testing.T) {
+		// Only one chain can succeed a rotation. A second genesis block
+		// referencing the same rotation block makes the succession ambiguous,
+		// which is surfaced the way rule 9's forks are: reported, not resolved.
+		rival := mustBuilder(t, 2)
+		if err := rival.Succeeds(rotation); err != nil {
+			t.Fatalf("Succeeds: %v", err)
+		}
+		other, err := rival.Public(3001, nil, MustCreateAtom("a rival successor"))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		forked := NewMemStore()
+		forked.MustAdd(genesis, rotation, newGenesis)
+		var forkErr *ForkError
+		if err := forked.Add(other); !errors.As(err, &forkErr) {
+			t.Fatalf("storing a second successor genesis block = %v, want a *ForkError", err)
+		}
+
+		successors, fork, err := Successors(rotation, forked)
+		if err != nil {
+			t.Fatalf("Successors: %v", err)
+		}
+		if len(successors) != 2 || fork == nil {
+			t.Fatalf("Successors = %v, fork %v, want both genesis blocks and a fork", successors, fork)
+		}
+		if !ed25519.PublicKey(fork.Pub).Equal(newPub) || len(fork.Blocks) != 2 {
+			t.Errorf("fork = %+v, want the successor key's two genesis blocks", fork)
+		}
+
+		// ValidateHistory surfaces it in the successor chain's report rather
+		// than choosing between the two.
+		chains, err := ValidateHistory([]cid.Digest{rotation.Digest(), newGenesis.Digest()}, forked, nil)
+		if err != nil {
+			t.Fatalf("ValidateHistory: %v", err)
+		}
+		if len(chains[1].Report.Forks) == 0 {
+			t.Error("the ambiguous succession is not in the successor chain's report")
+		}
+
+		// A source that cannot read the refs graph backwards says so.
+		if _, _, err := Successors(rotation, plainSource{forked}); err == nil {
+			t.Error("Successors must report that a source without Referrers cannot answer")
 		}
 	})
 

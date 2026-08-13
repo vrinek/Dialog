@@ -39,6 +39,21 @@ type Siblings interface {
 	BlocksWithPrev(pub ed25519.PublicKey, prev *cid.Digest) []cid.Digest
 }
 
+// A Referrers source can list the blocks it holds whose refs name a given
+// digest — the refs graph read backwards. Successors uses it to find the
+// genesis blocks claiming a rotation block, which is the one question a
+// forward-only walk of refs cannot answer
+// (spec/02-block-format.md, "Verifiable succession").
+//
+// Only a public or rotation block can be listed: a private block's refs are
+// inside its ciphertext, so a source that does not hold the decryption key
+// cannot index them.
+type Referrers interface {
+	// BlocksReferencing returns the digests of the stored blocks that list d
+	// in their refs.
+	BlocksReferencing(d cid.Digest) []cid.Digest
+}
+
 // A Fork is two or more distinct blocks by the same author claiming the same
 // predecessor — divergent histories for one chain
 // (spec/02-block-format.md, "Validation" rule 9).
@@ -86,19 +101,22 @@ func IsFork(a, b *Block) bool {
 }
 
 // A MemStore is an in-memory Source. It holds blocks by digest, indexes them
-// by (author, prev) so that forks are noticed as they arrive, and is safe for
+// by (author, prev) so that forks are noticed as they arrive and by referenced
+// digest so that the refs graph can be read backwards, and is safe for
 // concurrent use.
 type MemStore struct {
-	mu       sync.RWMutex
-	blocks   map[cid.Digest]*Block
-	position map[string][]cid.Digest // (pub, prev) -> blocks claiming it
+	mu        sync.RWMutex
+	blocks    map[cid.Digest]*Block
+	position  map[string][]cid.Digest     // (pub, prev) -> blocks claiming it
+	referrers map[cid.Digest][]cid.Digest // referenced digest -> blocks listing it
 }
 
 // NewMemStore returns an empty store.
 func NewMemStore() *MemStore {
 	return &MemStore{
-		blocks:   make(map[cid.Digest]*Block),
-		position: make(map[string][]cid.Digest),
+		blocks:    make(map[cid.Digest]*Block),
+		position:  make(map[string][]cid.Digest),
+		referrers: make(map[cid.Digest][]cid.Digest),
 	}
 }
 
@@ -128,6 +146,9 @@ func (s *MemStore) Add(b *Block) error {
 		return nil
 	}
 	s.blocks[d] = b
+	for _, ref := range b.content.Refs {
+		s.referrers[ref] = append(s.referrers[ref], d)
+	}
 
 	key := positionKey(b.content.Pub, b.content.Prev)
 	siblings := s.position[key]
@@ -187,6 +208,13 @@ func (s *MemStore) BlocksWithPrev(pub ed25519.PublicKey, prev *cid.Digest) []cid
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return slices.Clone(s.position[positionKey(pub, prev)])
+}
+
+// BlocksReferencing implements Referrers.
+func (s *MemStore) BlocksReferencing(d cid.Digest) []cid.Digest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return slices.Clone(s.referrers[d])
 }
 
 // Forks returns every fork the store holds, in no particular order.

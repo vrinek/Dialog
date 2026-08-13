@@ -233,8 +233,16 @@ func (c Content) Validate() error {
 		if len(c.Ops) != 1 {
 			return fmt.Errorf("block: a rotation block carries %d operations; it must contain exactly one %s operation and no others", len(c.Ops), OpRotateKey)
 		}
-		if _, ok := c.Ops[0].(RotateKey); !ok {
+		rotate, ok := c.Ops[0].(RotateKey)
+		if !ok {
 			return fmt.Errorf("block: the operation of a rotation block is %s; it must be %s", c.Ops[0].Op(), OpRotateKey)
+		}
+		// "new_pub MUST NOT equal the rotation block's pub"
+		// (spec/02-block-format.md, "Rotation block"): a rotation to the key
+		// that signed it ends a chain in favour of itself, and the successor
+		// chain would have to be signed by a key that may no longer be used.
+		if bytes.Equal(rotate.newPub[:], c.Pub) {
+			return fmt.Errorf("block: a rotation block rotates %x to itself; %q must name a key other than the block's %q", c.Pub[:8], keyNewPub, keyPub)
 		}
 	default:
 		// "A rotate_key operation MUST appear only in a block whose type is

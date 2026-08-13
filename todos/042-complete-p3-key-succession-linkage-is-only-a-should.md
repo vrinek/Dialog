@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "042"
 tags: [specification-gap, key-rotation, block-validation, security]
@@ -103,12 +103,12 @@ ambiguous-successor case should be stated.
 
 ## Acceptance Criteria
 
-- [ ] The specification says whether the successor genesis block MUST
+- [x] The specification says whether the successor genesis block MUST
       reference the rotation block
-- [ ] `new_pub == pub` is permitted or forbidden explicitly
-- [ ] The case of several genesis blocks referencing one rotation block is
+- [x] `new_pub == pub` is permitted or forbidden explicitly
+- [x] The case of several genesis blocks referencing one rotation block is
       addressed
-- [ ] `go/block`'s `ValidateSuccession` matches the ratified rules
+- [x] `go/block`'s `ValidateSuccession` matches the ratified rules
 
 ## Work Log
 
@@ -120,6 +120,62 @@ block, a genesis block, and the successor key matching `new_pub` — and warns
 rather than fails when the `refs` back-reference is missing, since it is a
 SHOULD. The warning text says the succession is unverifiable without it, which
 is the honest reading and the reason this issue exists.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1 for v1, with option 3 left where the
+issue put it — a signature by the old key over `new_pub` belongs to the version
+that takes up key compromise.
+
+1. The genesis block of a successor chain **MUST** list the rotation block's
+   digest in its `refs`, upgraded from SHOULD. A node MUST NOT treat a chain as
+   the successor of a rotation unless its genesis block carries the reference;
+   a chain that omits it is a valid chain of an unrelated author, as far as any
+   node can tell. The genesis block's own signature covers the reference, which
+   is what makes it evidence rather than an assertion anyone could make.
+2. `new_pub` **MUST NOT** equal the rotation block's `pub`. Rotating to the key
+   that signed the block ends a chain in favour of itself and no node can act
+   on it.
+3. Several genesis blocks referencing one rotation block is an **ambiguous
+   succession**, and it is surfaced the way forks are: detection required,
+   resolution implementation-scoped. Such blocks are a fork under rule 9 too —
+   distinct blocks signed by the successor key, all claiming its genesis
+   position — so no new machinery is needed to report them.
+
+The specification is explicit that this makes succession *checkable*, not
+cryptographically proven: the old key still signs nothing the new key
+produced.
+
+**Changes:**
+
+- `spec/02-block-format.md` § "Rotation block": states the `new_pub != pub`
+  constraint and why CDDL cannot carry it.
+- `spec/02-block-format.md` § "rotate_key": new "Verifiable succession"
+  paragraph with the MUST, the two further constraints, and an informative note
+  on what succession does and does not prove.
+- `spec/05-processing-model.md` § "Chain succession": the SHOULD becomes the
+  MUST, steps 2 and 3 are tied to the chain that carries the reference, and the
+  ambiguous case is stated.
+- `go/block/block.go` (`Content.Validate`): rejects a rotation block whose
+  `new_pub` is its own `pub`, so no such `*Block` can exist.
+- `go/block/chain.go`: `ValidateSuccession`'s warning is now an error; new
+  `Successors` finds the genesis blocks claiming a rotation block and returns a
+  `*Fork` when there is more than one; `ValidateHistory` puts that fork in the
+  successor chain's report.
+- `go/block/store.go`: new `Referrers` interface (the refs graph read
+  backwards) and a `MemStore` index implementing it.
+- `go/block/builder.go`: `Succeeds`'s doc comment states the requirement rather
+  than a SHOULD.
+- `go/block/validate_test.go` (`TestRotation`): the missing-reference subtest
+  now expects an error and checks that the block is still a valid chain of its
+  own; new subtests for a rotation naming its own key and for two chains
+  claiming one rotation (`Successors`, the fork in `ValidateHistory`'s report,
+  and a source that cannot answer).
+
+**Follow-up filed:** `todos/044` — the mandatory back-reference makes rule 6's
+public/private dichotomy load-bearing for a third block type, since a public
+successor genesis block now MUST reference a rotation block.
 
 ## Notes
 

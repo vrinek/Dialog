@@ -2,6 +2,7 @@ package block
 
 import (
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -135,16 +136,19 @@ func fetchChecked(src Source, d cid.Digest) (*Block, error) {
 
 // ValidateSuccession checks the link between a chain that ended with a
 // rotation block and the genesis block of the key that continues it
-// (spec/02-block-format.md, "rotate_key", and spec/05-processing-model.md,
-// "Chain succession").
+// (spec/02-block-format.md, "rotate_key", "Verifiable succession", and
+// spec/05-processing-model.md, "Chain succession").
 //
-// Three things are required and are errors: rotation must be a rotation block,
-// genesis must be a genesis block (its prev is null), and genesis must be
-// signed by the key the rotate_key operation names. The fourth — that the
-// genesis block reference the rotation block in refs — is a SHOULD in the
-// specification, so a genesis block that omits it is valid and gets a warning.
-// Without that reference nothing on the wire ties the two chains together; the
-// report says so, and todos/042 asks whether it should be a MUST.
+// Four things are required, and each is an error: rotation must be a rotation
+// block, genesis must be a genesis block (its prev is null), genesis must be
+// signed by the key the rotate_key operation names, and genesis must list the
+// rotation block's digest in its refs. The last is what makes the succession
+// checkable from the blocks alone — the new key's own signature covers the
+// reference — and a chain that omits it is not the successor of that rotation,
+// whatever key signed it.
+//
+// A rotation block naming its own key is impossible here: Content.Validate
+// rejects one, so no such *Block exists.
 func ValidateSuccession(rotation, genesis *Block) (*Report, error) {
 	report := &Report{}
 	op, ok := rotation.RotateKey()
@@ -159,10 +163,52 @@ func ValidateSuccession(rotation, genesis *Block) (*Report, error) {
 			op.NewPublicKey()[:8], genesis.content.Pub[:8])
 	}
 	if !slices.Contains(genesis.content.Refs, rotation.Digest()) {
-		report.warn(0, genesis.Digest(), "the genesis block of the successor chain does not reference the rotation block %s in %q; key succession is unverifiable without it (spec/02-block-format.md makes the reference a SHOULD)",
+		return nil, fmt.Errorf("block: the genesis block of the successor chain does not reference the rotation block %s in %q; a chain that omits the reference is not the successor of that rotation",
 			rotation.Digest(), keyRefs)
 	}
 	return report, nil
+}
+
+// Successors finds the genesis blocks that claim to continue a rotation
+// block's chain: the stored blocks that name it in refs, are genesis blocks,
+// and are signed by the key its rotate_key operation appoints.
+//
+// Only one chain can succeed a rotation. More than one is an ambiguous
+// succession, which spec/02-block-format.md, "Verifiable succession", makes a
+// fork condition — and which is a fork in the strict sense of rule 9 too,
+// since all of them claim the genesis position of the successor key's chain.
+// It is returned the way rule 9's forks are: reported, not resolved.
+//
+// src must implement Referrers; a source that cannot list the blocks referring
+// to a digest cannot answer the question, and says so rather than reporting no
+// successor.
+func Successors(rotation *Block, src Source) (successors []cid.Digest, fork *Fork, err error) {
+	op, ok := rotation.RotateKey()
+	if !ok {
+		return nil, nil, fmt.Errorf("block: %s is a %s block, not a rotation block; only a rotation block hands a chain over", rotation.CID(), rotation.content.Type)
+	}
+	r, ok := src.(Referrers)
+	if !ok {
+		return nil, nil, fmt.Errorf("block: the source cannot list the blocks referring to %s; implement block.Referrers to detect a successor chain", rotation.Digest())
+	}
+	newPub := op.NewPublicKey()
+	for _, d := range r.BlocksReferencing(rotation.Digest()) {
+		candidate, err := src.Block(d)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return nil, nil, err
+		}
+		if candidate.IsGenesis() && slices.Equal(candidate.content.Pub, newPub) {
+			successors = append(successors, d)
+		}
+	}
+	slices.SortFunc(successors, func(x, y cid.Digest) int { return slices.Compare(x[:], y[:]) })
+	if len(successors) > 1 {
+		fork = &Fork{Pub: newPub, Blocks: slices.Clone(successors)}
+	}
+	return successors, fork, nil
 }
 
 // ValidateHistory validates a succession of chains for one author, given the
@@ -191,6 +237,13 @@ func ValidateHistory(tips []cid.Digest, src Source, opts *Options) ([]*Chain, er
 				return nil, err
 			}
 			chain.Report.Warnings = append(chain.Report.Warnings, report.Warnings...)
+			// A second genesis block claiming the same rotation makes the
+			// succession ambiguous. Detection is required and resolution is
+			// not, so it joins the chain's forks (spec/02-block-format.md,
+			// "Verifiable succession").
+			if _, fork, err := Successors(rotation, src); err == nil && fork != nil {
+				chain.Report.Forks = append(chain.Report.Forks, *fork)
+			}
 		}
 		chains = append(chains, chain)
 	}

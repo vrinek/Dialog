@@ -56,7 +56,7 @@ When a node processes a rotation block (see [02-block-format.md](02-block-format
 3. If the user subscribes to the old key's author, the implementation SHOULD auto-subscribe to the new key's chain, treating it as the same logical author
 4. Author identity (mapping multiple keys to a single author) is implementation-scoped
 
-The new key's genesis block SHOULD reference the rotation block via `refs` to establish verifiable key succession.
+The new key's genesis block MUST reference the rotation block via `refs`; a chain whose genesis block does not is not the successor of that rotation, whatever key signed it (see [02-block-format.md](02-block-format.md), "rotate_key"). Steps 2 and 3 apply to the chain that carries the reference. If more than one genesis block references the same rotation block, the succession is ambiguous: the node MUST surface the conflict as it surfaces a fork, and MUST NOT pick a successor on its own.
 
 ### Layer 2 — Ontology graph accumulation
 

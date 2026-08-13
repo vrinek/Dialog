@@ -54,9 +54,11 @@ func (b *Builder) Tip() (cid.Digest, bool) {
 
 // Succeeds records that this Builder's chain continues the chain that ended
 // with the given rotation block, so that its genesis block references the
-// rotation block in refs. spec/02-block-format.md, "rotate_key", makes that
-// reference a SHOULD — it is what makes key succession verifiable — and this
-// is how an author honours it.
+// rotation block in refs. That reference is required of a successor chain
+// (spec/02-block-format.md, "Verifiable succession"): without it the new chain
+// is nobody's successor, whatever key signed it. An author who is starting a
+// successor chain calls this before signing the genesis block; one who is
+// starting a chain of their own does not.
 //
 // It is an error to call Succeeds after the genesis block has been signed, or
 // with a block that is not a rotation block naming this Builder's key.

@@ -117,6 +117,8 @@ rotate-key-op = {
 }
 ```
 
+The `new_pub` field MUST NOT equal the rotation block's `pub` field. A rotation to the key that signed it ends a chain in favour of itself, which no node can act on: the old key is marked inactive and the successor chain would have to be signed by a key that may no longer be used. Implementations MUST reject such a block. The constraint is a relation between two fields and cannot be written in CDDL; it is checked alongside the schema.
+
 ### Validation dispatch
 
 Implementations MUST check the `type` field to determine block structure:
@@ -181,9 +183,18 @@ Every one of them MUST refer to an entity that is **reachable** from this block 
 
 #### rotate_key
 
-Rotates the author's key. A `rotate_key` operation MUST appear only in a block whose `type` is `"rotation"`, and such a block contains exactly one of them and no other operation. The rotation block is the last block in the current key's chain. A new chain begins with a genesis block signed by the new key. The new key's genesis block SHOULD reference the rotation block via `refs` to establish verifiable key succession.
+Rotates the author's key. A `rotate_key` operation MUST appear only in a block whose `type` is `"rotation"`, and such a block contains exactly one of them and no other operation. The rotation block is the last block in the current key's chain. A new chain begins with a genesis block signed by the new key.
 
 Implementations MUST mark the old key as inactive after processing a rotation block. Implementations MUST NOT accept further blocks signed by the old key after the rotation block.
+
+**Verifiable succession.** The genesis block of the successor chain MUST list the rotation block's digest in its `refs`. A node MUST NOT treat a chain as the successor of a rotation unless its genesis block carries that reference: the rotation block names the new key, the genesis block names the rotation block, and the genesis block's own signature — by the new key — is what makes the second half of that pair evidence rather than an assertion anyone could make. A chain whose genesis block omits the reference is a valid chain of an unrelated author, as far as any node can tell.
+
+Two further constraints follow:
+
+- `new_pub` MUST NOT equal the rotation block's `pub` (see [Rotation block](#rotation-block)).
+- Only one chain can succeed a rotation. If a node holds more than one genesis block referencing the same rotation block, the succession is ambiguous and the node MUST surface the conflict. This is a fork condition and is treated like any other: detection is required, and the handling strategy (reject, flag, accept-first-seen) is implementation-scoped, exactly as in validation rule 9. Such genesis blocks are in fact a fork in the strict sense of rule 9 as well — they are distinct blocks signed by the successor key, all claiming the genesis position of its chain.
+
+*Informative.* Succession is verifiable in the sense that the link between the two chains can be checked from the blocks alone. It is not a cryptographic proof of continuity: the old key never signs anything the new key produced, so an author who loses control of a key cannot be distinguished from one who rotated deliberately. Key compromise is deferred to a future protocol version, which is where a signature by the old key over `new_pub` belongs.
 
 ### Chain linking
 
