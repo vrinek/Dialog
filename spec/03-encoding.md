@@ -133,6 +133,7 @@ Every reference value carried inside a Dialog CBOR structure is a 32-byte digest
 - Each entry in a block's `refs` list
 - The `bond` field of a molecule and of a `create_molecule` operation
 - Filler values of type 0 (atom), 1 (bond), and 2 (molecule)
+- The optional `unit` field of a scalar filler's value (type 4), which names a unit atom
 
 IPFS URI fillers (type 3) are not internal references: they carry an IPFS content identifier as a text string, whose format is defined by IPFS and is out of scope for this rule.
 

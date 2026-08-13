@@ -161,7 +161,13 @@ Creates a bond. The bond's identifier is `SHA-256(dCBOR({"template": <template>}
 
 Creates a molecule. The molecule's identifier is `SHA-256(dCBOR({"bond": <bond_digest>, "fillers": <fillers>}))`.
 
-The `bond` field and any atom/bond/molecule references in `fillers` are 32-byte digests (see [03-encoding.md](03-encoding.md), "Internal references") and MUST refer to entities that are **reachable** from this block (see Validation below). The number of fillers MUST equal the number of variables in the referenced bond template (see [01-data-model.md](01-data-model.md)).
+A `create_molecule` operation carries three kinds of entity digest, all of them 32-byte internal references (see [03-encoding.md](03-encoding.md), "Internal references"):
+
+- the `bond` field, which MUST resolve to a bond;
+- each filler value of type 0, 1 or 2, which MUST resolve to an atom, a bond or a molecule respectively;
+- the optional `unit` field inside each scalar filler's value (type 4), which MUST resolve to an atom.
+
+Every one of them MUST refer to an entity that is **reachable** from this block (see Validation below), the `unit` digest exactly like the others: an author who quotes a unit publishes or references the atom that names it, so that no molecule in the graph points at an entity nothing defines. The number of fillers MUST equal the number of variables in the referenced bond template (see [01-data-model.md](01-data-model.md)).
 
 #### rotate_key
 
@@ -194,7 +200,9 @@ A block is **valid** if and only if:
    - The same block (an earlier operation in the `ops` list), or
    - Any ancestor block in the author's own chain (reachable via `prev`), or
    - Any CID-providing block listed in `refs`, or transitively through that block's own `refs` (demand-driven recursive resolution; see [05-processing-model.md](05-processing-model.md))
-5. **Data model conformance.** Every `create_molecule` operation MUST satisfy the data model rules in [01-data-model.md](01-data-model.md). In particular, the number of fillers MUST equal the number of variables in the referenced bond template.
+
+   The entity digests an operation carries are, exhaustively: a `create_molecule`'s `bond` field, each of its filler values of type 0, 1 or 2, and the optional `unit` inside each of its scalar filler values. There is no exempt position — every digest an operation carries is subject to this rule.
+5. **Data model conformance.** Every `create_molecule` operation MUST satisfy the data model rules in [01-data-model.md](01-data-model.md). In particular, the number of fillers MUST equal the number of variables in the referenced bond template, and each digest the operation carries MUST resolve to an entity of the kind its position names: `bond` to a bond, a type 0, 1 or 2 filler value to an atom, a bond or a molecule respectively, and a scalar filler's `unit` to an atom.
 6. **Public/private reference rules.** Public blocks MUST only reference public blocks in their `refs` field. Private blocks MAY reference either public or private blocks.
 7. **Non-empty operations.** The `ops` list MUST contain at least one operation.
 8. **Deterministic encoding.** The block MUST be encoded as valid dCBOR, including the closed-map rule: the block map and every map nested in it carry exactly the keys their definitions declare, with no undeclared key and no missing declared one. See [03-encoding.md](03-encoding.md).

@@ -277,8 +277,11 @@ func (o CreateMolecule) Creates() (cid.Digest, EntityKind, bool) {
 
 // References returns the bond digest and every digest carried by a filler: the
 // atom, bond and molecule references of types 0, 1 and 2, and the unit atom of
-// a scalar filler that has one. Each must be reachable from the block
-// (spec/02-block-format.md, "Validation" rule 4).
+// a scalar filler that has one. That list is exhaustive and has no exempt
+// position — a scalar's unit is an internal reference like any other
+// (spec/03-encoding.md, "Internal references"), so it must be reachable from
+// the block (rule 4) and must resolve to an atom (rule 5), exactly as a type 0
+// filler must (spec/02-block-format.md, "create_molecule").
 func (o CreateMolecule) References() []Reference {
 	refs := []Reference{{Digest: o.molecule.Bond(), Kind: KindBond, Field: keyBond}}
 	for i, f := range o.molecule.Fillers() {

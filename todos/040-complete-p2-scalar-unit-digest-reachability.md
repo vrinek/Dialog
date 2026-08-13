@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "040"
 tags: [specification-gap, block-validation, data-model, reachability]
@@ -93,10 +93,10 @@ in the same edit, since that omission is what makes the question possible.
 
 ## Acceptance Criteria
 
-- [ ] The specification says whether a scalar filler's `unit` digest must be
+- [x] The specification says whether a scalar filler's `unit` digest must be
       reachable
-- [ ] `spec/03-encoding.md`'s internal-reference list is complete
-- [ ] `go/block` matches the ratified rule and its tests cover both directions
+- [x] `spec/03-encoding.md`'s internal-reference list is complete
+- [x] `go/block` matches the ratified rule and its tests cover both directions
 
 ## Work Log
 
@@ -107,6 +107,36 @@ The resolver treats the unit digest as a reference that must resolve to an
 atom, reading rule 4's "every entity digest" as the governing sentence. The
 `TestDataModelConformance/scalar_unit_atom` case covers both directions and
 points here.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1. The optional `unit` digest of a scalar
+filler **is** an internal reference, with no special status: it is subject to
+reachability like every other entity digest an operation carries, and it MUST
+resolve to an atom. There is no second class of digest. An author who quotes a
+unit publishes the unit atom or references the block that did — the unit
+vocabulary is exactly the kind of shared vocabulary `refs` exists to import —
+so no molecule in the graph points at an entity nothing defines.
+
+**Changes:**
+
+- `spec/03-encoding.md` § "Internal references": the list of
+  reference-carrying positions now includes the optional `unit` field of a
+  scalar filler's value, whose omission is what made the question possible.
+- `spec/02-block-format.md` § "create_molecule": the three kinds of digest a
+  `create_molecule` carries are enumerated with the entity kind each must
+  resolve to, and the reachability requirement is stated for all of them
+  together.
+- `spec/02-block-format.md` § "Validation": rule 4 now names the digest
+  positions exhaustively and says there is no exempt one; rule 5 states the
+  kind each position requires, including `unit` → atom.
+- `go/block/op.go`: no behaviour change — `CreateMolecule.References` already
+  returned the unit as a `KindAtom` reference — but the doc comment now cites
+  the ratified rules rather than the reading this package chose.
+- `go/block/validate_test.go` (`TestDataModelConformance/scalar_unit_atom`):
+  three directions now, not two — unit reachable and an atom (valid), unit
+  unknown (rule 4), and unit resolving to a bond (rule 5).
 
 ## Notes
 

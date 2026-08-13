@@ -411,10 +411,10 @@ func TestDataModelConformance(t *testing.T) {
 		store.MustAdd(ok)
 		mustValidate(t, ok, store, nil)
 
-		// Unreachable: the unit atom is nowhere. See todos/040 — the
-		// specification enumerates the bond and the filler references without
-		// naming the unit, and this package reads rule 4's "every entity
-		// digest" as covering it.
+		// Unreachable: the unit atom is nowhere. A scalar's unit is an internal
+		// reference like any other, so rule 4 covers it
+		// (spec/02-block-format.md, "create_molecule": "the optional unit field
+		// inside each scalar filler's value ... MUST resolve to an atom").
 		other := NewMemStore()
 		author2 := mustBuilder(t, 2)
 		bad, err := author2.Public(1, nil, MustCreateBond(bond.Template()), op)
@@ -424,6 +424,34 @@ func TestDataModelConformance(t *testing.T) {
 		other.MustAdd(bad)
 		if _, err := Validate(bad, other, nil); !isRule(err, 4) {
 			t.Errorf("Validate = %v, want a rule 4 violation for the unreachable unit atom", err)
+		}
+
+		// Reachable but the wrong kind: the unit digest names a bond, and a
+		// unit is an atom. That is rule 5, the same rule a type 0 filler
+		// pointing at a bond breaks.
+		unitIsBond := entity.MustBond("_A_ is not a unit")
+		scalarOnBond, err := entity.IntScalar(70).WithUnit(unitIsBond.Digest())
+		if err != nil {
+			t.Fatalf("WithUnit: %v", err)
+		}
+		fillerOnBond, err := entity.ScalarFiller(scalarOnBond)
+		if err != nil {
+			t.Fatalf("ScalarFiller: %v", err)
+		}
+		opOnBond, err := NewCreateMoleculeFor(bond, []entity.Filler{fillerOnBond})
+		if err != nil {
+			t.Fatalf("NewCreateMoleculeFor: %v", err)
+		}
+		third := NewMemStore()
+		author3 := mustBuilder(t, 3)
+		wrongKind, err := author3.Public(1, nil,
+			MustCreateBond(bond.Template()), MustCreateBond(unitIsBond.Template()), opOnBond)
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		third.MustAdd(wrongKind)
+		if _, err := Validate(wrongKind, third, nil); !isRule(err, 5) {
+			t.Errorf("Validate = %v, want a rule 5 violation: a unit digest must resolve to an atom", err)
 		}
 	})
 }
