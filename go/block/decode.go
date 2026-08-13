@@ -141,7 +141,9 @@ func prevField(m dcbor.Map) (*cid.Digest, error) {
 }
 
 // refsField reads the refs array. Its entries are 32-byte block digests; the
-// list MAY be empty (spec/02-block-format.md).
+// list MAY be empty, and its entries MUST be pairwise distinct — the duplicate
+// half of validation rule 10, which needs no block but this one
+// (spec/02-block-format.md, "The refs list").
 func refsField(m dcbor.Map) ([]cid.Digest, error) {
 	v, _ := m.Get(keyRefs)
 	arr, ok := v.(dcbor.Array)
@@ -160,7 +162,22 @@ func refsField(m dcbor.Map) ([]cid.Digest, error) {
 		}
 		refs = append(refs, d)
 	}
+	if err := uniqueRefs(refs); err != nil {
+		return nil, err
+	}
 	return refs, nil
+}
+
+// uniqueRefs reports an error unless every entry of refs is distinct.
+func uniqueRefs(refs []cid.Digest) error {
+	seen := make(map[cid.Digest]int, len(refs))
+	for i, d := range refs {
+		if first, ok := seen[d]; ok {
+			return fmt.Errorf("block: %q entries %d and %d are both %s; a dependency is listed once", keyRefs, first, i, d)
+		}
+		seen[d] = i
+	}
+	return nil
 }
 
 // opsField reads the ops array, which MUST hold at least one operation

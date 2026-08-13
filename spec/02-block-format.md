@@ -47,9 +47,19 @@ public-block = {
 | `pub` | `bstr .size 32` | Author's Ed25519 public key (raw 32 bytes). |
 | `sig` | `bstr .size 64` | Ed25519 signature over the block content. See [04-cryptography.md](04-cryptography.md) for the signing procedure. |
 | `prev` | `bstr .size 32 / null` | SHA-256 digest of the previous block in this author's chain. Used strictly for chain ordering (append-only semantics and fork detection), NOT for CID resolution. MUST be `null` for the genesis block. MUST NOT be `null` for any other block. |
-| `refs` | `[* bstr .size 32]` | Zero or more SHA-256 digests of CID-providing blocks (blocks whose operations define entities needed by this block). MAY be empty. Public blocks MUST only reference public blocks. See [Validation](#validation). |
+| `refs` | `[* bstr .size 32]` | Zero or more SHA-256 digests of CID-providing blocks (blocks whose operations define entities needed by this block). MAY be empty. Entries MUST be pairwise distinct, and MUST NOT name a block of the author's own chain. Public blocks MUST only reference public blocks. The order of the entries carries no meaning. See [The refs list](#the-refs-list) and [Validation](#validation). |
 | `ts` | `uint` | Self-reported Unix timestamp. Untrusted — useful for ordering heuristics but not for validation. The `ts` field SHOULD be greater than or equal to the `ts` of the previous block in the same chain. Implementations SHOULD warn on non-monotonic timestamps. |
 | `ops` | `[+ operation]` | Ordered list of one or more operations. A block MUST contain at least one operation. |
+
+### The refs list
+
+The `refs` list names the CID-providing blocks a block's operations depend on. Two rules constrain the list itself; both apply to a private block's encrypted `refs` exactly as they do to a plaintext one, and are checked by the parties that decrypt it.
+
+**No duplicates.** A digest MUST NOT appear twice in one `refs` list. A repeated entry denotes the same dependency twice and changes nothing but the block's bytes, and therefore its digest and its CID. The check needs no other block, so implementations MUST make it when the block is decoded.
+
+**No own-chain references.** A `refs` entry MUST NOT name a block of the referencing block's own chain — any block reachable from it through `prev`. Such a block is already a resolution path under validation rule 4, so the reference adds nothing and a block that referenced its own predecessor would assert a dependency the chain already provides. Every block of a chain carries the same `pub` (see [Chain linking](#chain-linking)), so the check is a comparison of the referenced block's `pub` with the referencing block's: they MUST differ. A successor chain's genesis block referencing the rotation block that ended the previous chain is unaffected — those two blocks are signed by different keys and belong to different chains.
+
+*Informative.* The order of the entries carries no meaning: an implementation resolving references MAY visit them in any order, and nothing in the protocol reads their sequence. The order is nonetheless inside the signed bytes, so it is part of the block's identity: an implementation MUST preserve the order an author chose and MUST NOT re-sort a block's `refs`, which would change its digest and invalidate its signature. Two blocks that differ only in the order of their `refs` are distinct blocks with the same meaning; authors SHOULD NOT publish both.
 
 ### Private block
 
@@ -203,12 +213,13 @@ A block is **valid** if and only if:
 
    The entity digests an operation carries are, exhaustively: a `create_molecule`'s `bond` field, each of its filler values of type 0, 1 or 2, and the optional `unit` inside each of its scalar filler values. There is no exempt position — every digest an operation carries is subject to this rule.
 5. **Data model conformance.** Every `create_molecule` operation MUST satisfy the data model rules in [01-data-model.md](01-data-model.md). In particular, the number of fillers MUST equal the number of variables in the referenced bond template, and each digest the operation carries MUST resolve to an entity of the kind its position names: `bond` to a bond, a type 0, 1 or 2 filler value to an atom, a bond or a molecule respectively, and a scalar filler's `unit` to an atom.
-6. **Public/private reference rules.** Public blocks MUST only reference public blocks in their `refs` field. Private blocks MAY reference either public or private blocks.
+6. **Public/private reference rules.** Public blocks MUST only reference public blocks in their `refs` field. Private blocks MAY reference either public or private blocks. The rule is evaluated on each referenced block as it is resolved: a node MUST reject a public block once it holds a private block that the public block's `refs` name, and reports the rule as unchecked for an entry whose block it does not hold. Resolution is demand-driven (see [05-processing-model.md](05-processing-model.md)), so a node is not obliged to fetch a referenced block for the sole purpose of reading its type.
 7. **Non-empty operations.** The `ops` list MUST contain at least one operation.
 8. **Deterministic encoding.** The block MUST be encoded as valid dCBOR, including the closed-map rule: the block map and every map nested in it carry exactly the keys their definitions declare, with no undeclared key and no missing declared one. See [03-encoding.md](03-encoding.md).
 9. **Fork detection.** If a node receives a block whose `prev` value matches the `prev` of another block already stored from the same `pub` key, the node MUST detect this as a chain fork. Fork handling strategy (reject, flag, accept-first-seen) is implementation-scoped.
+10. **Reference hygiene.** The `refs` list MUST NOT repeat a digest, and MUST NOT name a block of the author's own chain. See [The refs list](#the-refs-list). The duplicate half is structural and is checked when the block is decoded; the own-chain half is checked on each referenced block as it is resolved, like rule 6.
 
-For private blocks, validation of rules 4, 5, and 6 is only possible by entities that hold the decryption key (since `refs` and `ops` are encrypted).
+For private blocks, validation of rules 4, 5, 6, and 10 is only possible by entities that hold the decryption key (since `refs` and `ops` are encrypted).
 
 ### Block identification
 

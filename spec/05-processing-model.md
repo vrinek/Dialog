@@ -107,6 +107,8 @@ Implementations MAY set a user-configurable limit on the number of foreign block
 - Private blocks MAY reference either public or private blocks
 - Non-recipient nodes (those without the decryption key) MAY safely drop private blocks they cannot decrypt
 
+The first rule is evaluated as each referenced block is resolved, not by fetching every entry of `refs` in advance: a node that resolves a referenced block and finds it private MUST reject the referencing public block, and reports the rule as unchecked for an entry it does not hold. Resolution is demand-driven, so an entry that resolution never needs may never be fetched. The same applies to the own-chain half of validation rule 10 (see [02-block-format.md](02-block-format.md), "The refs list").
+
 ##### Undecryptable reference handling
 
 If a node can decrypt block H but cannot decrypt a block listed in H's `refs`, this is a validation error. The node MUST surface this error to the application layer. The node MUST NOT silently accept the block with partial validation.

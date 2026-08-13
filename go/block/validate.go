@@ -72,9 +72,10 @@ type Report struct {
 	// Scanned counts the foreign blocks fetched through the refs graph.
 	Scanned int
 	// Unchecked lists the numbered rules that could not be evaluated — rules
-	// 4, 5 and 6 of a private block, whose refs and ops this package cannot
+	// 4, 5, 6 and 10 of a private block, whose refs and ops this package cannot
 	// read (spec/02-block-format.md: "For private blocks, validation of rules
-	// 4, 5, and 6 is only possible by entities that hold the decryption key").
+	// 4, 5, 6, and 10 is only possible by entities that hold the decryption
+	// key").
 	Unchecked []int
 }
 
@@ -86,7 +87,7 @@ func (r *Report) warn(rule int, d cid.Digest, format string, args ...any) {
 // spec/02-block-format.md, "Validation". Callers that care which rule failed
 // use errors.As.
 type RuleError struct {
-	// Rule is the rule number, 1 to 9.
+	// Rule is the rule number, 1 to 10.
 	Rule int
 	// Block is the block that failed it.
 	Block cid.Digest
@@ -121,6 +122,8 @@ func ruleName(rule int) string {
 		return "deterministic encoding"
 	case 9:
 		return "fork detection"
+	case 10:
+		return "reference hygiene"
 	default:
 		return "unknown rule"
 	}
@@ -130,7 +133,7 @@ func ruleErr(rule int, b *Block, format string, args ...any) error {
 	return &RuleError{Rule: rule, Block: b.Digest(), Err: fmt.Errorf(format, args...)}
 }
 
-// Validate checks one block against the nine numbered rules of
+// Validate checks one block against the ten numbered rules of
 // spec/02-block-format.md, "Validation", in their stated order, reading the
 // blocks it needs from src.
 //
@@ -152,14 +155,17 @@ func ruleErr(rule int, b *Block, format string, args ...any) error {
 //  8. Deterministic encoding — at Decode, which rejects any non-canonical
 //     encoding, and by construction for a block this package built.
 //  9. Fork detection — here, when src implements Siblings.
+//  10. Reference hygiene — the duplicate half at Decode and in
+//     Content.Validate, which need no other block; the own-chain half here,
+//     when a referenced block is resolved.
 //
 // A rejection is a *RuleError naming the rule. A missing block is reported
 // with ErrNotFound in the chain: errors.Is(err, ErrNotFound) distinguishes
 // "this block is wrong" from "I do not have enough of the graph yet".
 //
-// For a private block, rules 4, 5 and 6 are listed in the report's Unchecked
-// field rather than evaluated: refs and ops are inside enc, which this package
-// treats as opaque.
+// For a private block, rules 4, 5, 6 and 10 are listed in the report's
+// Unchecked field rather than evaluated: refs and ops are inside enc, which
+// this package treats as opaque.
 func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 	if b == nil {
 		return nil, fmt.Errorf("block: Validate called with a nil block")
@@ -200,10 +206,10 @@ func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 		report.warn(9, d, "the source cannot list sibling blocks, so a chain fork at this position would go unnoticed; implement block.Siblings to detect one")
 	}
 
-	// Rules 4, 5 and 6 need the operations and refs in the clear.
+	// Rules 4, 5, 6 and 10 need the operations and refs in the clear.
 	if b.content.Type == TypePrivate {
-		report.Unchecked = append(report.Unchecked, 4, 5, 6)
-		report.warn(0, d, "this is a private block: rules 4, 5 and 6 can only be checked by a holder of the decryption key")
+		report.Unchecked = append(report.Unchecked, 4, 5, 6, 10)
+		report.warn(0, d, "this is a private block: rules 4, 5, 6 and 10 can only be checked by a holder of the decryption key")
 		return report, nil
 	}
 
@@ -270,8 +276,8 @@ func detectFork(b *Block, s Siblings) (Fork, bool) {
 	return f, true
 }
 
-// validateReferences is rules 4, 5 and 6 for a block whose operations are in
-// the clear.
+// validateReferences is rules 4, 5, 6 and 10 for a block whose operations and
+// refs are in the clear.
 func validateReferences(b *Block, prev *Block, src Source, opts *Options, report *Report) error {
 	r := &resolver{
 		block:  b,
@@ -286,27 +292,36 @@ func validateReferences(b *Block, prev *Block, src Source, opts *Options, report
 		r.nextAncestor = &d
 	}
 
-	// Rule 6 — a public block MUST only reference public blocks. The check
-	// needs the referenced block, so it can only be made for refs the source
-	// holds; a ref that is absent and never needed is reported as unchecked.
-	// Whether every ref must be fetched for this check, or only those
-	// resolution demands, is not settled by the specification; see todos/041.
-	if b.content.Type == TypePublic {
-		for _, ref := range b.content.Refs {
-			target, err := r.fetch(ref, true)
-			if err != nil {
-				if errors.Is(err, ErrNotFound) {
-					report.warn(6, b.Digest(), "referenced block %s is not held by the source, so its type could not be checked", ref)
-					continue
+	// Rules 6 and 10 are both properties of a referenced block rather than of
+	// this one, so they share a single pass over refs: a public block must
+	// reference only public blocks, and no block may reference a block of its
+	// author's own chain — which, every block of a chain carrying the same pub,
+	// is a comparison of the two keys (spec/02-block-format.md, "The refs
+	// list"). Both are evaluated as a referenced block is resolved; an entry
+	// the source does not hold is reported as unchecked rather than rejected,
+	// which is what demand-driven resolution leaves possible.
+	for _, ref := range b.content.Refs {
+		target, err := r.fetch(ref, true)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				if b.content.Type == TypePublic {
+					report.warn(6, b.Digest(), "referenced block %s is not held by the source, so neither its type (rule 6) nor its author (rule 10) could be checked", ref)
+				} else {
+					report.warn(10, b.Digest(), "referenced block %s is not held by the source, so its author could not be checked", ref)
 				}
-				if errors.Is(err, ErrScanLimit) {
-					return &RuleError{Rule: 4, Block: b.Digest(), Err: err}
-				}
-				return err
+				continue
 			}
-			if target.content.Type == TypePrivate {
-				return ruleErr(6, b, "refs entry %s is a private block; a public block must only reference public blocks", ref)
+			if errors.Is(err, ErrScanLimit) {
+				return &RuleError{Rule: 4, Block: b.Digest(), Err: err}
 			}
+			return err
+		}
+		if b.content.Type == TypePublic && target.content.Type == TypePrivate {
+			return ruleErr(6, b, "refs entry %s is a private block; a public block must only reference public blocks", ref)
+		}
+		if target.SameAuthor(b) {
+			return ruleErr(10, b, "refs entry %s is signed by this block's own author %x, so it is a block of this chain; the author's own ancestry is already a resolution path and must not be listed in %q",
+				ref, b.content.Pub[:8], keyRefs)
 		}
 	}
 	r.queue = slices.Clone(b.content.Refs)

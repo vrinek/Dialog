@@ -190,6 +190,13 @@ func (c Content) Validate() error {
 		if c.Nonce != nil {
 			return fmt.Errorf("block: a %s block must not carry a %q field; it belongs to a private block", c.Type, keyNonce)
 		}
+		// The refs list names each dependency once (spec/02-block-format.md,
+		// "The refs list"). The other half of rule 10 — no reference into the
+		// author's own chain — needs the referenced block and belongs to
+		// Validate.
+		if err := uniqueRefs(c.Refs); err != nil {
+			return err
+		}
 		if len(c.Ops) == 0 {
 			return fmt.Errorf("block: a %s block has no operations; %q must hold at least one", c.Type, keyOps)
 		}

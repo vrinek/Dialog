@@ -3,10 +3,12 @@ package block
 import (
 	"crypto/ed25519"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/vrinek/Dialog/go/cid"
+	"github.com/vrinek/Dialog/go/dcbor"
 	"github.com/vrinek/Dialog/go/entity"
 )
 
@@ -250,16 +252,19 @@ func TestReachability(t *testing.T) {
 	})
 
 	t.Run("refs transitive", func(t *testing.T) {
-		// Alice publishes the bond in one block and, in a later block that
-		// references it, the atoms. Bob references only the later block, so
-		// the bond resolves by recursing into that block's own refs — step 5
-		// of the resolution procedure.
+		// Carol publishes the bond. Alice publishes the atoms in a block that
+		// references Carol's. Bob references only Alice's block, so the bond
+		// resolves by recursing into that block's own refs — step 5 of the
+		// resolution procedure. Each hop crosses to another author's chain,
+		// which is the only kind of ref there is: a block may not list one of
+		// its own chain (rule 10).
 		store := NewMemStore()
-		alice := mustBuilder(t, 1)
-		first, err := alice.Public(1, nil, MustCreateBond(bondTemplate))
+		carol := mustBuilder(t, 3)
+		first, err := carol.Public(1, nil, MustCreateBond(bondTemplate))
 		if err != nil {
 			t.Fatalf("first: %v", err)
 		}
+		alice := mustBuilder(t, 1)
 		second, err := alice.Public(2, []cid.Digest{first.Digest()},
 			MustCreateAtom(paris.Description()), MustCreateAtom(france.Description()))
 		if err != nil {
@@ -475,6 +480,88 @@ func TestPublicBlockMustNotReferencePrivate(t *testing.T) {
 	}
 }
 
+// TestRefsHygiene covers rule 10 in both halves: a refs list names each
+// dependency once, and never names a block of the author's own chain
+// (spec/02-block-format.md, "The refs list").
+func TestRefsHygiene(t *testing.T) {
+	alice := mustBuilder(t, 1)
+	provider, err := alice.Public(1, nil, MustCreateAtom("France"))
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+
+	t.Run("duplicate entries", func(t *testing.T) {
+		// The duplicate half needs no other block, so it is refused at the two
+		// points that see the bytes alone: the author's constructor and the
+		// decoder.
+		d := provider.Digest()
+		bob := mustBuilder(t, 2)
+		if _, err := bob.Public(2, []cid.Digest{d, d}, MustCreateAtom("Paris, the capital of France")); err == nil {
+			t.Error("a block listing the same dependency twice must not be signed")
+		}
+
+		m := validPublicMap(t, 2)
+		for i, e := range m {
+			if e.Key == keyRefs {
+				m[i].Value = dcbor.Array{dcbor.Bytes(d.Bytes()), dcbor.Bytes(d.Bytes())}
+			}
+		}
+		if b, err := Decode(rawBlock(t, testKey(t, 2), m)); err == nil {
+			t.Errorf("Decode accepted %s, whose refs repeat an entry", b)
+		}
+	})
+
+	t.Run("own-chain reference", func(t *testing.T) {
+		// A block referencing its own predecessor: already reachable through
+		// prev, so the reference is degenerate and rule 10 rejects it. The
+		// author's key is what gives it away — every block of a chain carries
+		// the same pub.
+		store := NewMemStore()
+		second, err := alice.Public(2, []cid.Digest{provider.Digest()}, MustCreateAtom("Paris, the capital of France"))
+		if err != nil {
+			t.Fatalf("second: %v", err)
+		}
+		store.MustAdd(provider, second)
+		if _, err := Validate(second, store, nil); !isRule(err, 10) {
+			t.Errorf("Validate = %v, want a rule 10 violation for a reference into the author's own chain", err)
+		}
+	})
+
+	t.Run("another author's block", func(t *testing.T) {
+		store := NewMemStore()
+		bob := mustBuilder(t, 2)
+		b, err := bob.Public(2, []cid.Digest{provider.Digest()}, MustCreateAtom("Paris, the capital of France"))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		store.MustAdd(provider, b)
+		mustValidate(t, b, store, nil)
+	})
+
+	t.Run("unheld reference is unchecked, not rejected", func(t *testing.T) {
+		// Resolution is demand-driven: an entry whose block the source does not
+		// hold leaves rules 6 and 10 unevaluated rather than failing the block,
+		// as long as nothing needed it to resolve a digest.
+		store := NewMemStore()
+		bob := mustBuilder(t, 2)
+		b, err := bob.Public(2, []cid.Digest{{9: 9}}, MustCreateAtom("Paris, the capital of France"))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		store.MustAdd(b)
+		report := mustValidate(t, b, store, nil)
+		found := false
+		for _, w := range report.Warnings {
+			if w.Rule == 6 || w.Rule == 10 {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("warnings = %v, want one saying the referenced block could not be checked", report.Warnings)
+		}
+	})
+}
+
 // TestPrivateBlockValidation covers what a node without the decryption key can
 // and cannot check (spec/02-block-format.md: rules 4, 5 and 6 need the key).
 func TestPrivateBlockValidation(t *testing.T) {
@@ -491,8 +578,8 @@ func TestPrivateBlockValidation(t *testing.T) {
 	store.MustAdd(genesis, second)
 
 	report := mustValidate(t, second, store, nil)
-	if len(report.Unchecked) != 3 {
-		t.Errorf("report.Unchecked = %v, want rules 4, 5 and 6", report.Unchecked)
+	if !slices.Equal(report.Unchecked, []int{4, 5, 6, 10}) {
+		t.Errorf("report.Unchecked = %v, want rules 4, 5, 6 and 10", report.Unchecked)
 	}
 	chain, err := ValidateChain(second.Digest(), store, nil)
 	if err != nil {

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "041"
 tags: [specification-gap, block-format, refs, content-addressing]
@@ -103,10 +103,10 @@ independently.
 
 ## Acceptance Criteria
 
-- [ ] The specification states whether `refs` may repeat an entry and whether
+- [x] The specification states whether `refs` may repeat an entry and whether
       its order is constrained
-- [ ] The evaluation point of rule 6 is stated
-- [ ] `go/block` matches both rulings
+- [x] The evaluation point of rule 6 is stated
+- [x] `go/block` matches both rulings
 
 ## Work Log
 
@@ -119,6 +119,61 @@ reading (a) for refs the source happens to hold — it fetches each direct ref,
 rejects a private one, and warns when the block is unavailable rather than
 failing — which is the strictest behaviour that never rejects a block for being
 unreachable.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1 for duplicates, with the self-reference
+question answered more strongly than the option proposed and the sorting
+requirement dropped.
+
+1. **Duplicates.** Entries MUST be pairwise distinct. A repeated entry names
+   the same dependency twice and changes nothing but the block's bytes. The
+   check needs no other block, so it is made at decode.
+2. **Own-chain references.** An entry MUST NOT name a block of the referencing
+   block's own chain — anything reachable through `prev`. Those blocks are
+   already a resolution path under rule 4, so the reference is degenerate.
+   Every block of a chain carries the same `pub`, which makes the rule a
+   comparison of two keys. A successor chain's genesis block referencing the
+   rotation block that ended the previous chain is unaffected: different keys,
+   different chains.
+3. **Order.** Not constrained, and carries no meaning — resolution MAY visit
+   the entries in any order. The signed order is simply preserved: it is inside
+   the hashed bytes, so an implementation MUST NOT re-sort a block's `refs`.
+   Sorting was rejected because it would make the encoder rewrite what an
+   author signed, for a canonicalization the protocol does not otherwise need.
+4. **Rule 6's evaluation point.** Reading (b), stated: the rule is evaluated on
+   each referenced block as it is resolved. A node that resolves a private
+   block named by a public block's `refs` MUST reject the public block; an
+   entry it does not hold leaves the rule unchecked. Demand-driven resolution
+   is not required to fetch a block only to read its type. The own-chain half
+   of the new rule 10 is evaluated at the same point.
+
+**Changes:**
+
+- `spec/02-block-format.md`: the `refs` field row states all three list rules;
+  a new § "The refs list" gives each with its reasoning and the informative
+  note on order; rule 6 gains its evaluation point; a new validation rule 10,
+  "Reference hygiene", carries the list rules into the numbered set (appended,
+  so no rule is renumbered), and the private-block sentence now names rules 4,
+  5, 6 and 10.
+- `spec/05-processing-model.md` § "Public/private reference rules": the same
+  evaluation point, tied to demand-driven resolution.
+- `go/block/decode.go`: `refsField` rejects a repeated entry (`uniqueRefs`).
+- `go/block/block.go`: `Content.Validate` rejects one too, so an author never
+  signs such a block.
+- `go/block/validate.go`: rules 6 and 10 now share one pass over `refs` — a
+  referenced block that is private fails rule 6 for a public block, and one
+  signed by this block's own author fails rule 10; an entry the source does not
+  hold produces a warning naming the rules that went unchecked. `ruleName`,
+  the `Validate` doc comment and the private-block `Unchecked` list cover rule
+  10.
+- `go/block/validate_test.go`: new `TestRefsHygiene` (duplicate entries refused
+  by the builder and the decoder, an own-chain reference failing rule 10,
+  another author's block validating, an unheld reference warning rather than
+  failing); `TestReachability/refs_transitive` now spans three authors, since
+  its old fixture had Alice referencing her own earlier block;
+  `TestPrivateBlockValidation` expects rules 4, 5, 6 and 10 unchecked.
 
 ## Notes
 
