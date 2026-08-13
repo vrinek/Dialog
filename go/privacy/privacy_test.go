@@ -154,6 +154,80 @@ func TestRoundTrip(t *testing.T) {
 	})
 }
 
+// TestContentKeyLifecycle confirms the v1 key model this package implements
+// (spec/04-cryptography.md, "Content key lifecycle"): one content key per
+// chain, a successor chain free to inherit it, and no field anywhere naming the
+// key a block was encrypted under.
+func TestContentKeyLifecycle(t *testing.T) {
+	key := testContentKey(t, 0x11)
+
+	// One key for every block of a chain; only the nonce differs.
+	author := testBuilder(t, 1)
+	if _, err := author.Public(900, nil, block.MustCreateAtom("France")); err != nil {
+		t.Fatalf("genesis: %v", err)
+	}
+	first, err := SealBlock(author, key, samplePayload(), fixedRand(0x33))
+	if err != nil {
+		t.Fatalf("SealBlock: %v", err)
+	}
+	second, err := SealBlock(author, key, samplePayload(), fixedRand(0x34))
+	if err != nil {
+		t.Fatalf("SealBlock: %v", err)
+	}
+	for _, b := range []*block.Block{first, second} {
+		if _, err := Open(b, key); err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+	}
+
+	// The author rotates their identity key and carries the content key over:
+	// nothing in the protocol or this package objects, and the readers who hold
+	// it keep reading (spec/04-cryptography.md, "Content key lifecycle" — a
+	// successor chain MAY reuse the key of the chain it succeeds).
+	rotation, err := author.Rotation(1000, nil, testPub(t, 2))
+	if err != nil {
+		t.Fatalf("Rotation: %v", err)
+	}
+	successor := testBuilder(t, 2)
+	if err := successor.Succeeds(rotation); err != nil {
+		t.Fatalf("Succeeds: %v", err)
+	}
+	if _, err := successor.Public(1100, nil, block.MustCreateAtom("Paris")); err != nil {
+		t.Fatalf("successor genesis: %v", err)
+	}
+	inherited, err := SealBlock(successor, key, samplePayload(), fixedRand(0x35))
+	if err != nil {
+		t.Fatalf("SealBlock on the successor chain: %v", err)
+	}
+	if _, err := Open(inherited, key); err != nil {
+		t.Errorf("a successor chain that reuses the content key must open with it: %v", err)
+	}
+
+	// Reuse does not weaken the binding: the AAD covers pub and prev, so a
+	// ciphertext from the old chain does not open in the new one even though the
+	// key is the same.
+	enc, _ := first.Enc()
+	nonce, _ := first.Nonce()
+	moved, err := successor.Private(enc, nonce)
+	if err != nil {
+		t.Fatalf("Private: %v", err)
+	}
+	if _, err := Open(moved, key); !errors.Is(err, ErrAuthentication) {
+		t.Errorf("a payload moved to the successor chain = %v, want ErrAuthentication", err)
+	}
+
+	// A node holding several keys selects by trial decryption, because no field
+	// of a private block names a key. The ring finds the right one and reports
+	// the block as unreadable when it holds none that fit.
+	ring := NewKeyRing(testContentKey(t, 0x99), key)
+	if _, ok, err := ring.DecryptPayload(inherited); err != nil || !ok {
+		t.Errorf("DecryptPayload = %v, %v, want the payload", ok, err)
+	}
+	if _, ok, err := NewKeyRing(testContentKey(t, 0x99)).DecryptPayload(inherited); err != nil || ok {
+		t.Errorf("DecryptPayload with no fitting key = %v, %v, want unreadable and no error", ok, err)
+	}
+}
+
 // TestOpenAndValidate runs a decrypted block through the rules a key holder is
 // the only one able to check: reachability of the entities its operations name
 // (rule 4), through its own chain and through the refs graph.

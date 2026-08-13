@@ -35,6 +35,15 @@
 // from their Ed25519 identities, feeding HKDF-SHA-256. How the wrapped key then
 // travels is out of scope for the protocol and for this package
 // (spec/04-cryptography.md, "Key management").
+//
+// The key's lifecycle is the caller's to decide, within what v1 allows
+// (spec/04-cryptography.md, "Content key lifecycle"): a successor chain MAY
+// reuse the key of the chain it succeeds or take a fresh one, and nothing in a
+// block records which. This package takes the key as a parameter everywhere and
+// holds no opinion — a Builder that succeeds a rotation is handed whichever key
+// its author chose. What v1 does not offer is re-keying, revocation or a key
+// identifier, so a reader who has the key reads the chain for as long as the
+// chain lasts.
 package privacy
 
 import (
@@ -86,6 +95,12 @@ var ErrAuthentication = errors.New("privacy: the ciphertext did not authenticate
 // A Key is a chain's 256-bit symmetric content key. The same key encrypts every
 // private block of the chain; the nonce is what differs between blocks
 // (spec/04-cryptography.md, "Encryption scheme").
+//
+// One key per chain does not mean one chain per key: two chains may be
+// encrypted under the same key, and a successor chain may inherit the key of
+// the chain it succeeds (spec/04-cryptography.md, "Content key lifecycle").
+// Anyone holding a Key reads that chain entire — there is no forward secrecy
+// and no way to revoke a reader in v1 — which is why String does not print it.
 type Key [KeySize]byte
 
 // GenerateKey returns a fresh content key read from random, or from
@@ -115,7 +130,9 @@ func ParseKey(b []byte) (Key, error) {
 func (k Key) Bytes() []byte { return slices.Clone(k[:]) }
 
 // String deliberately does not print the key. A content key in a log is the
-// chain in the clear.
+// chain in the clear, past and future, which spec/04-cryptography.md,
+// "Security Considerations", forbids putting in a durable store not meant for
+// key material.
 func (k Key) String() string { return "privacy.Key(redacted)" }
 
 // A Header is the part of a private block the AAD covers: every plaintext
@@ -282,12 +299,13 @@ func Open(b *block.Block, key Key) (block.Payload, error) {
 // name that the ring can open — define the entities its operations reference.
 //
 // A block is tried against every key in the ring, in order, and the first that
-// authenticates wins. A ring is small (one key per private chain a node
-// follows), the AEAD's tag makes a wrong key a cheap and certain miss, and the
-// protocol gives a block no field naming the key it was encrypted under — see
-// todos/048, where that gap and the content key's unstated lifecycle are
-// filed. A caller that tracks the mapping from a chain's pub to its key itself
-// can hand block.Options a Decrypter that does the lookup instead.
+// authenticates wins. This is what the protocol expects of a node holding
+// several keys: a private block's plaintext fields name no key, and trial
+// decryption is exact because the 16-byte Poly1305 tag makes a wrong key a
+// certain and cheap miss (spec/04-cryptography.md, "Content key lifecycle").
+// A ring is small — one key per private chain a node follows — and a caller
+// that tracks the mapping from a chain's pub to its key itself can hand
+// block.Options a Decrypter that does the lookup instead.
 type KeyRing struct{ keys []Key }
 
 // NewKeyRing returns a ring holding the given keys.

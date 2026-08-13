@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "048"
 tags: [specification-gap, cryptography, key-rotation, privacy]
@@ -104,11 +104,11 @@ take if reader revocation is ever in scope.
 
 ## Acceptance Criteria
 
-- [ ] Whether a successor chain reuses the previous chain's content key is
+- [x] Whether a successor chain reuses the previous chain's content key is
       stated
-- [ ] The absence of re-keying and revocation in v1 is stated as scope rather
+- [x] The absence of re-keying and revocation in v1 is stated as scope rather
       than left to inference
-- [ ] How a node selects the key for a private block is described, or trial
+- [x] How a node selects the key for a private block is described, or trial
       decryption is named as the expected behaviour
 
 ## Work Log
@@ -122,6 +122,53 @@ but it is a decision the implementation made rather than one it read. The
 rotation question was reached from the other direction — a `Builder` for a
 successor chain has no opinion about the content key, and neither does the
 specification.
+
+### 2026-08-13 - Ratified and Applied
+**By:** Claude
+
+**Decision (project lead):** Option 1, with one correction to its wording. The
+key lifecycle is out of scope for v1 and the specification now says so; but
+where Option 1 proposed that a successor chain SHOULD take a fresh content key,
+the ratified text says it **MAY** reuse the key of the chain it succeeds, and
+MAY take a fresh one.
+
+This is what the implementation actually does, and the reason for the change:
+`rotate_key` rotates the Ed25519 identity key and touches nothing symmetric,
+`privacy.SealBlock` takes the content key as a parameter, and a `block.Builder`
+that succeeds a rotation is handed whichever key its author chose. Neither
+`go/privacy` nor `go/block` has an opinion, so a SHOULD would have been a rule
+the reference implementation does not implement. No block records the choice —
+a private block carries no key identifier — so it travels out of band with the
+key itself, which is where the distribution mechanism already lives.
+
+Option 2 (a `kid` or generation counter) is recorded in the specification as the
+shape a future version would take, together with an explicit MUST NOT against
+adding such a field to a v1 block: each block type's field set is closed.
+
+**Changes:**
+
+- `spec/04-cryptography.md`: a new "Content key lifecycle" subsection under
+  "Private block encryption" — one key per chain (and what "unique per chain"
+  does *not* mean), the MAY across rotation with the out-of-band consequence,
+  trial decryption named as the expected way to select a key, and re-keying,
+  revocation, key identifiers and per-block keys deferred to a future version;
+  an informative note on the only form of reader removal v1 can express. The
+  "Encryption scheme" key bullet points at it, and a new "Content key
+  compromise" security consideration states that the key exposes the chain's
+  whole history and that no forward secrecy is provided.
+- `go/privacy/privacy.go`: doc-comment changes only. The package doc records
+  that the lifecycle is the caller's decision within what v1 allows; `Key` notes
+  that one key per chain does not mean one chain per key; `KeyRing` cites the
+  specification for trial decryption instead of this issue; `Key.String` cites
+  the new security consideration for not printing.
+- `go/privacy/privacy_test.go`: `TestContentKeyLifecycle` confirms the model —
+  one key across a chain's blocks, a successor chain opening under the inherited
+  key, the AAD still refusing a payload moved between the two chains despite the
+  shared key, and a `KeyRing` selecting by trial decryption and reporting an
+  unreadable block when it holds no key that fits.
+
+No behaviour changed, which is the finding: the implementation was already the
+v1 model, and what was missing was the statement that this is the model.
 
 ## Notes
 

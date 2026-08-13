@@ -107,7 +107,7 @@ Private blocks encrypt `refs`, `ts`, and `ops` together into a single `enc` fiel
 #### Encryption scheme
 
 - **Algorithm:** XChaCha20-Poly1305 (AEAD)
-- **Key:** 256-bit symmetric key (unique per chain, not per block)
+- **Key:** 256-bit symmetric key (unique per chain, not per block — see "Content key lifecycle")
 - **Nonce:** 192-bit (24 bytes), unique per block, stored in the `nonce` field
 
 #### Encryption procedure
@@ -217,6 +217,20 @@ The mechanism for distributing wrapped keys to recipients is out of scope (imple
 
 **Default use case:** A user's private chain is encrypted with a symmetric key known only to the user's own devices. The key is shared between devices through an out-of-band mechanism (e.g., QR code, manual transfer, Tailscale, etc.).
 
+#### Content key lifecycle
+
+One symmetric content key per private chain is the whole of the v1 model. This section states what that implies, so that an implementer can tell a deliberate omission from a gap.
+
+**One key per chain.** A private chain has exactly one content key, and every private block of that chain is encrypted under it; only the nonce differs between blocks. "Unique per chain, not per block" fixes how many keys a chain uses. It does not require that key to differ from another chain's, and an implementation MUST NOT assume that two chains encrypted under the same key are ill-formed.
+
+**Across key rotation.** A successor chain MAY reuse the content key of the chain it succeeds, and MAY use a fresh one. `rotate_key` rotates the author's Ed25519 identity key and says nothing about the symmetric one; no block records which choice was made, because a private block carries no key identifier. The choice therefore travels with the key itself, through the same out-of-band mechanism that distributes it: an author who reuses the key hands their readers nothing new, and an author who does not wraps a new key for the readers who are to keep reading.
+
+**Selecting a key.** A private block's plaintext fields — `v`, `type`, `pub`, `sig`, `prev` — name no key. A node holding content keys for several chains either tracks the association between a chain's `pub` and its key itself, which the protocol neither describes nor forbids, or tries each key it holds against the block. Trial decryption is the expected behaviour and is exact: the 16-byte Poly1305 tag makes a wrong key a certain and cheap miss.
+
+**Deferred to a future protocol version.** v1 has no re-keying, no revocation, no key identifiers and no per-block keys. A chain cannot say "from this block on, a different key"; there is no way to remove a reader from a chain that continues. This is scope, not oversight — the default use case is a user's own devices, where there is nobody to remove. An implementation MUST NOT add a key identifier or a key generation counter to a v1 block: each block type's field set is closed (see [02-block-format.md](02-block-format.md), "Validation dispatch"), and a new field arrives with a new protocol version or not at all.
+
+*Informative.* Reader removal is expressible today only by ending the chain: the author rotates their identity key and encrypts the successor chain under a fresh content key, wrapping it for the readers who remain. The removed reader keeps everything they could already read, which is the whole of the old chain — no mechanism can take that back — and reads nothing after the rotation.
+
 ### Key rotation
 
 Key rotation is an L1 block-level operation, not a meta-molecule. See [02-block-format.md](02-block-format.md) for the `rotate_key` operation type and rotation block structure.
@@ -228,6 +242,7 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
 - **Ed25519 security level:** ~128-bit security. Sufficient for the foreseeable future.
 - **Nonce reuse:** Reusing a nonce with XChaCha20-Poly1305 under the same key completely breaks confidentiality. Implementations MUST generate unique nonces for every private block. Using a counter or random 24-byte value are both acceptable. XChaCha20's 192-bit nonce space makes random nonce collisions negligible. The same requirement applies to key wrapping and binds harder there: a wrapping key is long-lived by construction — one pair of identities has one wrapping key, for every chain and for all time — so a repeated `wrap_nonce` repeats a keystream under a key that may have been in use for years. See "Wrapped key format".
 - **Metadata leakage:** Private blocks encrypt `refs`, `ts`, and `ops` together. An observer can see that a private block exists and its position in the chain (`prev`), but cannot learn the block's timestamp, what other blocks it references, or what operations it contains. This prevents social graph analysis via refs and timing correlation via timestamps.
+- **Content key compromise:** A chain's content key encrypts every private block of that chain, so anyone who obtains it reads the chain's entire history and everything the chain publishes afterwards. The protocol provides no forward secrecy and no backward secrecy: a key that leaks today exposes blocks published years ago, and a reader given the key for one block is given the chain. v1 has no re-keying and no revocation (see "Content key lifecycle"), so the only remedy is to end the chain and continue under a fresh key. Implementations SHOULD treat a content key with the same care as an identity key, and MUST NOT write one to a log or any other durable store not intended to hold key material.
 - **Key compromise:** If an author's Ed25519 private key is compromised, the attacker can sign blocks and publish fraudulent key rotations. v1 of the protocol does not include pre-rotation or social recovery. Key compromise handling is deferred to a future protocol version. See the [brainstorm document](../docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) for candidate approaches.
 - **Ed25519 to X25519 conversion:** This is a well-established operation (used by libsodium and others). The security properties are preserved. The two procedures are specified in full under "Ed25519-to-X25519 conversion"; the libsodium functions named there are informative, and an implementation is conformant by matching the specified steps, not a particular library. See [RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) for X25519 and [this analysis](https://moderncrypto.org/mail-archive/curves/2014/000205.html) for the conversion.
 
