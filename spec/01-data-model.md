@@ -112,9 +112,15 @@ scalar-value = {
 / datetime-range
 
 datetime-range = {
-  "from" => tstr,              ; RFC 3339 datetime string
-  "to" => tstr                 ; RFC 3339 datetime string
+  "from" => timestamp,
+  "to" => timestamp           ; "from" MUST NOT be later than "to"
 }
+
+; A UTC RFC 3339 date-time at exactly second precision — the only spelling
+; Dialog permits, so that one instant has one encoding. The regexp fixes the
+; lexical form; the day must additionally exist in that month of that year.
+; See "Datetime ranges" below for the normative rules.
+timestamp = tstr .regexp "[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z"
 ```
 
 The number of fillers in a molecule MUST equal the number of variables in the referenced bond template. The fillers are positionally matched to variables in the order they appear in the template.
@@ -145,6 +151,25 @@ Decimal fractions use CBOR tag 4, encoding the value as `[exponent, mantissa]` w
 Tag 4 is the only tag Dialog permits, and its encoding is canonicalized so that each value has exactly one representation: the exponent MUST be negative and the mantissa MUST NOT be zero or divisible by 10. Whole numbers are therefore always encoded as plain integers, never as decimal fractions. The exponent and the mantissa MUST each lie in the signed 64-bit range `-2^63 … 2^63-1`, so both fit a native 64-bit signed integer in any implementation. See [03-encoding.md](03-encoding.md), "Decimal fractions", for the normative rules.
 
 There are no plain dates in Dialog. The date "Thursday, Feb 20, 2026" is represented as a datetime range from `2026-02-20T00:00:00Z` to `2026-02-20T23:59:59Z`.
+
+#### Datetime ranges
+
+Both endpoints of a datetime range MUST be [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339) `date-time` strings restricted to a single canonical profile. RFC 3339 admits several spellings of the same instant, and entities are hashed over their raw bytes with no normalization ([03-encoding.md](03-encoding.md), "Text strings and Unicode"), so every additional spelling would be another CID for the same statement. The profile exists to make that impossible: **one instant, one encoding**.
+
+A Dialog timestamp MUST satisfy all of the following:
+
+1. **Form.** Exactly `YYYY-MM-DDTHH:MM:SSZ` — 20 characters, matching the `timestamp` rule of the CDDL above.
+2. **UTC only.** The time offset MUST be the designator `Z`. Numeric offsets MUST NOT be used, including `+00:00` and `-00:00`.
+3. **Uppercase.** The date-time separator MUST be an uppercase `T` and the offset designator an uppercase `Z`. The lowercase alternatives RFC 3339 permits MUST NOT be used.
+4. **Second precision.** A fractional-second part MUST NOT be present, not even when it would be zero.
+5. **No leap second.** The seconds value MUST be in the range `00` to `59`; the leap second `60` that RFC 3339 permits MUST NOT be used.
+6. **A real date.** The date and time components MUST denote an existing instant: month `01`-`12`, a day that exists in that month of that year, hour `00`-`23`, minute `00`-`59`.
+
+Within a range, `from` MUST NOT be later than `to`; the two MAY be equal. Because every timestamp is fixed-width, zero-padded, UTC and in most-significant-first order, the byte-wise comparison of the two strings is their chronological comparison — implementations MUST compare the endpoints as strings, and no date parsing is required to check the ordering.
+
+Encoders MUST NOT emit a datetime range that violates any of these rules, and decoders MUST reject one.
+
+> **Note (informative).** A timestamp recorded in another zone or at another precision must be converted to this profile before the entity is created, exactly as text is normalized at capture time rather than in the protocol. The original zone is not preserved, and that loss is intentional: an entity is a statement about an instant, not about the clock that recorded it. An application for which the zone is itself a fact can assert it as a separate molecule.
 
 #### Content addressing
 
@@ -224,7 +249,7 @@ CID:       01711220f9f124b06af6aa7d5f2381462afdeaca628fe3ac8b994253e5c08a3f
 
 ### Normative
 - [03-encoding.md](03-encoding.md) — CBOR encoding and CID parameters
-- [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339) — Date and time format for datetime ranges
+- [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339) — Date and time format for datetime ranges; Dialog permits only the restricted profile of § "Datetime ranges"
 
 ### Informative
 - [06-meta-bonds.md](06-meta-bonds.md) — How meta-molecules handle atom equivalence and other state assertions

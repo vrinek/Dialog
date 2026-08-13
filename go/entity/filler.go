@@ -276,7 +276,8 @@ type ScalarKind uint8
 const (
 	// ScalarNumber is an integer or decimal fraction, optionally with a unit.
 	ScalarNumber ScalarKind = iota + 1
-	// ScalarDatetimeRange is a pair of RFC 3339 datetime strings.
+	// ScalarDatetimeRange is a pair of Dialog timestamps (see
+	// ValidateTimestamp) in chronological order.
 	ScalarDatetimeRange
 )
 
@@ -301,13 +302,15 @@ func (k ScalarKind) String() string {
 //	}
 //	/ datetime-range
 //
-//	datetime-range = { "from" => tstr, "to" => tstr }
+//	datetime-range = { "from" => timestamp, "to" => timestamp }
 //
 // A number is a plain CBOR integer, or a decimal fraction in the canonical
 // tag 4 form of spec/03-encoding.md, "Decimal fractions" — whole numbers are
 // always plain integers, and both components are bounded to the signed 64-bit
 // range. The optional unit is the digest of an atom naming the unit. A
-// datetime range never carries a unit; the two shapes are exclusive.
+// datetime range never carries a unit; the two shapes are exclusive. Its
+// endpoints are Dialog timestamps and from must not be later than to
+// (spec/01-data-model.md, "Datetime ranges").
 //
 // The zero Scalar is not a scalar. Build one with IntScalar, DecimalScalar,
 // NumberScalar or NewDatetimeRange.
@@ -358,8 +361,9 @@ func (s Scalar) WithUnit(unit cid.Digest) (Scalar, error) {
 }
 
 // NewDatetimeRange returns a datetime-range scalar. Both endpoints must be
-// RFC 3339 datetime strings; see ValidateRFC3339 for what that means here and
-// for the questions the specification leaves open (todos/034).
+// Dialog timestamps — UTC RFC 3339 date-times at second precision, see
+// ValidateTimestamp — and from must not be later than to
+// (spec/01-data-model.md, "Datetime ranges").
 func NewDatetimeRange(from, to string) (Scalar, error) {
 	s := Scalar{kind: ScalarDatetimeRange, from: from, to: to}
 	if err := s.validate(); err != nil {
@@ -444,11 +448,17 @@ func (s Scalar) validate() error {
 			return fmt.Errorf("entity: scalar value must be an integer or a tag 4 decimal fraction, got %s", kindOf(s.number))
 		}
 	case ScalarDatetimeRange:
-		if err := ValidateRFC3339(s.from); err != nil {
+		if err := ValidateTimestamp(s.from); err != nil {
 			return fmt.Errorf("entity: datetime range %q endpoint: %w", keyFrom, err)
 		}
-		if err := ValidateRFC3339(s.to); err != nil {
+		if err := ValidateTimestamp(s.to); err != nil {
 			return fmt.Errorf("entity: datetime range %q endpoint: %w", keyTo, err)
+		}
+		// Every timestamp is fixed-width, zero-padded, UTC and
+		// most-significant-first, so string order is chronological order —
+		// the comparison spec/01-data-model.md, "Datetime ranges", requires.
+		if s.from > s.to {
+			return fmt.Errorf("entity: datetime range starts after it ends: %q is later than %q", s.from, s.to)
 		}
 		return nil
 	default:
@@ -503,28 +513,63 @@ func scalarFromValue(v dcbor.Value) (Scalar, error) {
 	}
 }
 
-// ValidateRFC3339 reports whether s is an RFC 3339 date-time string, the
-// format spec/01-data-model.md gives for both endpoints of a datetime range
-// and lists as a normative reference.
+// TimestampLayout is the one form a Dialog timestamp may take, as a Go
+// reference time: YYYY-MM-DDTHH:MM:SSZ. The trailing Z is a literal in this
+// layout, not Go's numeric-offset marker, so time.Parse accepts nothing but
+// UTC spelled with the designator.
+const TimestampLayout = "2006-01-02T15:04:05Z"
+
+// timestampLen is the length of every valid timestamp: 19 characters of
+// date-time plus the Z designator.
+const timestampLen = 20
+
+// ValidateTimestamp reports whether s is a Dialog timestamp — an RFC 3339
+// date-time restricted to the canonical profile of spec/01-data-model.md,
+// "Datetime ranges":
 //
-// The specification names the format but states no MUST for validating it,
-// says nothing about whether "from" must precede "to", and — because content
-// addressing hashes raw bytes — leaves two spellings of the same instant
-// ("2026-02-20T00:00:00Z" and "2026-02-19T23:00:00-01:00") as different
-// entities. This implementation takes the defensible reading: reject
-// syntactically invalid endpoints on construction and on decode, accept every
-// offset form RFC 3339 allows, and impose no ordering the specification does
-// not state. The open questions are filed as todos/034.
+//   - the form is exactly YYYY-MM-DDTHH:MM:SSZ, 20 characters;
+//   - the offset is the designator Z, never a numeric offset, not even
+//     +00:00 or -00:00;
+//   - the T separator and the Z designator are uppercase;
+//   - there is no fractional-second part, not even a zero one;
+//   - the seconds value is 00-59, so the leap second 60 is rejected;
+//   - the components denote a real instant — a day that exists in that month
+//     of that year, an hour below 24.
 //
-// Validation is Go's time.Parse against RFC 3339, which additionally rejects
-// the leap second 23:59:60 that RFC 3339 permits — also recorded in
-// todos/034.
-func ValidateRFC3339(s string) error {
+// The profile exists for content addressing: entities are hashed over their
+// raw bytes, so admitting a second spelling of an instant would admit a second
+// CID for the same statement. Times recorded in another zone or at another
+// precision are converted before the entity is created.
+func ValidateTimestamp(s string) error {
 	if s == "" {
-		return fmt.Errorf("datetime is empty; it must be an RFC 3339 datetime string")
+		return fmt.Errorf("timestamp is empty; it must have the form YYYY-MM-DDTHH:MM:SSZ")
 	}
-	if _, err := time.Parse(time.RFC3339, s); err != nil {
-		return fmt.Errorf("%q is not an RFC 3339 datetime string", s)
+	if len(s) != timestampLen {
+		return fmt.Errorf("timestamp %q is %d bytes; it must have the form YYYY-MM-DDTHH:MM:SSZ (%d bytes)", s, len(s), timestampLen)
+	}
+	// Fixed punctuation, uppercase T and Z, digits everywhere else. This
+	// rejects numeric offsets, fractional seconds and the lowercase
+	// separators RFC 3339 would otherwise permit, before any parsing.
+	for i, want := range [...]byte{4: '-', 7: '-', 10: 'T', 13: ':', 16: ':', 19: 'Z'} {
+		if want == 0 {
+			if c := s[i]; c < '0' || c > '9' {
+				return fmt.Errorf("timestamp %q has %q where a digit is required; it must have the form YYYY-MM-DDTHH:MM:SSZ", s, s[i:i+1])
+			}
+			continue
+		}
+		if s[i] != want {
+			return fmt.Errorf("timestamp %q has %q at position %d, want %q; it must have the form YYYY-MM-DDTHH:MM:SSZ in UTC", s, s[i:i+1], i, string(want))
+		}
+	}
+	// The leap second RFC 3339 permits is not a Dialog timestamp.
+	if s[17:19] > "59" {
+		return fmt.Errorf("timestamp %q uses the leap second %q; the seconds value must be 00-59", s, s[17:19])
+	}
+	// What remains is calendar validity: month, day-of-month for that year,
+	// and hour. time.Parse checks each and nothing else is left for it to
+	// disagree about, the lexical form being already fixed.
+	if _, err := time.Parse(TimestampLayout, s); err != nil {
+		return fmt.Errorf("timestamp %q does not denote a real instant", s)
 	}
 	return nil
 }
