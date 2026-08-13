@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "037"
 tags: [specification-gap, block-format, encoding, interoperability]
@@ -97,10 +97,10 @@ pointing at `v` as the extension mechanism.
 
 ## Acceptance Criteria
 
-- [ ] `spec/02-block-format.md` states what a decoder does with a map key no
+- [x] `spec/02-block-format.md` states what a decoder does with a map key no
       definition declares, for both blocks and operations
-- [ ] The relationship between unknown fields and the `v` field is stated
-- [ ] `go/block` matches the ratified rule and its doc comment cites it
+- [x] The relationship between unknown fields and the `v` field is stated
+- [x] `go/block` matches the ratified rule and its doc comment cites it
 
 ## Work Log
 
@@ -111,6 +111,41 @@ The decoder had to decide, and there was no text to follow. It rejects unknown
 keys — the CDDL's own reading, and the only one under which a signature covers
 exactly what the verifier sees — and `Decode`'s doc comment points here rather
 than presenting the choice as the specification's intent.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1, stated once and for the whole protocol.
+Maps in Dialog are **closed**: every map carries exactly the key set its
+definition declares. A decoder MUST reject a map that carries a key no
+definition declares, and MUST reject one that omits a key a definition
+requires; only an entry the CDDL marks optional (`?`) may be absent. Unknown
+keys are never ignored — under content addressing, ignoring one would let two
+implementations compute the same digest for structures they read differently,
+and would let a signer put content past a verifier that never saw it. New
+fields arrive with a new protocol version, which the `v` field announces and
+validation rule 1 rejects here.
+
+**Changes:**
+
+- `spec/03-encoding.md` § "Deterministic CBOR": new rule 8, "Closed maps",
+  covering every map the specification defines — entities, blocks, operations,
+  and the maps nested inside them (a filler, a scalar filler's value) — with an
+  informative paragraph on why content addressing makes the rule sharper than
+  it would be in an ordinary wire format, and on `v` as the extension
+  mechanism.
+- `spec/02-block-format.md` § "Validation dispatch": states the rule for block
+  and operation maps and points at rule 8 of `spec/03-encoding.md`; validation
+  rule 8 ("Deterministic encoding") now names the closed-map rule as part of
+  what valid dCBOR means for a block.
+- `go/block/decode.go`: no behaviour change — `requireKeys` already enforced
+  exactly this. `Decode`'s and `requireKeys`'s doc comments now cite the
+  ratified rule instead of recording the decision as this package's own.
+- `go/block/decode_test.go` (`TestDecodeRejections`): the closed-map rule is
+  now exercised at every depth a block nests to — undeclared keys on the block,
+  on an operation, on a filler and inside a scalar filler's value — and a
+  missing declared key at the operation level (`create_molecule` without
+  `fillers`).
 
 ## Notes
 

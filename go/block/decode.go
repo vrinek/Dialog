@@ -18,9 +18,12 @@ import (
 // block's single rotate_key operation, and the Ed25519 signature over
 // "dialog-v1-block" || dCBOR(block without "sig").
 //
-// A block whose map carries a key the type's CDDL does not define is rejected.
-// spec/02-block-format.md never states this outright; the reasoning, and the
-// forward-compatibility question it raises, are recorded in todos/037.
+// Maps are closed: a block or operation map that carries a key its definition
+// does not declare, or omits one it declares, is rejected
+// (spec/03-encoding.md, "Deterministic CBOR" rule 8, restated for blocks and
+// operations in spec/02-block-format.md, "Validation dispatch"). Extra keys are
+// never ignored — a later protocol version announces its new fields through v,
+// which rule 1 checks first.
 //
 // What Decode cannot check is everything that depends on other blocks — chain
 // linkage, reachability, fork detection. Pass the result to Validate for those
@@ -179,9 +182,11 @@ func opsField(m dcbor.Map) ([]Operation, error) {
 	return ops, nil
 }
 
-// requireKeys reports an error unless m holds exactly the given keys. A
-// decoded map never carries a duplicate key, so a matching length plus a
-// lookup for each expected key is exhaustive.
+// requireKeys reports an error unless m holds exactly the given keys — the
+// closed-map rule of spec/03-encoding.md, "Deterministic CBOR" rule 8: no
+// undeclared key, no missing declared one. A decoded map never carries a
+// duplicate key, so a matching length plus a lookup for each expected key is
+// exhaustive.
 func requireKeys(m dcbor.Map, what string, keys ...string) error {
 	for _, k := range keys {
 		if _, ok := m.Get(k); !ok {

@@ -111,6 +111,8 @@ Implementations MUST check the `type` field to determine block structure:
 - `"private"`: `enc` field contains ciphertext (refs + ts + ops), `nonce` field required. No plaintext `ops`, `refs`, or `ts` fields.
 - `"rotation"`: `ops` contains exactly one `rotate_key` operation.
 
+A block map carries exactly the keys the definition for its `type` declares, and an operation map exactly the keys the definition for its `op` declares. This is the closed-map rule of [03-encoding.md](03-encoding.md), "Deterministic CBOR" rule 8, which governs every map in this specification. Implementations MUST reject a block or an operation that carries an undeclared key, and MUST reject one that omits a declared key. A field introduced by a later protocol version arrives in a block whose `v` value this version does not recognize, and is rejected by validation rule 1; it never arrives as an extra key in a v1 block.
+
 ### Operations
 
 There are exactly four operation types:
@@ -187,7 +189,7 @@ A block is **valid** if and only if:
 5. **Data model conformance.** Every `create_molecule` operation MUST satisfy the data model rules in [01-data-model.md](01-data-model.md). In particular, the number of fillers MUST equal the number of variables in the referenced bond template.
 6. **Public/private reference rules.** Public blocks MUST only reference public blocks in their `refs` field. Private blocks MAY reference either public or private blocks.
 7. **Non-empty operations.** The `ops` list MUST contain at least one operation.
-8. **Deterministic encoding.** The block MUST be encoded as valid dCBOR. See [03-encoding.md](03-encoding.md).
+8. **Deterministic encoding.** The block MUST be encoded as valid dCBOR, including the closed-map rule: the block map and every map nested in it carry exactly the keys their definitions declare, with no undeclared key and no missing declared one. See [03-encoding.md](03-encoding.md).
 9. **Fork detection.** If a node receives a block whose `prev` value matches the `prev` of another block already stored from the same `pub` key, the node MUST detect this as a chain fork. Fork handling strategy (reject, flag, accept-first-seen) is implementation-scoped.
 
 For private blocks, validation of rules 4, 5, and 6 is only possible by entities that hold the decryption key (since `refs` and `ops` are encrypted).

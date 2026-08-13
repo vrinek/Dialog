@@ -17,6 +17,11 @@ import (
 // a key no definition declares, an operation the specification does not define,
 // and the rotation block's "exactly one rotate_key operation and no other
 // operations".
+//
+// The closed-map rule of spec/03-encoding.md, "Deterministic CBOR" rule 8, is
+// exercised at every depth a block map nests to: an undeclared key on the block
+// itself, on an operation, on a filler, and inside a scalar filler's value; and
+// a declared key missing at each of those levels.
 func TestDecodeRejections(t *testing.T) {
 	priv := testKey(t, 1)
 	pub := testPub(t, 1)
@@ -142,6 +147,31 @@ func TestDecodeRejections(t *testing.T) {
 			{Key: keyOp, Value: dcbor.Text(OpCreateMolecule)},
 			{Key: keyBond, Value: dcbor.Bytes(digest32)},
 			{Key: keyFillers, Value: dcbor.Array{}},
+		}})},
+		{"create_molecule without its fillers key", set(base(), keyOps, dcbor.Array{dcbor.Map{
+			{Key: keyOp, Value: dcbor.Text(OpCreateMolecule)},
+			{Key: keyBond, Value: dcbor.Bytes(digest32)},
+		}})},
+		{"filler with an extra key", set(base(), keyOps, dcbor.Array{dcbor.Map{
+			{Key: keyOp, Value: dcbor.Text(OpCreateMolecule)},
+			{Key: keyBond, Value: dcbor.Bytes(digest32)},
+			{Key: keyFillers, Value: dcbor.Array{dcbor.Map{
+				{Key: "note", Value: dcbor.Text("extra")},
+				{Key: "type", Value: dcbor.Uint(0)},
+				{Key: "value", Value: dcbor.Bytes(digest32)},
+			}}},
+		}})},
+		{"scalar filler value with an extra key", set(base(), keyOps, dcbor.Array{dcbor.Map{
+			{Key: keyOp, Value: dcbor.Text(OpCreateMolecule)},
+			{Key: keyBond, Value: dcbor.Bytes(digest32)},
+			{Key: keyFillers, Value: dcbor.Array{dcbor.Map{
+				{Key: "type", Value: dcbor.Uint(4)},
+				{Key: "value", Value: dcbor.Map{
+					{Key: "note", Value: dcbor.Text("extra")},
+					{Key: "unit", Value: dcbor.Bytes(digest32)},
+					{Key: "value", Value: dcbor.Uint(70)},
+				}},
+			}}},
 		}})},
 		{"create_molecule with an unknown filler type", set(base(), keyOps, dcbor.Array{dcbor.Map{
 			{Key: keyOp, Value: dcbor.Text(OpCreateMolecule)},
