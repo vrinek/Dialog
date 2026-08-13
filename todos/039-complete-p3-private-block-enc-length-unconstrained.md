@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "039"
 tags: [specification-gap, block-format, cryptography, cddl]
@@ -87,9 +87,9 @@ the same edit that issue #10 made for the nonce.
 
 ## Acceptance Criteria
 
-- [ ] Both CDDL definitions constrain `enc`'s length
-- [ ] The prose says why the bound is what it is
-- [ ] `go/block` enforces the bound and its decoder table covers it
+- [x] Both CDDL definitions constrain `enc`'s length
+- [x] The prose says why the bound is what it is
+- [x] `go/block` enforces the bound and its decoder table covers it
 
 ## Work Log
 
@@ -100,6 +100,43 @@ the same edit that issue #10 made for the nonce.
 CDDL says and this package treats the field as opaque. The alternative —
 inventing a minimum — would reject blocks another implementation accepts, so
 the choice was to follow the text and record the gap here.
+
+### 2026-08-13 - Ratified and Implemented
+**By:** Claude
+
+**Decision (project lead):** Option 1. `enc` MUST be at least 16 bytes — the
+size of the Poly1305 authentication tag every XChaCha20-Poly1305 ciphertext
+carries — and a shorter value is structurally invalid, rejected without any
+attempt at decryption and whether or not the node holds the key. The tighter
+plaintext-derived floor of option 2 is not taken: it would have to be
+recomputed whenever the payload shape changes and buys little. The protocol
+sets **no upper bound**; an implementation MAY impose a resource limit on the
+size of a block it accepts or stores, but that is local policy and not part of
+block validity, so a block one node declines on size grounds stays valid for
+another.
+
+**Changes:**
+
+- `spec/02-block-format.md` § "Private block": the CDDL is
+  `"enc" => bstr .size (16..)`, with prose giving the bound, its reason, and
+  the note that this is a check every node can make on exactly the blocks most
+  nodes never decrypt; an informative paragraph states the absence of an upper
+  bound and the status of local size limits.
+- `spec/04-cryptography.md` § "Signature input": `signing-input-private`
+  carries the same constraint, with a pointer to the block format for the
+  reason.
+- `go/block/block.go`: new exported `MinEncSize = 16`; `Content.Validate`
+  rejects a shorter ciphertext.
+- `go/block/decode.go`: the comment that recorded the gap now states the
+  constraint and where it is enforced.
+- `go/block/builder.go`: `Private` no longer turns a nil `enc` into an empty
+  one — an empty ciphertext is now invalid — and its doc comment gives both
+  size requirements.
+- `go/block/block_test.go`: new `TestPrivateBlockEncLowerBound` (0, 1 and 15
+  bytes and nil are rejected; exactly 16 and 4096 are accepted and decode);
+  new `testCiphertext` helper so every test's stand-in ciphertext is a legal
+  length. `go/block/decode_test.go`: the rejection table gains an empty `enc`
+  and a 15-byte one.
 
 ## Notes
 

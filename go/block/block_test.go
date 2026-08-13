@@ -40,6 +40,18 @@ func mustBuilder(t testing.TB, seed byte) *Builder {
 	return b
 }
 
+// testCiphertext stands in for a private block's enc field: opaque bytes this
+// package never reads, padded to at least MinEncSize because a shorter value
+// cannot be an XChaCha20-Poly1305 ciphertext and is refused as structurally
+// invalid (spec/02-block-format.md, "Private block").
+func testCiphertext(label string) []byte {
+	enc := []byte("ciphertext " + label)
+	for len(enc) < MinEncSize {
+		enc = append(enc, '.')
+	}
+	return enc
+}
+
 // rawBlock signs an arbitrary block map — one this package's constructors
 // would refuse to build — and returns its complete dCBOR encoding. It is how
 // the rejection tables put malformed blocks on the wire with a valid
@@ -269,8 +281,38 @@ func TestPrivateBlockRoundTrip(t *testing.T) {
 func TestPrivateBlockRejectsWrongNonceSize(t *testing.T) {
 	for _, size := range []int{0, 12, 23, 25, 32} {
 		author := mustBuilder(t, 3)
-		if _, err := author.Private([]byte("x"), bytes.Repeat([]byte{1}, size)); err == nil {
+		if _, err := author.Private(testCiphertext("nonce case"), bytes.Repeat([]byte{1}, size)); err == nil {
 			t.Errorf("a private block with a %d-byte nonce must be rejected", size)
+		}
+	}
+}
+
+// TestPrivateBlockEncLowerBound covers the one length constraint on the
+// ciphertext: enc is bstr .size (16..), because XChaCha20-Poly1305 appends a
+// 16-byte Poly1305 tag to every ciphertext and a shorter value cannot be the
+// AEAD's output (spec/02-block-format.md, "Private block"). The bound is
+// checkable without the decryption key, which is what makes it worth having:
+// most nodes never decrypt a private block at all. There is no upper bound.
+func TestPrivateBlockEncLowerBound(t *testing.T) {
+	nonce := bytes.Repeat([]byte{7}, NonceSize)
+	for _, size := range []int{0, 1, MinEncSize - 1} {
+		if _, err := mustBuilder(t, 3).Private(bytes.Repeat([]byte{1}, size), nonce); err == nil {
+			t.Errorf("a private block with a %d-byte enc must be rejected", size)
+		}
+	}
+	if _, err := mustBuilder(t, 3).Private(nil, nonce); err == nil {
+		t.Error("a private block with no enc must be rejected")
+	}
+
+	// Exactly the tag length is the smallest ciphertext there can be, and it is
+	// accepted — as is a large one: the protocol sets no ceiling.
+	for _, size := range []int{MinEncSize, 4096} {
+		b, err := mustBuilder(t, 3).Private(bytes.Repeat([]byte{1}, size), nonce)
+		if err != nil {
+			t.Fatalf("a private block with a %d-byte enc: %v", size, err)
+		}
+		if _, err := Decode(b.Bytes()); err != nil {
+			t.Errorf("Decode of a block with a %d-byte enc: %v", size, err)
 		}
 	}
 }
@@ -417,17 +459,17 @@ func TestContentValidateRejections(t *testing.T) {
 		{"unknown type", Content{Version: Version, Type: "sealed", Pub: pub, Ops: []Operation{atom}}},
 		{"short public key", Content{Version: Version, Type: TypePublic, Pub: pub[:31], Ops: []Operation{atom}}},
 		{"no operations", Content{Version: Version, Type: TypePublic, Pub: pub}},
-		{"public block with enc", Content{Version: Version, Type: TypePublic, Pub: pub, Ops: []Operation{atom}, Enc: []byte("x")}},
+		{"public block with enc", Content{Version: Version, Type: TypePublic, Pub: pub, Ops: []Operation{atom}, Enc: testCiphertext("public")}},
 		{"public block with nonce", Content{Version: Version, Type: TypePublic, Pub: pub, Ops: []Operation{atom}, Nonce: bytes.Repeat([]byte{0}, NonceSize)}},
 		{"public block with rotate_key", Content{Version: Version, Type: TypePublic, Pub: pub, Ops: []Operation{rotate}}},
 		{"rotation block with two operations", Content{Version: Version, Type: TypeRotation, Pub: pub, Ops: []Operation{rotate, atom}}},
 		{"rotation block with the wrong operation", Content{Version: Version, Type: TypeRotation, Pub: pub, Ops: []Operation{atom}}},
 		{"rotation block with no operation", Content{Version: Version, Type: TypeRotation, Pub: pub}},
 		{"private block without enc", Content{Version: Version, Type: TypePrivate, Pub: pub, Nonce: bytes.Repeat([]byte{0}, NonceSize)}},
-		{"private block without nonce", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: []byte("x")}},
-		{"private block with plaintext ops", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: []byte("x"), Nonce: bytes.Repeat([]byte{0}, NonceSize), Ops: []Operation{atom}}},
-		{"private block with plaintext refs", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: []byte("x"), Nonce: bytes.Repeat([]byte{0}, NonceSize), Refs: []cid.Digest{}}},
-		{"private block with plaintext ts", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: []byte("x"), Nonce: bytes.Repeat([]byte{0}, NonceSize), TS: 1}},
+		{"private block without nonce", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: testCiphertext("no nonce")}},
+		{"private block with plaintext ops", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: testCiphertext("plaintext field"), Nonce: bytes.Repeat([]byte{0}, NonceSize), Ops: []Operation{atom}}},
+		{"private block with plaintext refs", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: testCiphertext("plaintext field"), Nonce: bytes.Repeat([]byte{0}, NonceSize), Refs: []cid.Digest{}}},
+		{"private block with plaintext ts", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: testCiphertext("plaintext field"), Nonce: bytes.Repeat([]byte{0}, NonceSize), TS: 1}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

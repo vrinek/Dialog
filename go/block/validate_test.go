@@ -432,7 +432,7 @@ func TestDataModelConformance(t *testing.T) {
 func TestPublicBlockMustNotReferencePrivate(t *testing.T) {
 	store := NewMemStore()
 	alice := mustBuilder(t, 1)
-	private, err := alice.Private([]byte("ciphertext"), make([]byte, NonceSize))
+	private, err := alice.Private(testCiphertext("alice"), make([]byte, NonceSize))
 	if err != nil {
 		t.Fatalf("private: %v", err)
 	}
@@ -452,11 +452,11 @@ func TestPublicBlockMustNotReferencePrivate(t *testing.T) {
 func TestPrivateBlockValidation(t *testing.T) {
 	store := NewMemStore()
 	author := mustBuilder(t, 1)
-	genesis, err := author.Private([]byte("ciphertext one"), make([]byte, NonceSize))
+	genesis, err := author.Private(testCiphertext("one"), make([]byte, NonceSize))
 	if err != nil {
 		t.Fatalf("genesis: %v", err)
 	}
-	second, err := author.Private([]byte("ciphertext two"), make([]byte, NonceSize))
+	second, err := author.Private(testCiphertext("two"), make([]byte, NonceSize))
 	if err != nil {
 		t.Fatalf("second: %v", err)
 	}

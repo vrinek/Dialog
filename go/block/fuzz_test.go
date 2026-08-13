@@ -40,7 +40,7 @@ func FuzzDecodeBlock(f *testing.F) {
 	if err != nil {
 		f.Fatalf("rotation: %v", err)
 	}
-	private, err := mustBuilder(f, 3).Private([]byte("ciphertext"), bytes.Repeat([]byte{5}, NonceSize))
+	private, err := mustBuilder(f, 3).Private(testCiphertext("fuzz seed"), bytes.Repeat([]byte{5}, NonceSize))
 	if err != nil {
 		f.Fatalf("private: %v", err)
 	}

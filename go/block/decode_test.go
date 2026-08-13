@@ -62,7 +62,7 @@ func TestDecodeRejections(t *testing.T) {
 	privateMap := func() dcbor.Map {
 		m := drop(drop(drop(base(), keyRefs), keyTS), keyOps)
 		m = set(m, keyType, dcbor.Text(string(TypePrivate)))
-		m = set(m, keyEnc, dcbor.Bytes("ciphertext"))
+		m = set(m, keyEnc, dcbor.Bytes(testCiphertext("private map")))
 		return set(m, keyNonce, nonce)
 	}
 	rotateOp := dcbor.Map{
@@ -207,6 +207,8 @@ func TestDecodeRejections(t *testing.T) {
 		{"private block with plaintext refs", set(privateMap(), keyRefs, dcbor.Array{})},
 		{"private block with plaintext ts", set(privateMap(), keyTS, dcbor.Uint(1))},
 		{"private block with a text enc", set(privateMap(), keyEnc, dcbor.Text("ciphertext"))},
+		{"private block with an empty enc", set(privateMap(), keyEnc, dcbor.Bytes(nil))},
+		{"private block with an enc below the Poly1305 tag size", set(privateMap(), keyEnc, dcbor.Bytes(bytes.Repeat([]byte{1}, MinEncSize-1)))},
 	}
 
 	for _, tc := range cases {
@@ -232,7 +234,7 @@ func TestDecodeAcceptsValidBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rotation: %v", err)
 	}
-	private, err := mustBuilder(t, 3).Private([]byte("ciphertext"), bytes.Repeat([]byte{2}, NonceSize))
+	private, err := mustBuilder(t, 3).Private(testCiphertext("decode"), bytes.Repeat([]byte{2}, NonceSize))
 	if err != nil {
 		t.Fatalf("private: %v", err)
 	}

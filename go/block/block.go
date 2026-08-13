@@ -66,6 +66,13 @@ const (
 	SignatureSize = ed25519.SignatureSize
 	// NonceSize is the size of a private block's XChaCha20 nonce.
 	NonceSize = 24
+	// MinEncSize is the smallest a private block's ciphertext may be: the size
+	// of the Poly1305 authentication tag XChaCha20-Poly1305 appends to every
+	// ciphertext. Anything shorter cannot be the output of the AEAD, so the
+	// block is structurally invalid and is rejected without decryption
+	// (spec/02-block-format.md, "Private block"). The protocol sets no upper
+	// bound; a limit on block size is local resource policy, not validity.
+	MinEncSize = 16
 )
 
 // Block map keys (spec/02-block-format.md).
@@ -203,6 +210,9 @@ func (c Content) Validate() error {
 		}
 		if c.Enc == nil {
 			return fmt.Errorf("block: a private block is missing its %q field", keyEnc)
+		}
+		if len(c.Enc) < MinEncSize {
+			return fmt.Errorf("block: %q is %d bytes; a ciphertext is at least %d, the size of the Poly1305 tag", keyEnc, len(c.Enc), MinEncSize)
 		}
 		if len(c.Nonce) != NonceSize {
 			return fmt.Errorf("block: %q is %d bytes, want %d", keyNonce, len(c.Nonce), NonceSize)

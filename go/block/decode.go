@@ -85,8 +85,11 @@ func Decode(b []byte) (*Block, error) {
 			return nil, fmt.Errorf("block: %q must be a byte string, got %s", keyEnc, kindOf(encValue))
 		}
 		// enc is opaque here: it is a ciphertext this package does not read.
-		// spec/02-block-format.md puts no length constraint on it; see
-		// todos/039.
+		// Its one structural constraint is a floor — bstr .size (16..), the
+		// Poly1305 tag every XChaCha20-Poly1305 ciphertext carries — which
+		// Content.Validate enforces, and which is checkable without the
+		// decryption key (spec/02-block-format.md, "Private block"). There is no
+		// ceiling: a size limit is local resource policy, not block validity.
 		c.Enc = []byte(enc)
 		if c.Nonce, err = bytesField(m, keyNonce, "block", NonceSize); err != nil {
 			return nil, err

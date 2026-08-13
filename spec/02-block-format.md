@@ -62,10 +62,14 @@ private-block = {
   "pub"   => bstr .size 32,
   "sig"   => bstr .size 64,
   "prev"  => bstr .size 32 / null,
-  "enc"   => bstr,             ; encrypted payload (refs + ts + ops)
-  "nonce" => bstr .size 24     ; 192-bit XChaCha20 nonce
+  "enc"   => bstr .size (16..), ; encrypted payload (refs + ts + ops)
+  "nonce" => bstr .size 24      ; 192-bit XChaCha20 nonce
 }
 ```
+
+The `enc` field MUST be at least 16 bytes long. Sixteen bytes is the size of the Poly1305 authentication tag that XChaCha20-Poly1305 appends to every ciphertext (see [04-cryptography.md](04-cryptography.md)), so a shorter value cannot be the output of the AEAD and the block is structurally invalid. Implementations MUST reject such a block, without attempting decryption and whether or not they hold the key: this is a check every node can make, and private blocks are exactly the blocks most nodes only ever check structurally.
+
+*Informative.* The protocol sets no upper bound on `enc`. An implementation MAY impose a resource limit on the size of a block it accepts or stores; such a limit is local policy and not part of block validity, so a block one node declines to store on size grounds remains valid for another.
 
 The `enc` field contains the ciphertext of a CBOR map with three fields: `refs`, `ts`, and `ops`. When decrypted, this yields:
 

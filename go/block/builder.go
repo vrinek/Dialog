@@ -100,11 +100,10 @@ func (b *Builder) Rotation(ts uint64, refs []cid.Digest, newPub ed25519.PublicKe
 
 // Private signs a private block carrying an already-encrypted payload. The
 // ciphertext and nonce come from the privacy package; this package signs and
-// links them without reading them.
+// links them without reading them. The ciphertext must be at least MinEncSize
+// bytes — the Poly1305 tag alone is that long — and the nonce exactly
+// NonceSize.
 func (b *Builder) Private(enc, nonce []byte) (*Block, error) {
-	if enc == nil {
-		enc = []byte{}
-	}
 	return b.build(Content{Type: TypePrivate, Enc: enc, Nonce: nonce})
 }
 

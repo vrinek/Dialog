@@ -69,10 +69,12 @@ signing-input-private = {
   "type"  => "private",
   "pub"   => bstr .size 32,
   "prev"  => bstr .size 32 / null,
-  "enc"   => bstr,             ; ciphertext of refs + ts + ops
-  "nonce" => bstr .size 24     ; 192-bit XChaCha20 nonce
+  "enc"   => bstr .size (16..), ; ciphertext of refs + ts + ops
+  "nonce" => bstr .size 24      ; 192-bit XChaCha20 nonce
 }
 ```
+
+The lower bound on `enc` is the 16-byte Poly1305 authentication tag every XChaCha20-Poly1305 ciphertext carries; see [02-block-format.md](02-block-format.md), "Private block".
 
 #### Signing procedure
 
