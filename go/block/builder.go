@@ -93,6 +93,12 @@ func (b *Builder) Public(ts uint64, refs []cid.Digest, ops ...Operation) (*Block
 
 // Rotation signs the rotation block that ends this chain and names newPub as
 // the author's next key. The Builder signs nothing after it.
+//
+// A chain must exist before it can be ended: a rotation block is never a
+// genesis block (spec/02-block-format.md, "Rotation block"), so a Builder that
+// has not yet signed anything refuses to sign one. An author who wants to
+// abandon a key they have not used yet publishes the genesis block of its chain
+// first.
 func (b *Builder) Rotation(ts uint64, refs []cid.Digest, newPub ed25519.PublicKey) (*Block, error) {
 	op, err := NewRotateKey(newPub)
 	if err != nil {
@@ -120,6 +126,12 @@ func (b *Builder) Private(enc, nonce []byte) (*Block, error) {
 func (b *Builder) build(c Content) (*Block, error) {
 	if b.rotated {
 		return nil, fmt.Errorf("block: this chain ended with a rotation block; further blocks signed by %x must not be accepted", b.pub[:8])
+	}
+	if c.Type == TypeRotation && b.tip == nil {
+		// A rotation block is never a genesis block (spec/02-block-format.md,
+		// "Rotation block"). Content.Validate refuses it too; the Builder says
+		// it in the terms the author is working in.
+		return nil, fmt.Errorf("block: %x has published no block yet, so there is no chain to end; a rotation block is never a genesis block", b.pub[:8])
 	}
 	c.Version = Version
 	c.Pub = slices.Clone(b.pub)

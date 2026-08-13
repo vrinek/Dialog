@@ -61,6 +61,8 @@ signing-input-public = {
 }
 ```
 
+The two block types share one signing input, so the `prev` field is written here as the union both admit. A rotation block's `prev` is in fact never null: a rotation block is never a genesis block (see [02-block-format.md](02-block-format.md), "Rotation block").
+
 For private blocks (where `refs`, `ts`, and `ops` are encrypted into the `enc` field):
 
 ```cddl
@@ -157,10 +159,30 @@ wrapping_key = HKDF-SHA-256(
   info:   "dialog-v1-key-wrap",
   length: 32 bytes
 )
-wrapped_key = Encrypt(wrapping_key, chain_symmetric_key)
+wrap_nonce  = random_bytes(24)
+wrapped_key = wrap_nonce || XChaCha20Poly1305_Encrypt(
+  wrapping_key, wrap_nonce, chain_symmetric_key, aad: empty
+)
 ```
 
-The mechanism for distributing wrapped keys to recipients is out of scope (implementation-specific). The protocol only defines the encryption of block content.
+##### Wrapped key format
+
+The wrap uses XChaCha20-Poly1305, the same AEAD as block encryption, with an empty AAD. A wrapped key is the concatenation of the nonce and the AEAD output, and is therefore always 72 bytes:
+
+| Offset | Size | Content |
+|--------|------|---------|
+| 0 | 24 | `wrap_nonce`, the XChaCha20 nonce |
+| 24 | 32 | Ciphertext of the 32-byte chain symmetric key |
+| 56 | 16 | Poly1305 authentication tag |
+| | **72** | **Total** |
+
+Implementations MUST reject a wrapped key of any other length without attempting to decrypt it: the plaintext is a fixed-size key, so every conforming wrap has exactly this size, and any other length is a malformed or truncated value.
+
+`wrap_nonce` MUST be freshly generated for every wrap, from a cryptographically secure random source. The requirement is stronger here than for block encryption. A wrapping key is a pure function of one pair of identities and the constant info string, so it is the same key for every wrap between those two parties, for every chain and for all time; there is no per-chain or per-message input to separate two wraps. Reusing a nonce would therefore reuse a keystream across wraps under a long-lived key. XChaCha20's 192-bit nonce space makes a random collision negligible, which is why a random nonce is sufficient and no counter state has to be kept.
+
+The AAD is empty. Nothing needs to be bound to the ciphertext by the AEAD because the wrapping key already binds it: the key is derived from the X25519 agreement between exactly one author and one recipient, through HKDF with the info string `"dialog-v1-key-wrap"`. Only those two parties can derive it, and it is derived for no other purpose, so a wrapped key that authenticates under it necessarily came from the other end of that pair. An implementation MUST NOT include additional authenticated data: a non-empty AAD produces bytes no conforming recipient can open.
+
+The mechanism for distributing wrapped keys to recipients is out of scope (implementation-specific), and so is any envelope that carries them. A wrapped key names neither the recipient it was made for nor the chain whose key it holds; a reader handed several of them either tracks the association itself or tries each in turn, which the 16-byte tag makes a certain and cheap test. The protocol only defines the encryption of block content.
 
 **Default use case:** A user's private chain is encrypted with a symmetric key known only to the user's own devices. The key is shared between devices through an out-of-band mechanism (e.g., QR code, manual transfer, Tailscale, etc.).
 
@@ -173,7 +195,7 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
 ## Security Considerations
 
 - **Ed25519 security level:** ~128-bit security. Sufficient for the foreseeable future.
-- **Nonce reuse:** Reusing a nonce with XChaCha20-Poly1305 under the same key completely breaks confidentiality. Implementations MUST generate unique nonces for every private block. Using a counter or random 24-byte value are both acceptable. XChaCha20's 192-bit nonce space makes random nonce collisions negligible.
+- **Nonce reuse:** Reusing a nonce with XChaCha20-Poly1305 under the same key completely breaks confidentiality. Implementations MUST generate unique nonces for every private block. Using a counter or random 24-byte value are both acceptable. XChaCha20's 192-bit nonce space makes random nonce collisions negligible. The same requirement applies to key wrapping and binds harder there: a wrapping key is long-lived by construction — one pair of identities has one wrapping key, for every chain and for all time — so a repeated `wrap_nonce` repeats a keystream under a key that may have been in use for years. See "Wrapped key format".
 - **Metadata leakage:** Private blocks encrypt `refs`, `ts`, and `ops` together. An observer can see that a private block exists and its position in the chain (`prev`), but cannot learn the block's timestamp, what other blocks it references, or what operations it contains. This prevents social graph analysis via refs and timing correlation via timestamps.
 - **Key compromise:** If an author's Ed25519 private key is compromised, the attacker can sign blocks and publish fraudulent key rotations. v1 of the protocol does not include pre-rotation or social recovery. Key compromise handling is deferred to a future protocol version. See the [brainstorm document](../docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) for candidate approaches.
 - **Ed25519 to X25519 conversion:** This is a well-established operation (used by libsodium and others). The security properties are preserved. See [RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) for X25519 and [this analysis](https://moderncrypto.org/mail-archive/curves/2014/000205.html) for the conversion.
@@ -244,6 +266,41 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
      "enc":   <ciphertext bytes>,
      "nonce": <24 bytes>
    }
+```
+
+### Wrapping a chain key
+
+A worked example with every intermediate value, so that an implementation can be checked step by step. The Ed25519 seeds and the wrap nonce are fixed to make the output reproducible; a real wrap MUST take a fresh random nonce.
+
+```
+Author Ed25519 seed        0101...01  (32 bytes of 0x01)
+Author Ed25519 public key  8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c
+Author X25519 private key  58e86efb75fa4e2c410f46e16de9f6acae1a1703528651b69bc176c088bef36e
+Author X25519 public key   1b1b58dd50ea14b60da17b790cd02754d970c9bab864ebb3c0f3016fe51d3f57
+
+Reader Ed25519 seed        0202...02  (32 bytes of 0x02)
+Reader Ed25519 public key  8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394
+Reader X25519 private key  a83c626bc9c38c8c201878ebb1d5b0b50ac40e8986c78793db1d4ef369fca14e
+Reader X25519 public key   60346e7c911a5f6ba154129174cafe75b294ac3bbd5549632f48cec6266f8410
+
+shared_secret  = X25519(author X25519 sk, reader X25519 pk)
+               = 4181d7302557342bdb6d061c4b1eebea828ecb625c3368b7111680793307220b
+                 (the reader derives the same value from their own private key
+                  and the author's public key)
+
+wrapping_key   = HKDF-SHA-256(salt: empty, ikm: shared_secret,
+                              info: "dialog-v1-key-wrap", length: 32)
+               = 657dbd5e5d21dcb81a44415ddf3a8b9f9fa44c7d832d678c9962079aa01fe68d
+
+chain key      = 1111...11  (32 bytes of 0x11)
+wrap_nonce     = 2222...22  (24 bytes of 0x22)
+
+wrapped_key    = wrap_nonce || XChaCha20Poly1305_Encrypt(
+                   wrapping_key, wrap_nonce, chain key, aad: empty)
+               = 222222222222222222222222222222222222222222222222
+                 bdafc49fb94819665a9993f60272336caf98fd5fd4fb1b302e94cc2b5a8ccbd6
+                 1b25f1def2b48d225f13e64d5f0ffa90
+                 (72 bytes: 24 nonce, 32 ciphertext, 16 tag)
 ```
 
 ## References

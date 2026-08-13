@@ -432,8 +432,13 @@ func TestRotateKeyOnlyInRotationBlocks(t *testing.T) {
 	}
 
 	// The same operation in the block type that announces the chain's end is
-	// the one place it belongs.
-	rotation, err := mustBuilder(t, 1).Rotation(1, nil, testPub(t, 2))
+	// the one place it belongs. The chain has to exist first: a rotation block
+	// is never a genesis block (spec/02-block-format.md, "Rotation block").
+	author := mustBuilder(t, 1)
+	if _, err := author.Public(1, nil, MustCreateAtom("France")); err != nil {
+		t.Fatalf("genesis: %v", err)
+	}
+	rotation, err := author.Rotation(2, nil, testPub(t, 2))
 	if err != nil {
 		t.Fatalf("Rotation: %v", err)
 	}
@@ -448,6 +453,10 @@ func TestContentValidateRejections(t *testing.T) {
 	pub := testPub(t, 1)
 	atom := MustCreateAtom("France")
 	rotate := MustRotateKey(testPub(t, 2))
+	// A rotation block is never a genesis block, so every rotation case below
+	// carries a prev; the one that does not is testing exactly that
+	// (spec/02-block-format.md, "Rotation block").
+	prev := cid.SumDigest([]byte("the block this rotation ends the chain of"))
 
 	cases := []struct {
 		name string
@@ -462,9 +471,11 @@ func TestContentValidateRejections(t *testing.T) {
 		{"public block with enc", Content{Version: Version, Type: TypePublic, Pub: pub, Ops: []Operation{atom}, Enc: testCiphertext("public")}},
 		{"public block with nonce", Content{Version: Version, Type: TypePublic, Pub: pub, Ops: []Operation{atom}, Nonce: bytes.Repeat([]byte{0}, NonceSize)}},
 		{"public block with rotate_key", Content{Version: Version, Type: TypePublic, Pub: pub, Ops: []Operation{rotate}}},
-		{"rotation block with two operations", Content{Version: Version, Type: TypeRotation, Pub: pub, Ops: []Operation{rotate, atom}}},
-		{"rotation block with the wrong operation", Content{Version: Version, Type: TypeRotation, Pub: pub, Ops: []Operation{atom}}},
-		{"rotation block with no operation", Content{Version: Version, Type: TypeRotation, Pub: pub}},
+		{"rotation block with two operations", Content{Version: Version, Type: TypeRotation, Pub: pub, Prev: &prev, Ops: []Operation{rotate, atom}}},
+		{"rotation block with the wrong operation", Content{Version: Version, Type: TypeRotation, Pub: pub, Prev: &prev, Ops: []Operation{atom}}},
+		{"rotation block with no operation", Content{Version: Version, Type: TypeRotation, Pub: pub, Prev: &prev}},
+		{"rotation block rotating to its own key", Content{Version: Version, Type: TypeRotation, Pub: pub, Prev: &prev, Ops: []Operation{MustRotateKey(pub)}}},
+		{"rotation block as a genesis block", Content{Version: Version, Type: TypeRotation, Pub: pub, Ops: []Operation{rotate}}},
 		{"private block without enc", Content{Version: Version, Type: TypePrivate, Pub: pub, Nonce: bytes.Repeat([]byte{0}, NonceSize)}},
 		{"private block without nonce", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: testCiphertext("no nonce")}},
 		{"private block with plaintext ops", Content{Version: Version, Type: TypePrivate, Pub: pub, Enc: testCiphertext("plaintext field"), Nonce: bytes.Repeat([]byte{0}, NonceSize), Ops: []Operation{atom}}},

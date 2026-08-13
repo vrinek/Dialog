@@ -135,7 +135,9 @@ type Content struct {
 	Pub ed25519.PublicKey
 	// Prev is the digest of the previous block in this author's chain, or nil
 	// for a genesis block (spec/02-block-format.md: prev MUST be null for the
-	// genesis block and MUST NOT be null for any other).
+	// genesis block and MUST NOT be null for any other). A rotation block is
+	// never a genesis block, so its Prev is never nil
+	// (spec/02-block-format.md, "Rotation block").
 	Prev *cid.Digest
 	// Refs lists the CID-providing blocks this block's operations depend on.
 	// It is empty for a private block, whose refs are inside Enc.
@@ -171,9 +173,10 @@ func (c Content) Clone() Content {
 
 // Validate reports whether c is a structurally well-formed block content: the
 // field set of its type, a recognized version, key and nonce sizes, a
-// non-empty ops list, and the rotation block's single rotate_key operation
-// (spec/02-block-format.md, the three CDDL definitions and "Validation
-// dispatch").
+// non-empty ops list, and the rotation block's three own rules — a single
+// rotate_key operation, a new_pub that is not the block's own key, and a prev
+// that is not null (spec/02-block-format.md, the three CDDL definitions,
+// "Rotation block" and "Validation dispatch").
 //
 // It is the check Sign, Assemble and Decode all run. It cannot check anything
 // that needs other blocks — that is Validate's job.
@@ -248,6 +251,13 @@ func (c Content) Validate() error {
 		// chain would have to be signed by a key that may no longer be used.
 		if bytes.Equal(rotate.newPub[:], c.Pub) {
 			return fmt.Errorf("block: a rotation block rotates %x to itself; %q must name a key other than the block's %q", c.Pub[:8], keyNewPub, keyPub)
+		}
+		// "A rotation block is never a genesis block. Its prev field MUST NOT
+		// be null" (spec/02-block-format.md, "Rotation block"): a rotation
+		// block ends the chain it sits at the end of, and ending presupposes a
+		// chain to end.
+		if c.Prev == nil {
+			return fmt.Errorf("block: a rotation block has a null %q, so it is a genesis block; a rotation block ends a chain and there is no chain to end", keyPrev)
 		}
 	default:
 		// "A rotate_key operation MUST appear only in a block whose type is

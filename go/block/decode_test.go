@@ -56,8 +56,13 @@ func TestDecodeRejections(t *testing.T) {
 		return out
 	}
 	base := func() dcbor.Map { return validPublicMap(t, 1) }
+	// A rotation block is never a genesis block, so a well-formed one carries a
+	// prev (spec/02-block-format.md, "Rotation block"). The cases below that
+	// vary ops therefore keep it, and the null-prev case is its own.
 	rotationMap := func(ops dcbor.Array) dcbor.Map {
-		return set(set(base(), keyType, dcbor.Text(string(TypeRotation))), keyOps, ops)
+		m := set(base(), keyType, dcbor.Text(string(TypeRotation)))
+		m = set(m, keyPrev, dcbor.Bytes(digest32))
+		return set(m, keyOps, ops)
 	}
 	privateMap := func() dcbor.Map {
 		m := drop(drop(drop(base(), keyRefs), keyTS), keyOps)
@@ -197,6 +202,11 @@ func TestDecodeRejections(t *testing.T) {
 		{"rotation block with a create_atom operation", rotationMap(dcbor.Array{atomOp})},
 		{"rotation block with no operations", rotationMap(dcbor.Array{})},
 		{"rotation block with two rotate_key operations", rotationMap(dcbor.Array{rotateOp, rotateOp})},
+		{"rotation block with a null prev", set(rotationMap(dcbor.Array{rotateOp}), keyPrev, dcbor.Null)},
+		{"rotation block rotating to its own key", rotationMap(dcbor.Array{dcbor.Map{
+			{Key: keyOp, Value: dcbor.Text(OpRotateKey)},
+			{Key: keyNewPub, Value: dcbor.Bytes(pub)},
+		}})},
 
 		// Private blocks.
 		{"private block without enc", drop(privateMap(), keyEnc)},

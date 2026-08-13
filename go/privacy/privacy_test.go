@@ -538,6 +538,11 @@ func TestSealRejections(t *testing.T) {
 		// The builder refuses it, so SealBlock does too
 		// (spec/02-block-format.md, "Verifiable succession").
 		old := testBuilder(t, 1)
+		// A rotation block is never a genesis block (spec/02-block-format.md,
+		// "Rotation block"), so the chain it ends is opened first.
+		if _, err := old.Public(900, nil, block.MustCreateAtom("France")); err != nil {
+			t.Fatalf("genesis: %v", err)
+		}
 		rotation, err := old.Rotation(1000, nil, testPub(t, 2))
 		if err != nil {
 			t.Fatalf("rotation: %v", err)

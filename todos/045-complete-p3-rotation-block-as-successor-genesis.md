@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "045"
 tags: [specification-gap, block-format, key-rotation]
@@ -87,9 +87,9 @@ rationales the rule rests on.
 
 ## Acceptance Criteria
 
-- [ ] The specification states why a rotation block may not begin a successor
+- [x] The specification states why a rotation block may not begin a successor
       chain, or admits one
-- [ ] `go/block` matches whichever is ratified
+- [x] `go/block` matches whichever is ratified
 
 ## Work Log
 
@@ -101,6 +101,60 @@ implementation follows literally: `ValidateSuccession` rejects a rotation
 genesis block with a message that only says the type is wrong, because there is
 no better reason to give it. The private case has a reason; this one does not
 yet.
+
+### 2026-08-13 - Ratified and Applied
+**By:** Claude
+
+**Decision (project lead):** neither Option 1 nor Option 2 as written — the
+question is answered a level below. **A rotation block MUST NOT be a genesis
+block: its `prev` MUST NOT be null.** Rotation semantics presuppose an existing
+chain to end, so a rotation block can never reach the genesis position at all,
+and the public-only MUST of "Verifiable succession" needs no separate rationale
+for excluding it: the only type that rule turns away in practice is the private
+one, which is exactly the case its stated reason covers.
+
+The immediate-re-rotation case is accepted as a cost and named as such: a key
+that is abandoned before it is used must publish the genesis block of its own
+chain before it can rotate. The alternative — a chain consisting of one block
+that is both genesis and terminal — would be a special case for every consumer
+of a chain, for a situation an author reaches by publishing a key they never
+meant to use.
+
+**Changes:**
+
+- `spec/02-block-format.md`: "Rotation block" gains the normative paragraph
+  ("A rotation block is never a genesis block": `prev` MUST NOT be null,
+  rejected on the author side and on the wire alike) and an informative note on
+  its cost; the `rotation-block` CDDL narrows `prev` to `bstr .size 32`, the
+  one place in the specification where the field is not a union with null;
+  "Verifiable succession" gains the connecting sentence saying that the rule
+  and its reason cover the same ground.
+- `spec/04-cryptography.md`: a note under `signing-input-public`, which the
+  public and rotation block types share, recording that a rotation block's
+  `prev` is never null.
+- `go/block/block.go`: `Content.Validate` rejects a rotation block whose `Prev`
+  is nil, so both the author side (`Sign`) and the wire side (`Decode`, through
+  `assemble`) refuse one; the doc comments of `Content.Prev` and
+  `Content.Validate` state the rule.
+- `go/block/builder.go`: `build` refuses a rotation block from a Builder that
+  has signed nothing, in the terms the author is working in ("no chain to
+  end"); `Rotation`'s doc comment says so.
+- `go/block/chain.go`: `ValidateSuccession`'s doc comment records that its type
+  check turns away only the private case, a rotation block having been refused
+  a step earlier by `IsGenesis`.
+- `go/block/block_test.go`: the rotation rows of `TestContentValidateRejections`
+  now carry a `prev`, so each tests the rule it names; new rows for a rotation
+  block as a genesis block and for a rotation to its own key.
+  `TestRotateKeyOnlyInRotationBlocks` opens the chain before ending it.
+- `go/block/decode_test.go`: `rotationMap` carries a `prev`; new wire cases for
+  a rotation block with a null `prev` and one rotating to its own key.
+- `go/block/validate_test.go`: `TestRotation`'s "rotation block as successor
+  genesis" is replaced by "a rotation block is never a genesis block" —
+  builder, `Sign`, the successor position, and `Successors` declining to count
+  a rotation block that references the rotation it cannot succeed; the happy
+  path now also round-trips the rotation block through `Decode`.
+- `go/privacy/privacy_test.go`: the successor-genesis subtest opens the old
+  chain before rotating it.
 
 ## Notes
 

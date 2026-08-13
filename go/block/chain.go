@@ -165,6 +165,13 @@ func fetchChecked(src Source, d cid.Digest) (*Block, error) {
 // permits: the rule excludes private targets only (spec/02-block-format.md,
 // "Validation" rule 6).
 //
+// Of the three block types, the only one the type check turns away in practice
+// is the private one: a rotation block is never a genesis block
+// (spec/02-block-format.md, "Rotation block"), so it never reaches the genesis
+// position at all and its case is refused a step earlier, by IsGenesis. The
+// check keeps the type in the error message rather than reporting a missing
+// prev.
+//
 // A rotation block naming its own key is impossible here: Content.Validate
 // rejects one, so no such *Block exists.
 func ValidateSuccession(rotation, genesis *Block) (*Report, error) {

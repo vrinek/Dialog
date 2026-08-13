@@ -105,7 +105,8 @@ rotation-block = {
   "type" => "rotation",
   "pub"  => bstr .size 32,
   "sig"  => bstr .size 64,
-  "prev" => bstr .size 32 / null,
+  "prev" => bstr .size 32,        ; never null: see "A rotation block is never
+                                  ; a genesis block" below
   "refs" => [* bstr .size 32],
   "ts"   => uint,
   "ops"  => [rotate-key-op]       ; exactly one operation
@@ -118,6 +119,10 @@ rotate-key-op = {
 ```
 
 The `new_pub` field MUST NOT equal the rotation block's `pub` field. A rotation to the key that signed it ends a chain in favour of itself, which no node can act on: the old key is marked inactive and the successor chain would have to be signed by a key that may no longer be used. Implementations MUST reject such a block. The constraint is a relation between two fields and cannot be written in CDDL; it is checked alongside the schema.
+
+**A rotation block is never a genesis block.** Its `prev` field MUST NOT be null. A rotation block ends the chain it sits at the end of, and ending presupposes a chain to end: a rotation block with a null `prev` would be the first and last block of a chain that never carried an operation, published no entity, and exists only to hand a key it never used to another key. Implementations MUST reject a rotation block whose `prev` is null, on the author side and on the wire alike. This is the one place where the `prev` field is not `bstr .size 32 / null`, and it is the only per-type restriction on `prev`: for a public or private block, `prev` is null exactly when the block is the genesis block of its chain (see [Chain linking](#chain-linking)).
+
+*Informative.* The cost of this rule is that a key which is rotated away from before it publishes anything must still publish one block first — the genesis block of its own chain, carrying at least one operation (validation rule 7) — before it can rotate. The alternative is a chain consisting of a single rotation block, which every consumer of a chain would have to treat as a special case for a situation an author reaches by publishing a key they never meant to use.
 
 ### Validation dispatch
 
@@ -189,7 +194,7 @@ Implementations MUST mark the old key as inactive after processing a rotation bl
 
 **Verifiable succession.** The genesis block of the successor chain MUST list the rotation block's digest in its `refs`. A node MUST NOT treat a chain as the successor of a rotation unless its genesis block carries that reference: the rotation block names the new key, the genesis block names the rotation block, and the genesis block's own signature — by the new key — is what makes the second half of that pair evidence rather than an assertion anyone could make. A chain whose genesis block omits the reference is a valid chain of an unrelated author, as far as any node can tell.
 
-**The successor's genesis block MUST be a public block.** Its `refs` carry the evidence of the succession, and every node is asked to act on that evidence: it MUST mark the old key inactive and MUST add the new key to the set of known chains (see [05-processing-model.md](05-processing-model.md), "Chain succession"). A private block's `refs` are inside its `enc` field, so a node without the decryption key would be asked to act on a reference it cannot read. Implementations MUST reject a genesis block of any other type in this position and MUST NOT treat the chain it begins as the successor of any rotation. A public block's `refs` naming a rotation block is permitted by validation rule 6.
+**The successor's genesis block MUST be a public block.** Its `refs` carry the evidence of the succession, and every node is asked to act on that evidence: it MUST mark the old key inactive and MUST add the new key to the set of known chains (see [05-processing-model.md](05-processing-model.md), "Chain succession"). A private block's `refs` are inside its `enc` field, so a node without the decryption key would be asked to act on a reference it cannot read. The rule and its reason cover the same ground: of the three block types, the only one the rule turns away in this position is the private one, because a rotation block is never a genesis block at all (see [Rotation block](#rotation-block)) and so cannot reach it. Implementations MUST reject a genesis block of any other type in this position and MUST NOT treat the chain it begins as the successor of any rotation. A public block's `refs` naming a rotation block is permitted by validation rule 6.
 
 *Informative.* This does not keep an author's chains private: a successor chain's genesis block is public, and every block after it MAY be private. What v1 does not offer is a succession whose *existence* is confidential, and confidential succession is deferred to a future protocol version — it needs evidence a non-recipient node can verify without reading the reference, which is a mechanism v1 does not have.
 

@@ -663,6 +663,11 @@ func TestRotation(t *testing.T) {
 		// a public genesis block to a rotation block is legal by construction
 		// (spec/02-block-format.md, "Validation" rule 6).
 		mustValidate(t, newGenesis, store, nil)
+		// The rotation block itself survives the wire: prev is a digest, not
+		// null, and that is the shape the decoder accepts.
+		if _, err := Decode(rotation.Bytes()); err != nil {
+			t.Errorf("Decode of a well-formed rotation block: %v", err)
+		}
 	})
 
 	t.Run("appending after a rotation block", func(t *testing.T) {
@@ -689,7 +694,13 @@ func TestRotation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("build: %v", err)
 		}
-		rot, err := mustBuilder(t, 1).Rotation(2000, nil, testPub(t, 3))
+		// A chain has to exist before it can be handed over, so the rotation
+		// block sits behind a genesis block of its own.
+		rotating := mustBuilder(t, 1)
+		if _, err := rotating.Public(1000, nil, MustCreateAtom("France")); err != nil {
+			t.Fatalf("genesis: %v", err)
+		}
+		rot, err := rotating.Rotation(2000, nil, testPub(t, 3))
 		if err != nil {
 			t.Fatalf("rotation: %v", err)
 		}
@@ -736,10 +747,26 @@ func TestRotation(t *testing.T) {
 		mustValidate(t, privateGenesis, own, nil)
 	})
 
-	t.Run("rotation block as successor genesis", func(t *testing.T) {
-		// A successor chain begins with a public block, so no other type may
-		// stand in the genesis position — including a rotation block, whose refs
-		// are in the clear but which is not what the rule admits.
+	t.Run("a rotation block is never a genesis block", func(t *testing.T) {
+		// A rotation block ends a chain, and ending presupposes a chain to end:
+		// its prev MUST NOT be null (spec/02-block-format.md, "Rotation
+		// block"). This is what settles the case of a rotation block in the
+		// genesis position of a successor chain — an author who wants to
+		// abandon a key immediately publishes its genesis block first.
+		fresh := mustBuilder(t, 8)
+		if _, err := fresh.Rotation(3000, nil, testPub(t, 9)); err == nil {
+			t.Error("the builder must refuse to sign a rotation block as the first block of a chain")
+		}
+		if _, err := Sign(Content{
+			Version: Version, Type: TypeRotation, TS: 3000,
+			Ops: []Operation{MustRotateKey(testPub(t, 9))},
+		}, testKey(t, 8)); err == nil {
+			t.Error("Sign accepted a rotation block with a null prev")
+		}
+		// The same is true in the successor position, which is how issue #45
+		// is closed: the type list of "Verifiable succession" turns away only
+		// the private case, because no rotation block can reach the genesis
+		// position at all.
 		immediate := mustBuilder(t, 2)
 		if err := immediate.Succeeds(rotation); err != nil {
 			t.Fatalf("Succeeds: %v", err)
@@ -747,28 +774,23 @@ func TestRotation(t *testing.T) {
 		if _, err := immediate.Rotation(3000, nil, testPub(t, 8)); err == nil {
 			t.Error("the builder must refuse to open a successor chain with a rotation genesis block")
 		}
-		rotationGenesis, err := Sign(Content{
-			Version: Version, Type: TypeRotation, TS: 3000,
+		// A rotation block that is not a genesis block is not a claimant to the
+		// successor position either: Successors counts public genesis blocks,
+		// and ValidateSuccession refuses anything whose prev is not null.
+		prev := newGenesis.Digest()
+		later, err := Sign(Content{
+			Version: Version, Type: TypeRotation, Prev: &prev, TS: 3100,
 			Refs: []cid.Digest{rotation.Digest()},
 			Ops:  []Operation{MustRotateKey(testPub(t, 8))},
 		}, testKey(t, 2))
 		if err != nil {
 			t.Fatalf("Sign: %v", err)
 		}
-		if _, err := ValidateSuccession(rotation, rotationGenesis); err == nil {
+		if _, err := ValidateSuccession(rotation, later); err == nil {
 			t.Error("a rotation block must not be accepted as the genesis block of a successor chain")
 		}
-		// Nor is it counted as a claimant when the successors of a rotation are
-		// enumerated: it cannot be one, so it makes no ambiguity.
 		claimed := NewMemStore()
-		claimed.MustAdd(genesis, rotation, newGenesis)
-		// Two blocks in the successor key's genesis position are a fork under
-		// rule 9, which the store reports as it stores the second; what matters
-		// here is that only the public one is a candidate successor.
-		var forkErr *ForkError
-		if err := claimed.Add(rotationGenesis); !errors.As(err, &forkErr) {
-			t.Fatalf("storing a second block in the genesis position = %v, want a *ForkError", err)
-		}
+		claimed.MustAdd(genesis, rotation, newGenesis, later)
 		successors, fork, err := Successors(rotation, claimed)
 		if err != nil {
 			t.Fatalf("Successors: %v", err)

@@ -3,6 +3,9 @@ package privacy
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/vrinek/Dialog/go/block"
@@ -186,11 +189,17 @@ const (
 		"ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841" +
 		"d9559fbcf77be720fe02305ea226863a"
 
+	// The remaining values are the worked example of spec/04-cryptography.md,
+	// "Wrapping a chain key", which gives every one of them in hex: the
+	// specification pins these bytes and this test is what holds the package to
+	// them.
+	//
 	// HKDF-SHA-256(salt: empty, ikm: X25519(sk₁, pk₂), info: "dialog-v1-key-wrap", 32).
 	vectorWrappingKeyHex = "657dbd5e5d21dcb81a44415ddf3a8b9f9fa44c7d832d678c9962079aa01fe68d"
 
-	// The content key wrapped for the seed-0x02 recipient under a nonce of
-	// 24×0x22: nonce || XChaCha20-Poly1305(wrapping key, nonce, key, nil).
+	// The content key (32×0x11) wrapped for the seed-0x02 recipient under a
+	// nonce of 24×0x22: nonce || XChaCha20-Poly1305(wrapping key, nonce, key,
+	// aad: empty), 72 bytes.
 	vectorWrappedKeyHex = "222222222222222222222222222222222222222222222222" +
 		"bdafc49fb94819665a9993f60272336caf98fd5fd4fb1b302e94cc2b5a8ccbd6" +
 		"1b25f1def2b48d225f13e64d5f0ffa90"
@@ -326,15 +335,34 @@ func TestX25519Conversion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Wrap: %v", err)
 		}
-		if len(wrapped) != WrappedKeySize {
-			t.Fatalf("a wrapped key is %d bytes, want %d", len(wrapped), WrappedKeySize)
+		// 72 bytes: 24 nonce, 32 ciphertext, 16 tag, in that order
+		// (spec/04-cryptography.md, "Wrapped key format").
+		if len(wrapped) != WrappedKeySize || WrappedKeySize != 72 {
+			t.Fatalf("a wrapped key is %d bytes, want %d = 24 + 32 + 16", len(wrapped), WrappedKeySize)
+		}
+		if got, want := hex.EncodeToString(wrapped[:NonceSize]), strings.Repeat("22", NonceSize); got != want {
+			t.Errorf("the wrap does not begin with its nonce: %s, want %s", got, want)
 		}
 		got, err := Unwrap(wrapped, testKey(t, 2), testPub(t, 1))
 		if err != nil || got != key {
 			t.Fatalf("Unwrap = %v, %v, want the content key", got, err)
 		}
-		if _, err := Unwrap(wrapped[:len(wrapped)-1], testKey(t, 2), testPub(t, 1)); err == nil {
-			t.Error("a truncated wrapped key must be rejected")
+		// Every conforming wrap is exactly WrappedKeySize bytes, so any other
+		// length is malformed and MUST be rejected — before any decryption is
+		// attempted, which is why these are not authentication failures.
+		for _, bad := range [][]byte{
+			nil,
+			{},
+			wrapped[:len(wrapped)-1],
+			wrapped[:NonceSize],
+			append(slices.Clone(wrapped), 0),
+		} {
+			_, err := Unwrap(bad, testKey(t, 2), testPub(t, 1))
+			if err == nil {
+				t.Errorf("a wrapped key of %d bytes must be rejected", len(bad))
+			} else if errors.Is(err, ErrAuthentication) {
+				t.Errorf("a wrapped key of %d bytes must be rejected on its length, not by the AEAD", len(bad))
+			}
 		}
 		for i := range wrapped {
 			bad := append([]byte(nil), wrapped...)

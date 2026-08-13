@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "046"
 tags: [specification-gap, cryptography, interoperability, privacy]
@@ -115,13 +115,13 @@ implementations are most likely to disagree about.
 
 ## Acceptance Criteria
 
-- [ ] The wrapping algorithm is named
-- [ ] The nonce (or the absence of one) is specified, with its uniqueness
+- [x] The wrapping algorithm is named
+- [x] The nonce (or the absence of one) is specified, with its uniqueness
       requirement stated relative to the long-lived wrapping key
-- [ ] The AAD is specified
-- [ ] The wrapped key's byte layout is specified
-- [ ] A conformance vector pins the result
-- [ ] `go/privacy` matches the ratified format
+- [x] The AAD is specified
+- [x] The wrapped key's byte layout is specified
+- [x] A conformance vector pins the result
+- [x] `go/privacy` matches the ratified format
 
 ## Work Log
 
@@ -132,6 +132,45 @@ Found implementing spec/04's key management. Everything up to the wrapping key
 is exact enough to write a vector for; the line that uses it is a placeholder.
 The Go implementation picks the reading that reuses the protocol's own AEAD and
 documents the choice at the two places a reader would look.
+
+### 2026-08-13 - Ratified and Applied
+**By:** Claude
+
+**Decision (project lead):** Option 1, without Option 3 and without Option 4.
+The wrap is an XChaCha20-Poly1305 sealed box under the wrapping key, with a
+fresh random 24-byte nonce per wrap, an **empty AAD**, and `nonce || ciphertext`
+as the layout — 72 bytes exactly (24 + 32 + 16), which decoders MUST reject any
+departure from.
+
+Option 3 (binding the two X25519 public keys as AAD) was declined as
+redundant rather than wrong: the wrapping key is already a pure function of
+that pair and of the info string `"dialog-v1-key-wrap"`, so a wrapped key that
+authenticates under it can only have come from the other end of the pair. An
+AAD would restate the derivation and give two implementations a second thing to
+get byte-exactly right. Option 4 (an envelope) stays out: distribution is out of
+scope, and the specification now says plainly that trial decryption is the
+expected behaviour of a reader handed several wrapped keys.
+
+**Changes:**
+
+- `spec/04-cryptography.md`: the `wrapped_key` pseudocode line is replaced by
+  the nonce generation and the sealed box; a new "Wrapped key format"
+  subsection gives the offset/size table, the 72-byte total, the MUST to reject
+  any other length without decrypting, the nonce-freshness MUST with the reason
+  it binds harder here than for block encryption, and the reasoning for the
+  empty AAD (with a MUST NOT against adding one); the "Nonce reuse" security
+  consideration now covers the wrap; a new worked example, "Wrapping a chain
+  key", gives every intermediate value in hex — both key conversions, the shared
+  secret, the wrapping key, and the 72 wrapped bytes.
+- `go/privacy/wrap.go`: `WrappedKeySize`, `Wrap` and `Unwrap` doc comments cite
+  the specification instead of calling the format an implementation choice, and
+  state why the AAD is empty. No behaviour change: the ratified format is the
+  one implemented.
+- `go/privacy/spec_test.go`: the vector constants are labelled as the
+  specification's worked example; the "wrapped keys" subtest asserts the 72-byte
+  composition, that the wrap begins with its nonce, and that five malformed
+  lengths (nil, empty, truncated, nonce-only, one byte too long) are rejected on
+  length rather than by the AEAD.
 
 ## Notes
 

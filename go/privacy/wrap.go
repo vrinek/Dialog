@@ -17,14 +17,13 @@ import (
 // (spec/04-cryptography.md, "Key management").
 const WrapInfo = "dialog-v1-key-wrap"
 
-// WrappedKeySize is the size of a wrapped content key as this package writes
-// it: a 24-byte nonce, the 32-byte content key, and the 16-byte Poly1305 tag.
+// WrappedKeySize is the size of a wrapped content key, which is fixed: a
+// 24-byte nonce, the 32-byte content key, and the 16-byte Poly1305 tag, 72
+// bytes in all (spec/04-cryptography.md, "Wrapped key format").
 //
-// The wrap format is this implementation's, not the protocol's: spec/04 writes
-// the step as "wrapped_key = Encrypt(wrapping_key, chain_symmetric_key)" and
-// names no algorithm, nonce, AAD or serialization. See todos/046; what is
-// implemented here is the defensible reading — the AEAD the protocol already
-// mandates, with the nonce it needs carried in front of the ciphertext.
+// The plaintext is a fixed-size key, so every conforming wrap has exactly this
+// size and a value of any other length is malformed. Unwrap rejects one without
+// attempting to decrypt it, as the specification requires.
 const WrappedKeySize = NonceSize + KeySize + TagSize
 
 // X25519PublicFromEd25519 converts an author's Ed25519 identity key to the
@@ -128,17 +127,24 @@ func WrappingKey(own ed25519.PrivateKey, peer ed25519.PublicKey) ([]byte, error)
 // Wrap encrypts a chain's content key for one recipient, so that the recipient
 // can read the chain's private blocks.
 //
-// The returned value is WrappedKeySize bytes: the 24-byte nonce followed by the
-// XChaCha20-Poly1305 ciphertext of the content key under the wrapping key, with
-// no additional data. Only the wrapping-key derivation is specified — see
-// WrappedKeySize and todos/046 — so this layout is an implementation choice,
-// and so is anything that carries it: the protocol says the distribution
-// mechanism is out of scope (spec/04-cryptography.md, "Key management").
+// The returned value is the wrap the protocol specifies
+// (spec/04-cryptography.md, "Wrapped key format"): WrappedKeySize bytes, the
+// 24-byte nonce followed by the XChaCha20-Poly1305 ciphertext of the content
+// key under the wrapping key, with an empty AAD. The AAD is empty because the
+// wrapping key already binds the pair — it is derived from the X25519 agreement
+// between exactly one author and one recipient, under the info string
+// "dialog-v1-key-wrap", and for no other purpose — so a wrapped key that
+// authenticates under it came from the other end of that pair.
+//
+// What carries the wrapped key is not specified: the protocol says the
+// distribution mechanism is out of scope (spec/04-cryptography.md, "Key
+// management").
 //
 // The nonce is read from random, or from crypto/rand.Reader when random is
-// nil. A fresh one per wrap is required, not optional: one pair of identities
+// nil. A fresh one per wrap is a MUST, not a preference: one pair of identities
 // has one wrapping key for all time, so a repeated nonce would repeat a
-// keystream.
+// keystream (spec/04-cryptography.md, "Wrapped key format" and "Security
+// Considerations").
 func Wrap(key Key, authorPriv ed25519.PrivateKey, recipient ed25519.PublicKey, random io.Reader) ([]byte, error) {
 	wrappingKey, err := WrappingKey(authorPriv, recipient)
 	if err != nil {
@@ -160,6 +166,10 @@ func Wrap(key Key, authorPriv ed25519.PrivateKey, recipient ed25519.PublicKey, r
 // Unwrap recovers a chain's content key from a wrapped copy addressed to the
 // caller. A wrapped key that does not authenticate — the wrong recipient, the
 // wrong author, a tampered blob — is ErrAuthentication.
+//
+// A value that is not WrappedKeySize bytes is rejected before any key is
+// derived or any decryption is attempted: every conforming wrap is exactly that
+// long (spec/04-cryptography.md, "Wrapped key format").
 func Unwrap(wrapped []byte, recipientPriv ed25519.PrivateKey, author ed25519.PublicKey) (Key, error) {
 	var k Key
 	if len(wrapped) != WrappedKeySize {
