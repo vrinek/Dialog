@@ -215,6 +215,12 @@ func Validate(b *Block, src Source, opts *Options) (*Report, error) {
 
 // validateLinkage is rule 3, plus the timestamp SHOULD that hangs off it. It
 // returns the predecessor block, or nil for a genesis block.
+//
+// The rule says prev must reference "an existing, valid block with the same
+// pub key" without saying how far validity recurses. This takes the cheap
+// reading — a block the source holds has been validated once, when it was
+// received — and leaves whole-chain validation to ValidateChain; see
+// todos/043.
 func validateLinkage(b *Block, src Source, report *Report) (*Block, error) {
 	prevDigest, ok := b.Prev()
 	if !ok {
@@ -283,6 +289,8 @@ func validateReferences(b *Block, prev *Block, src Source, opts *Options, report
 	// Rule 6 — a public block MUST only reference public blocks. The check
 	// needs the referenced block, so it can only be made for refs the source
 	// holds; a ref that is absent and never needed is reported as unchecked.
+	// Whether every ref must be fetched for this check, or only those
+	// resolution demands, is not settled by the specification; see todos/041.
 	if b.content.Type == TypePublic {
 		for _, ref := range b.content.Refs {
 			target, err := r.fetch(ref, true)

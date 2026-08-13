@@ -143,8 +143,8 @@ func fetchChecked(src Source, d cid.Digest) (*Block, error) {
 // signed by the key the rotate_key operation names. The fourth — that the
 // genesis block reference the rotation block in refs — is a SHOULD in the
 // specification, so a genesis block that omits it is valid and gets a warning.
-// Without that reference nothing on the wire ties the two chains together, and
-// the report says so.
+// Without that reference nothing on the wire ties the two chains together; the
+// report says so, and todos/042 asks whether it should be a MUST.
 func ValidateSuccession(rotation, genesis *Block) (*Report, error) {
 	report := &Report{}
 	op, ok := rotation.RotateKey()
