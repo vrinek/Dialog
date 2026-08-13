@@ -147,7 +147,7 @@ Each private chain uses a single symmetric key. This key is shared with authoriz
 3. Perform X25519 key agreement between the author and each recipient
 4. Derive a wrapping key using HKDF-SHA-256 (RFC 5869) and encrypt the symmetric chain key
 
-The Ed25519-to-X25519 conversion MUST follow the birational map specified in RFC 7748 S4.1. Reference implementations include libsodium's `crypto_sign_ed25519_pk_to_curve25519` and `crypto_sign_ed25519_sk_to_curve25519`.
+The two conversions `Ed25519_to_X25519` stands for are specified in [Ed25519-to-X25519 conversion](#ed25519-to-x25519-conversion), below the procedure they are used in.
 
 ```
 author_x25519_sk = Ed25519_to_X25519(author_ed25519_sk)
@@ -164,6 +164,37 @@ wrapped_key = wrap_nonce || XChaCha20Poly1305_Encrypt(
   wrapping_key, wrap_nonce, chain_symmetric_key, aad: empty
 )
 ```
+
+##### Ed25519-to-X25519 conversion
+
+`Ed25519_to_X25519` is two different procedures — one for public keys, one for private keys — and both are specified here in full. They are not interchangeable and neither is derivable from the other: the public half maps a curve point, the private half derives a scalar.
+
+Throughout, *p* is 2<sup>255</sup> − 19, the field of Curve25519, and all arithmetic is modulo *p*.
+
+**Public keys.** An Ed25519 public key is the compressed encoding of an Edwards point ([RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) §5.1.2): 32 bytes holding the *y* coordinate in little-endian order, with the most significant bit of the last byte carrying the sign of *x*. The conversion is the birational map of [RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) §4.1:
+
+1. Clear the most significant bit of byte 31. It is the sign of *x* and takes no part in the map.
+2. Read the remaining 255 bits as a little-endian integer *y*. Implementations MUST reject a key with *y* ≥ *p*: such an encoding is not canonical, and no Ed25519 public key produces one.
+3. Implementations MUST reject *y* = 1. That is the identity point, 1 − *y* has no inverse, and its Montgomery image is the point at infinity, which has no *u* coordinate to encode.
+4. Compute *u* = (1 + *y*) · (1 − *y*)<sup>−1</sup> mod *p*.
+5. The X25519 public key is *u* encoded as 32 bytes, little-endian ([RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) §5).
+
+Only *y* enters the map, so recovering *x* is not required.
+
+A public key of small order maps to a *u* of small order, and the X25519 agreement with it yields all zeroes. Implementations MUST reject an all-zero agreement result ([RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) §6.1) and MUST NOT derive a wrapping key from it. An implementation MAY instead reject small-order encodings earlier, at conversion time — libsodium does — which changes where the failure is reported but never whether one occurs: no wrapped key is produced or opened under a small-order key either way.
+
+**Private keys.** An Ed25519 private key is a 32-byte seed, not a scalar. The X25519 private key is the scalar that seed expands to ([RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) §5.1.5):
+
+1. Compute *h* = SHA-512(seed).
+2. Take *s* = *h*[0..31], the lower half.
+3. Clamp it: `s[0] &= 248`, `s[31] &= 127`, `s[31] |= 64`.
+4. *s* is the X25519 private key, and its X25519 public key is the birational image of the seed's Ed25519 public key.
+
+Implementations that hold an Ed25519 private key in the 64-byte form many libraries use — seed followed by public key — take the seed from its first 32 bytes. Using the seed itself as an X25519 scalar is **not** the conversion: it produces a valid X25519 key that agrees with nobody.
+
+*Informative.* These are exactly libsodium's `crypto_sign_ed25519_pk_to_curve25519` and `crypto_sign_ed25519_sk_to_curve25519`, and produce identical output for every valid Ed25519 key. They differ only in which invalid inputs they turn away: libsodium's public conversion rejects small-order and off-subgroup encodings but accepts a non-canonical *y*, so an implementation built on it performs step 2's canonicality check itself.
+
+A worked example of both conversions, with all intermediate values, is in [Wrapping a chain key](#wrapping-a-chain-key).
 
 ##### Wrapped key format
 
@@ -198,7 +229,7 @@ When an author publishes a rotation block containing a `rotate_key` operation wi
 - **Nonce reuse:** Reusing a nonce with XChaCha20-Poly1305 under the same key completely breaks confidentiality. Implementations MUST generate unique nonces for every private block. Using a counter or random 24-byte value are both acceptable. XChaCha20's 192-bit nonce space makes random nonce collisions negligible. The same requirement applies to key wrapping and binds harder there: a wrapping key is long-lived by construction — one pair of identities has one wrapping key, for every chain and for all time — so a repeated `wrap_nonce` repeats a keystream under a key that may have been in use for years. See "Wrapped key format".
 - **Metadata leakage:** Private blocks encrypt `refs`, `ts`, and `ops` together. An observer can see that a private block exists and its position in the chain (`prev`), but cannot learn the block's timestamp, what other blocks it references, or what operations it contains. This prevents social graph analysis via refs and timing correlation via timestamps.
 - **Key compromise:** If an author's Ed25519 private key is compromised, the attacker can sign blocks and publish fraudulent key rotations. v1 of the protocol does not include pre-rotation or social recovery. Key compromise handling is deferred to a future protocol version. See the [brainstorm document](../docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) for candidate approaches.
-- **Ed25519 to X25519 conversion:** This is a well-established operation (used by libsodium and others). The security properties are preserved. See [RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) for X25519 and [this analysis](https://moderncrypto.org/mail-archive/curves/2014/000205.html) for the conversion.
+- **Ed25519 to X25519 conversion:** This is a well-established operation (used by libsodium and others). The security properties are preserved. The two procedures are specified in full under "Ed25519-to-X25519 conversion"; the libsodium functions named there are informative, and an implementation is conformant by matching the specified steps, not a particular library. See [RFC 7748](https://datatracker.ietf.org/doc/html/rfc7748) for X25519 and [this analysis](https://moderncrypto.org/mail-archive/curves/2014/000205.html) for the conversion.
 
 ## Examples
 

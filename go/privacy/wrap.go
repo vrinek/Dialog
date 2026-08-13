@@ -28,17 +28,28 @@ const WrappedKeySize = NonceSize + KeySize + TagSize
 
 // X25519PublicFromEd25519 converts an author's Ed25519 identity key to the
 // X25519 key agreement key derived from it, by the birational map of RFC 7748
-// §4.1 (spec/04-cryptography.md, "Key management"):
+// §4.1 (spec/04-cryptography.md, "Ed25519-to-X25519 conversion"):
 //
 //	u = (1 + y) / (1 - y)  (mod 2^255 - 19)
 //
 // where y is the Edwards y coordinate the Ed25519 public key encodes, little
-// endian, with the sign bit of x in the top bit and no part in the map. This is
-// libsodium's crypto_sign_ed25519_pk_to_curve25519.
+// endian, with the sign bit of x in the top bit and no part in the map. Only y
+// enters the map, so the point is never decompressed.
 //
 // The arithmetic is over public data — a published key — so a variable-time
-// big.Int implementation leaks nothing. A key that encodes y = 1, or a y that
-// is not reduced modulo p, has no image and is refused.
+// big.Int implementation leaks nothing.
+//
+// Two encodings are refused, as the specification requires: a y that is not
+// reduced modulo p, which no Ed25519 public key produces, and y = 1, the
+// identity, whose Montgomery image is at infinity. A key of small order is not
+// refused here but at the agreement, which yields all zeroes for one and is
+// rejected in WrappingKey; the specification permits either placement, since no
+// wrapping key is derived in either case.
+//
+// This is libsodium's crypto_sign_ed25519_pk_to_curve25519 for every valid
+// Ed25519 public key. The two differ only over invalid ones: libsodium rejects
+// small-order and off-subgroup encodings at this step and accepts a
+// non-canonical y.
 func X25519PublicFromEd25519(pub ed25519.PublicKey) (*ecdh.PublicKey, error) {
 	if len(pub) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("privacy: an Ed25519 public key is %d bytes, want %d", len(pub), ed25519.PublicKeySize)
@@ -68,12 +79,13 @@ func X25519PublicFromEd25519(pub ed25519.PublicKey) (*ecdh.PublicKey, error) {
 // private key that agrees with X25519PublicFromEd25519 of its public key.
 //
 // The scalar is the low half of SHA-512 over the Ed25519 seed, clamped as RFC
-// 8032 clamps it before scalar multiplication — libsodium's
-// crypto_sign_ed25519_sk_to_curve25519, which spec/04-cryptography.md names as
-// a reference implementation. The specification cites RFC 7748 §4.1 for the
-// conversion, and that section maps *points*, not scalars; the scalar half of
-// the conversion is only pinned by the reference implementation it names. See
-// todos/047.
+// 8032 §5.1.5 clamps it before scalar multiplication — the procedure
+// spec/04-cryptography.md, "Ed25519-to-X25519 conversion", specifies, and
+// libsodium's crypto_sign_ed25519_sk_to_curve25519.
+//
+// The seed is not the scalar: using it directly would produce a valid X25519
+// key that agrees with nobody. crypto/ed25519 holds a private key as seed ||
+// public key, so the seed is its first 32 bytes, which Seed returns.
 func X25519PrivateFromEd25519(priv ed25519.PrivateKey) (*ecdh.PrivateKey, error) {
 	if len(priv) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("privacy: an Ed25519 private key is %d bytes, want %d", len(priv), ed25519.PrivateKeySize)
@@ -114,7 +126,9 @@ func WrappingKey(own ed25519.PrivateKey, peer ed25519.PublicKey) ([]byte, error)
 	shared, err := ownX.ECDH(peerX)
 	if err != nil {
 		// crypto/ecdh rejects an all-zero agreement, which is what a low-order
-		// peer key produces.
+		// peer key produces. Rejecting it is a MUST — spec/04-cryptography.md,
+		// "Ed25519-to-X25519 conversion", after RFC 7748 §6.1 — and this is
+		// where this package does it.
 		return nil, fmt.Errorf("privacy: X25519 agreement with %x failed: %w", []byte(peer), err)
 	}
 	key, err := hkdf.Key(sha256.New, shared, []byte{}, WrapInfo, KeySize)

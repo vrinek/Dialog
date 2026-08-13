@@ -258,8 +258,56 @@ func TestVectors(t *testing.T) {
 }
 
 // TestX25519Conversion covers the Ed25519-to-X25519 conversion the key wrap
-// rests on (spec/04-cryptography.md, "Key management").
+// rests on (spec/04-cryptography.md, "Ed25519-to-X25519 conversion").
 func TestX25519Conversion(t *testing.T) {
+	// The conversions of the worked example in spec/04-cryptography.md,
+	// "Wrapping a chain key": both halves for both parties, and the shared
+	// secret they agree on. These are the bytes an implementation that reads
+	// only the specification must reproduce — the private half in particular,
+	// which is SHA-512 over the seed and not the seed itself.
+	t.Run("worked example", func(t *testing.T) {
+		for _, tc := range []struct {
+			seed                  byte
+			x25519Priv, x25519Pub string
+		}{
+			{1, "58e86efb75fa4e2c410f46e16de9f6acae1a1703528651b69bc176c088bef36e",
+				"1b1b58dd50ea14b60da17b790cd02754d970c9bab864ebb3c0f3016fe51d3f57"},
+			{2, "a83c626bc9c38c8c201878ebb1d5b0b50ac40e8986c78793db1d4ef369fca14e",
+				"60346e7c911a5f6ba154129174cafe75b294ac3bbd5549632f48cec6266f8410"},
+		} {
+			priv, err := X25519PrivateFromEd25519(testKey(t, tc.seed))
+			if err != nil {
+				t.Fatalf("seed %d: X25519PrivateFromEd25519: %v", tc.seed, err)
+			}
+			if got := hex.EncodeToString(priv.Bytes()); got != tc.x25519Priv {
+				t.Errorf("seed %d: X25519 private key = %s, want %s", tc.seed, got, tc.x25519Priv)
+			}
+			pub, err := X25519PublicFromEd25519(testPub(t, tc.seed))
+			if err != nil {
+				t.Fatalf("seed %d: X25519PublicFromEd25519: %v", tc.seed, err)
+			}
+			if got := hex.EncodeToString(pub.Bytes()); got != tc.x25519Pub {
+				t.Errorf("seed %d: X25519 public key = %s, want %s", tc.seed, got, tc.x25519Pub)
+			}
+		}
+		author, err := X25519PrivateFromEd25519(testKey(t, 1))
+		if err != nil {
+			t.Fatalf("X25519PrivateFromEd25519: %v", err)
+		}
+		reader, err := X25519PublicFromEd25519(testPub(t, 2))
+		if err != nil {
+			t.Fatalf("X25519PublicFromEd25519: %v", err)
+		}
+		shared, err := author.ECDH(reader)
+		if err != nil {
+			t.Fatalf("ECDH: %v", err)
+		}
+		const want = "4181d7302557342bdb6d061c4b1eebea828ecb625c3368b7111680793307220b"
+		if got := hex.EncodeToString(shared); got != want {
+			t.Errorf("shared secret = %s, want %s", got, want)
+		}
+	})
+
 	// The two halves of the conversion must agree: the public key derived from
 	// the converted private key must equal the birational image of the Ed25519
 	// public key. Nothing else checks the map's correctness as sharply.
@@ -326,6 +374,33 @@ func TestX25519Conversion(t *testing.T) {
 		unreduced[31] = 0x7f
 		if _, err := X25519PublicFromEd25519(unreduced); err == nil {
 			t.Error("a y coordinate that is not reduced modulo p must be rejected")
+		}
+	})
+
+	t.Run("small-order keys", func(t *testing.T) {
+		// A public key of small order maps to a u of small order, and the
+		// agreement with it is all zeroes. The specification requires the
+		// rejection but lets an implementation place it either at the
+		// conversion or at the agreement (spec/04-cryptography.md,
+		// "Ed25519-to-X25519 conversion"); this package places it at the
+		// agreement, so what must hold is that no wrapping key comes out.
+		//
+		// y = p - 1 is the point of order 2; y = 0 is a point of order 4.
+		orderTwo := make([]byte, ed25519.PublicKeySize)
+		orderTwo[0] = 0xec
+		for i := 1; i < 31; i++ {
+			orderTwo[i] = 0xff
+		}
+		orderTwo[31] = 0x7f
+		orderFour := make([]byte, ed25519.PublicKeySize)
+
+		for _, pub := range []ed25519.PublicKey{orderTwo, orderFour} {
+			if _, err := WrappingKey(testKey(t, 1), pub); err == nil {
+				t.Errorf("a wrapping key was derived for the small-order public key %x", []byte(pub))
+			}
+			if _, err := Wrap(testContentKey(t, 0x11), testKey(t, 1), pub, fixedRand(0x22)); err == nil {
+				t.Errorf("a content key was wrapped for the small-order public key %x", []byte(pub))
+			}
 		}
 	})
 
