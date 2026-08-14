@@ -25,24 +25,34 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing here pushes anything; leaving the token in .git/config for
+          # the rest of the job only widens what a compromised build step can
+          # reach.
+          persist-credentials: false
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y pandoc chromium-browser
 
+      # Every step below takes the values it needs through env rather than by
+      # interpolating ${{ }} into the script: a tag name is attacker-chosen
+      # text, and pasted into a shell it is a command, not a string.
       - name: Set version variables
         id: vars
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${{ github.ref_name }}"
-            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-            echo "PDF_FILENAME=dialog-protocol-${VERSION}.pdf" >> $GITHUB_OUTPUT
-            echo "Building with version suffix: ${VERSION}"
+          if [ "$IS_TAG" = "true" ]; then
+            echo "VERSION=${REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "PDF_FILENAME=dialog-protocol-${REF_NAME}.pdf" >> "$GITHUB_OUTPUT"
+            echo "Building with version suffix: ${REF_NAME}"
           else
-            echo "VERSION=" >> $GITHUB_OUTPUT
-            echo "PDF_FILENAME=dialog-protocol-spec.pdf" >> $GITHUB_OUTPUT
+            echo "VERSION=" >> "$GITHUB_OUTPUT"
+            echo "PDF_FILENAME=dialog-protocol-spec.pdf" >> "$GITHUB_OUTPUT"
             echo "Building without version suffix"
           fi
 
@@ -53,32 +63,35 @@ jobs:
           ./scripts/inject-version.sh
 
       - name: Build PDF
+        env:
+          VERSION: ${{ steps.vars.outputs.VERSION }}
         run: |
           chmod +x build-pdf.sh
-          if [[ -n "${{ steps.vars.outputs.VERSION }}" ]]; then
-            ./build-pdf.sh --version "${{ steps.vars.outputs.VERSION }}"
+          if [ -n "$VERSION" ]; then
+            ./build-pdf.sh --version "$VERSION"
           else
             ./build-pdf.sh
           fi
 
       - name: Validate PDF exists
+        env:
+          PDF_PATH: ${{ steps.vars.outputs.PDF_FILENAME }}
         run: |
-          PDF_FILE="${{ steps.vars.outputs.PDF_FILENAME }}"
-          if [ ! -f "$PDF_FILE" ]; then
-            echo "Error: PDF was not generated (expected: $PDF_FILE)"
+          if [ ! -f "$PDF_PATH" ]; then
+            echo "Error: PDF was not generated (expected: $PDF_PATH)"
             exit 1
           fi
-          
-          PDF_SIZE=$(stat -c%s "$PDF_FILE")
-          if [ $PDF_SIZE -lt 1024 ]; then
+
+          PDF_SIZE=$(stat -c%s "$PDF_PATH")
+          if [ "$PDF_SIZE" -lt 1024 ]; then
             echo "Error: PDF is too small (less than 1KB)"
             exit 1
           fi
-          
-          echo "✓ PDF generated successfully: ${PDF_FILE} (${PDF_SIZE} bytes)"
+
+          echo "✓ PDF generated successfully: ${PDF_PATH} (${PDF_SIZE} bytes)"
 
       - name: Upload PDF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dialog-protocol-pdf-${{ github.sha }}
           path: ${{ steps.vars.outputs.PDF_FILENAME }}
@@ -93,26 +106,29 @@ jobs:
     steps:
       - name: Set version variables
         id: vars
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          VERSION="${{ github.ref_name }}"
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "PDF_FILENAME=dialog-protocol-${VERSION}.pdf" >> $GITHUB_OUTPUT
+          echo "VERSION=${REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "PDF_FILENAME=dialog-protocol-${REF_NAME}.pdf" >> "$GITHUB_OUTPUT"
 
       - name: Download PDF artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dialog-protocol-pdf-${{ github.sha }}
           path: ./artifacts
 
       - name: Rename artifact for release
+        env:
+          PDF_FILENAME: ${{ steps.vars.outputs.PDF_FILENAME }}
         run: |
           cd ./artifacts
           # The artifact is downloaded with the original filename from the build
           # Rename it to include version for the release upload
-          mv *.pdf "${{ steps.vars.outputs.PDF_FILENAME }}"
+          mv ./*.pdf "$PDF_FILENAME"
 
       - name: Create/Update Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: ./artifacts/${{ steps.vars.outputs.PDF_FILENAME }}
           name: Release ${{ github.ref_name }}

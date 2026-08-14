@@ -1,0 +1,16 @@
+# Every `uses:` in .github/workflows/ is pinned to a full commit SHA, which is
+# the only reference an attacker who takes over an action's repository cannot
+# repoint. The cost of that is that a pinned action never moves on its own, not
+# even for a security fix — so something has to move it, and this is that
+# something. The trailing `# vX.Y.Z` comment on each `uses:` is what Dependabot
+# reads to know which release a SHA stands for, and it rewrites both together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies

@@ -3,7 +3,14 @@ name: Go
 # The Go reference implementation and the conformance vectors it generates.
 # The PDF pipeline is a separate workflow (build-and-release.yml) and is not
 # affected by anything here.
-on:
+#
+# The cache-poisoning suppression below is deliberate. zizmor sees a tag-push
+# trigger next to setup-go's module cache and warns that a poisoned cache could
+# reach a published artifact. This job publishes nothing — it builds, tests,
+# lints and diffs the vectors, and uploads no artifact and cuts no release — so
+# there is nothing for a poisoned cache to end up inside. Releases are made by
+# build-and-release.yml, which caches nothing.
+on: # zizmor: ignore[cache-poisoning]
   push:
     branches:
       - '**'
@@ -33,10 +40,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # This job only reads the repository. Keeping the token in
+          # .git/config afterwards would hand it to every later step, and to
+          # anything those steps run.
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           # go/go.mod is the single source of truth for the toolchain version:
           # setup-go reads its `toolchain` directive, and even if it did not,
