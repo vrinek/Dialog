@@ -54,8 +54,10 @@ nix shell nixpkgs#go --command go test ./...          # the whole suite, vectors
 nix shell nixpkgs#go --command go run ./cmd/genvectors # regenerate ../vectors
 ```
 
-(`go test ./...` works directly with Go 1.24 or later installed; the `nix
-shell` prefix is this project's convention for not requiring one.)
+(`go test ./...` works directly with any Go 1.21 or later installed: `go/go.mod`
+pins `toolchain go1.26.6`, and the `go` command downloads and switches to it on
+its own. The `nix shell` prefix is this project's convention for not requiring
+a system-wide Go at all.)
 
 Any change that alters canonical bytes must regenerate `vectors/`, and that
 diff is a breaking change for every implementation that matched the old bytes.

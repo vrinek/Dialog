@@ -38,7 +38,11 @@ nix shell nixpkgs#go --command go test -count=1 ./...
 ```
 
 Go is not installed system-wide; `nix shell nixpkgs#go --command` is how it is
-invoked. The toolchain version comes from `go/go.mod`.
+invoked. nixpkgs supplies whatever Go it has; the version the build actually
+runs on comes from `go/go.mod`, whose `toolchain go1.26.6` directive makes the
+`go` command fetch and switch to that exact toolchain (`GOTOOLCHAIN=auto`, the
+default). Nothing has to be installed for that to work, and CI's `setup-go`
+reads the same file, so `go/go.mod` is the one place the version is written.
 
 The PDF is built with `./build-pdf.sh` (needs pandoc and chromium) and the HTML
 with `./build-html.sh`; both take an optional `--version vX.Y.Z`.
@@ -64,7 +68,7 @@ CI.
 
 ### Language & Framework
 - Protocol is language-agnostic; the specification is normative, not the code
-- Reference implementation: Go, in `go/` (Go 1.24, module `github.com/vrinek/Dialog/go`)
+- Reference implementation: Go, in `go/` (Go 1.26, module `github.com/vrinek/Dialog/go`)
 - Dependencies: standard library plus `golang.org/x/crypto`; the CBOR codec is hand-rolled on purpose
 - Prefer deterministic, widely-supported languages for reference code
 

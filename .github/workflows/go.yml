@@ -38,8 +38,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # The module's own go directive is the single source of truth for the
-          # toolchain version; nothing here has to be updated to move it.
+          # go/go.mod is the single source of truth for the toolchain version:
+          # setup-go reads its `toolchain` directive, and even if it did not,
+          # GOTOOLCHAIN=auto would make the go command switch to it. Nothing
+          # here has to be updated to move the version.
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
 
