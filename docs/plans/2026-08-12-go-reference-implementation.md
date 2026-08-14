@@ -1,6 +1,6 @@
 # Go reference implementation — design and plan
 
-**Status:** in-progress
+**Status:** complete
 **Date:** 2026-08-12
 
 ## Purpose
@@ -42,10 +42,27 @@ L2/L3 (graph accumulation, subscription filtering, meta-bond semantics) come aft
 ## Phases (one commit or more per phase)
 
 1. Scaffold: go.mod, directory layout, CI note. ✔ this doc
+   — **done:** module `github.com/vrinek/Dialog/go`, Go 1.24, one dependency.
 2. `dcbor` + `cid` with tests — must reproduce the worked example in spec/03 (atom "France" → CBOR `a16b...`, digest `e57761...`).
+   — **done:** encoder, strict decoder and fuzz targets; the spec's worked example reproduces byte for byte.
 3. `entity` + `block` with tests: signing, chain validation, fork detection.
+   — **done:** all three entity types with the meta-bond library, the four operations, reachability validation, key rotation and succession.
 4. `privacy` with tests: AEAD round-trip, key wrap, tamper rejection.
+   — **done:** XChaCha20-Poly1305 with the spec's AAD, X25519 + HKDF key wrap, small-order key rejection.
 5. `cmd/genvectors` + committed `vectors/` + CI runs `go test` + AGENTS.md/README updates.
+   — **done:** 159 cases across four files, a conformance test that fails when code and vectors drift, a `go.yml` workflow that regenerates and diffs them, and the dual-tagging release rule (`vX.Y.Z` and `go/vX.Y.Z`) documented in the README.
+
+## Outcome
+
+The vector suite is the deliverable and it exists: `vectors/dcbor.json`,
+`entities.json`, `blocks.json`, `privacy.json`, with `vectors/README.md` as the
+index. The secondary goal held too — implementing the spec surfaced enough
+ambiguity to fill `todos/030` through `todos/048`, every one of them a question
+prose review had not raised.
+
+L2/L3 (graph accumulation, subscription filtering, meta-bond semantics) remain
+unimplemented, as planned: they are pure functions over validated blocks and
+add nothing to the wire format the vectors pin.
 
 ## Rules for implementing agents
 
