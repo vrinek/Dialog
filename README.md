@@ -22,6 +22,54 @@ Distributed, append-only ontology graph protocol.
 
 The full protocol specification is in [`spec/`](spec/00-overview.md).
 
+## Reference implementation
+
+A Go implementation of Layer 1 lives in [`go/`](go/). It is not the protocol —
+the specification is — and it exists for two reasons: to prove the
+specification is implementable, and to produce the conformance vectors that
+every other implementation can be checked against.
+
+| Package | What it implements |
+|---------|--------------------|
+| [`dcbor`](go/dcbor) | The deterministic CBOR profile: a canonical encoder and a strict decoder that rejects every non-canonical input |
+| [`cid`](go/cid) | The 32-byte digest used inside structures and the 36-byte CIDv1 used at the API boundary, with its base32 text form |
+| [`entity`](go/entity) | Atoms, bonds, molecules and the five filler types, with the standard meta-bond library |
+| [`block`](go/block) | Blocks, the four operations, the signing input, chain and reachability validation, key rotation and fork detection |
+| [`privacy`](go/privacy) | Private-block encryption (XChaCha20-Poly1305 with AAD) and per-recipient key wrapping (X25519 + HKDF-SHA-256) |
+
+No third-party dependencies except `golang.org/x/crypto`; the CBOR codec is
+hand-rolled, because Dialog's profile is a small restricted subset and writing
+it audits the specification more honestly than a general-purpose library would.
+
+**[`vectors/`](vectors/README.md) is the interop contract.** Four
+language-agnostic JSON files pin the canonical bytes, digests, CIDs, signing
+inputs, signatures and ciphertexts of a fixed set of entities and blocks, plus
+the byte strings a conforming implementation must reject. A new implementation
+in any language should be developed against them; they are generated from this
+Go code and the test suite fails if the two ever drift apart.
+
+```bash
+cd go
+nix shell nixpkgs#go --command go test ./...          # the whole suite, vectors included
+nix shell nixpkgs#go --command go run ./cmd/genvectors # regenerate ../vectors
+```
+
+(`go test ./...` works directly with Go 1.24 or later installed; the `nix
+shell` prefix is this project's convention for not requiring one.)
+
+Any change that alters canonical bytes must regenerate `vectors/`, and that
+diff is a breaking change for every implementation that matched the old bytes.
+
+**`go get` caveat.** The module path is `github.com/vrinek/Dialog/go`, and no
+`go/vX.Y.Z` tag exists yet, so there is no released version to ask for. Until
+one does, depend on a branch or a pseudo-version:
+
+```bash
+go get github.com/vrinek/Dialog/go@main
+```
+
+See [Releases](#releases) for why the tag needs the `go/` prefix.
+
 ## Architecture
 
 ### Layer 1 — "What we heard"
@@ -96,8 +144,37 @@ New meta-bonds adopted from real-world usage via RFC-like process.
 ## Documents
 
 - [Protocol specification](spec/00-overview.md) — formal spec (start here)
+- [Conformance vectors](vectors/README.md) — the interop contract in bytes, and how to build against it
 - [Protocol design brainstorm](docs/brainstorms/2026-02-20-dialog-protocol-design-brainstorm.md) — full design session with all decisions and rationale
 - [Original architecture notes](archive/Dialog%20architecture.md) — early design notes (archived, superseded by spec)
+
+## Releases
+
+Every release is tagged **twice**, at the same commit:
+
+| Tag | Releases | Consumed by |
+|-----|----------|-------------|
+| `vX.Y.Z` | The specification and the PDF built from it | GitHub Releases; the `<<VERSION>>` placeholder in the spec files |
+| `go/vX.Y.Z` | The Go module `github.com/vrinek/Dialog/go` | `go get` |
+
+The `go/` prefix is not a convention chosen here. The Go module lives in the
+`go/` subdirectory, and the module proxy resolves a subdirectory module only
+through a tag carrying that directory prefix. A bare `vX.Y.Z` tag therefore
+publishes the specification and does nothing whatsoever for `go get`, which
+reports that no matching version exists — so a release that tags only `vX.Y.Z`
+is a release the Go module never had.
+
+```bash
+git tag v0.3.0 && git tag go/v0.3.0
+git push origin v0.3.0 go/v0.3.0
+```
+
+The `vX.Y.Z` tag builds the PDF and creates the GitHub Release
+([`build-and-release.yml`](.github/workflows/build-and-release.yml)). The
+`go/vX.Y.Z` tag runs the Go checks ([`go.yml`](.github/workflows/go.yml)) and
+publishes nothing: the module proxy picks the tag up on the first `go get`
+that asks for it. A `go/` tag never builds a PDF — the PDF workflow's tag
+filter is anchored at `v` and excludes `go/**` explicitly.
 
 ## PDF Specification
 
