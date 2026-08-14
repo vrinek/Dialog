@@ -1,0 +1,317 @@
+{
+  "vectors": "dialog-conformance/1",
+  "area": "privacy",
+  "description": "The private-block path of spec/04-cryptography.md: the plaintext payload, the AAD that binds it to its block, the XChaCha20-Poly1305 ciphertext, the Ed25519-to-X25519 conversions, and the per-recipient key wrap. Every key and nonce is a fixed constant given in inputs, so an implementation reproduces these bytes exactly or does not implement this protocol.",
+  "spec": [
+    "spec/04-cryptography.md",
+    "spec/02-block-format.md"
+  ],
+  "inputs": {
+    "note": "Every key comes from a seed of 32 equal bytes and every nonce from a byte repeated 24 times. These are test values with published secret material and MUST NOT be used for anything but conformance testing; in production a nonce MUST NOT repeat under one key.",
+    "keys": [
+      {
+        "name": "author",
+        "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+        "private_key": "01010101010101010101010101010101010101010101010101010101010101018a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+        "public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      {
+        "name": "recipient",
+        "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+        "private_key": "02020202020202020202020202020202020202020202020202020202020202028139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+        "public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+      },
+      {
+        "name": "third_party",
+        "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+        "private_key": "0303030303030303030303030303030303030303030303030303030303030303ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+        "public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+      }
+    ],
+    "content_key": "1111111111111111111111111111111111111111111111111111111111111111",
+    "block_nonce": "333333333333333333333333333333333333333333333333",
+    "wrap_nonce": "222222222222222222222222222222222222222222222222"
+  },
+  "sections": [
+    {
+      "name": "payload",
+      "description": "plaintext = dCBOR({\"refs\": refs, \"ts\": ts, \"ops\": ops}) — the three fields a private block encrypts, encoded exactly as a public block encodes them.",
+      "cases": [
+        {
+          "name": "plaintext",
+          "note": "The payload of the worked example: an empty refs list, the timestamp 1740067200, and one create_atom operation. The keys sort ts, ops, refs.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067200"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "My private note"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array"
+                }
+              }
+            ]
+          },
+          "hex": "a36274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e6f4d792070726976617465206e6f7465647265667380"
+        }
+      ]
+    },
+    {
+      "name": "aead",
+      "description": "enc = XChaCha20-Poly1305(content key, nonce, plaintext, aad), where aad = dCBOR({\"v\": v, \"type\": \"private\", \"pub\": pub, \"prev\": prev}) — every plaintext field of the block but sig, enc and nonce.",
+      "cases": [
+        {
+          "name": "aad_genesis",
+          "note": "The AAD of a private genesis block: prev is null.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "null"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "private"
+                }
+              }
+            ]
+          },
+          "hex": "a46176016370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6470726576f664747970656770726976617465"
+        },
+        {
+          "name": "aad_linked",
+          "note": "The AAD of a private block whose prev is the digest of the atom {\"description\": \"the previous block\"}, used here only as a fixed 32-byte value. Binding the ciphertext to prev is what stops an enc from being lifted into another block.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "f1deac9d3f383e2236bdad4b60111441b89c74fafba5b1f5d22c6351b5fb999b"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "private"
+                }
+              }
+            ]
+          },
+          "hex": "a46176016370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c64707265765820f1deac9d3f383e2236bdad4b60111441b89c74fafba5b1f5d22c6351b5fb999b64747970656770726976617465"
+        },
+        {
+          "name": "nonce",
+          "note": "The 24-byte XChaCha20 nonce of the sealed block. In production it MUST be unique per block under a given key; here it is fixed so the ciphertext is reproducible.",
+          "hex": "333333333333333333333333333333333333333333333333"
+        },
+        {
+          "name": "enc",
+          "note": "The ciphertext: the 55-byte plaintext followed by the 16-byte Poly1305 tag. XChaCha20 is a stream cipher, so the payload's length is not hidden.",
+          "hex": "19c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a"
+        }
+      ]
+    },
+    {
+      "name": "x25519",
+      "description": "The birational map from an Ed25519 identity to the X25519 agreement (spec/04-cryptography.md, \"Ed25519-to-X25519 conversion\"). The private half is derived from SHA-512 over the seed, not from the seed itself — the single most common place for an implementation to go wrong.",
+      "cases": [
+        {
+          "name": "author",
+          "note": "The author of the private chain.",
+          "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+          "ed25519_public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "x25519_private_key": "58e86efb75fa4e2c410f46e16de9f6acae1a1703528651b69bc176c088bef36e",
+          "x25519_public_key": "1b1b58dd50ea14b60da17b790cd02754d970c9bab864ebb3c0f3016fe51d3f57"
+        },
+        {
+          "name": "recipient",
+          "note": "The reader the content key is wrapped for.",
+          "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+          "ed25519_public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+          "x25519_private_key": "a83c626bc9c38c8c201878ebb1d5b0b50ac40e8986c78793db1d4ef369fca14e",
+          "x25519_public_key": "60346e7c911a5f6ba154129174cafe75b294ac3bbd5549632f48cec6266f8410"
+        },
+        {
+          "name": "third_party",
+          "note": "A key that is not a recipient. Its agreement with the author differs, so it derives a different wrapping key and cannot unwrap.",
+          "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+          "ed25519_public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+          "x25519_private_key": "98aebbb178a551876bfaf8e1e530dac6aaf6c2ea1c8f8406a3ab37dfb40fbc65",
+          "x25519_public_key": "75e270df2952c57ba8367ba8618c178f9fe50db2799d304e74e918d985686146"
+        }
+      ]
+    },
+    {
+      "name": "key_wrap",
+      "description": "wrapping key = HKDF-SHA-256(salt: empty, ikm: X25519(own, peer), info: \"dialog-v1-key-wrap\", 32); wrapped key = nonce || XChaCha20-Poly1305(wrapping key, nonce, content key, aad: empty), 72 bytes.",
+      "cases": [
+        {
+          "name": "author_to_recipient",
+          "note": "The worked example of spec/04-cryptography.md, \"Wrapping a chain key\". The agreement is symmetric: the recipient derives the same wrapping key from their own private key and the author's public key, which is what makes unwrapping possible.",
+          "own": "author",
+          "peer": "recipient",
+          "shared_secret": "4181d7302557342bdb6d061c4b1eebea828ecb625c3368b7111680793307220b",
+          "info": "dialog-v1-key-wrap",
+          "wrapping_key": "657dbd5e5d21dcb81a44415ddf3a8b9f9fa44c7d832d678c9962079aa01fe68d",
+          "nonce": "222222222222222222222222222222222222222222222222",
+          "wrapped_key": "222222222222222222222222222222222222222222222222bdafc49fb94819665a9993f60272336caf98fd5fd4fb1b302e94cc2b5a8ccbd61b25f1def2b48d225f13e64d5f0ffa90"
+        },
+        {
+          "name": "author_to_third_party",
+          "note": "The same content key wrapped for a different reader. Every field differs from the case above, which is the point: a wrap is per recipient.",
+          "own": "author",
+          "peer": "third_party",
+          "shared_secret": "fc8f9710900873980e312892a933d83695d93060c6d285d2dfd1038b8c65f957",
+          "info": "dialog-v1-key-wrap",
+          "wrapping_key": "6b49d01f7f5947a0d3ae47251b7176a72b59cb30083bd25a072d446e3bb52e15",
+          "nonce": "222222222222222222222222222222222222222222222222",
+          "wrapped_key": "2222222222222222222222222222222222222222222222227d8056d50867b916caeffb555999be5da67739a41c45bedd23d5f1efd4851a439e2dc1d32e81b18aa57533c68694daea"
+        }
+      ]
+    },
+    {
+      "name": "private_block",
+      "description": "The whole thing assembled: a private genesis block carrying the ciphertext above, signed by the author. Only v, type, pub, sig and prev are in the clear.",
+      "cases": [
+        {
+          "name": "private_genesis",
+          "description": "A private genesis block by the author, carrying the ciphertext of the payload above. Its refs, ts and ops are inside enc; a node without the key validates rules 1, 2, 3, 7, 8 and 9 and reports 4, 5, 6 and 10 as unchecked.",
+          "author": "author",
+          "type": "private",
+          "prev": null,
+          "enc": "19c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a",
+          "nonce": "333333333333333333333333333333333333333333333333",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "enc",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "19c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a"
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "09af31d5dd7caf743e8a83d67694a3f18d3c6496f6b48dfe9cdc8af3ad9d5a0d9077e7fc01971900421c6c5f881941a1c0409884b8e4162f9708ba2f7d3c0e09"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "null"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "private"
+                }
+              },
+              {
+                "key": "nonce",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "333333333333333333333333333333333333333333333333"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a661760163656e63585019c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6470726576f664747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333",
+          "signing_input": "6469616c6f672d76312d626c6f636ba661760163656e63585019c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6470726576f664747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333",
+          "signature": "09af31d5dd7caf743e8a83d67694a3f18d3c6496f6b48dfe9cdc8af3ad9d5a0d9077e7fc01971900421c6c5f881941a1c0409884b8e4162f9708ba2f7d3c0e09",
+          "block": "a761760163656e63585019c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584009af31d5dd7caf743e8a83d67694a3f18d3c6496f6b48dfe9cdc8af3ad9d5a0d9077e7fc01971900421c6c5f881941a1c0409884b8e4162f9708ba2f7d3c0e096470726576f664747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333",
+          "digest": "ae5e42900230d8ad30f375c38de4b18c7c8286ee16e34d17e2361f7ad3da1af3",
+          "cid": "01711220ae5e42900230d8ad30f375c38de4b18c7c8286ee16e34d17e2361f7ad3da1af3",
+          "cid_text": "bafyreifolzbjaarq3cwtb43vyog6jmmmpsbin3qw4ngrpyrwd55nhwq26m"
+        }
+      ]
+    }
+  ]
+}

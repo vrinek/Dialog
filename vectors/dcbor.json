@@ -1,0 +1,880 @@
+{
+  "vectors": "dialog-conformance/1",
+  "area": "dcbor",
+  "description": "Dialog's deterministic CBOR profile: the encoding-reference table of the specification, the decimal-fraction canonicalization rules, a canonical/non-canonical pair list, and the byte strings a conforming decoder MUST reject.",
+  "spec": [
+    "spec/03-encoding.md"
+  ],
+  "sections": [
+    {
+      "name": "encoding_reference",
+      "description": "The \"CBOR encoding reference\" table of spec/03-encoding.md, one case per row, each shown in a value the protocol actually encodes rather than as a bare head byte.",
+      "cases": [
+        {
+          "name": "map_with_1_key",
+          "note": "Head byte a1: major type 5, additional information 1. This is the atom of spec/03-encoding.md, \"Encoding an atom\".",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "description",
+                "value": {
+                  "type": "text",
+                  "text": "France"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16b6465736372697074696f6e664672616e6365"
+        },
+        {
+          "name": "map_with_2_keys",
+          "note": "Head byte a2. This is an atom filler (spec/01-data-model.md, \"Filler types\").",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "0"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "short_text_string",
+          "note": "Major type 3 with the length in the head byte, for lengths below 24: 66 for six bytes.",
+          "value": {
+            "type": "text",
+            "text": "France"
+          },
+          "dcbor": "664672616e6365"
+        },
+        {
+          "name": "longer_text_string",
+          "note": "Major type 3 with a one-byte length argument, for lengths 24-255: 78 1c for 28 bytes.",
+          "value": {
+            "type": "text",
+            "text": "Paris, the capital of France"
+          },
+          "dcbor": "781c50617269732c20746865206361706974616c206f66204672616e6365"
+        },
+        {
+          "name": "byte_string_32",
+          "note": "5820: the encoding every internal reference takes (spec/03-encoding.md, \"Internal references\").",
+          "value": {
+            "type": "bytes",
+            "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+          },
+          "dcbor": "5820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "null",
+          "note": "f6, the only simple value the profile admits. This is the prev field of a genesis block.",
+          "value": {
+            "type": "null"
+          },
+          "dcbor": "f6"
+        },
+        {
+          "name": "integer_0",
+          "note": "00: major type 0, value in the head byte.",
+          "value": {
+            "type": "uint",
+            "number": "0"
+          },
+          "dcbor": "00"
+        },
+        {
+          "name": "integer_1",
+          "note": "01. This is the v field of a v1 block.",
+          "value": {
+            "type": "uint",
+            "number": "1"
+          },
+          "dcbor": "01"
+        },
+        {
+          "name": "empty_array",
+          "note": "80: major type 4, length 0. This is the refs list of a block that references nothing.",
+          "value": {
+            "type": "array"
+          },
+          "dcbor": "80"
+        },
+        {
+          "name": "decimal_fraction",
+          "note": "c482 followed by exponent and mantissa: 3.14 = 314 × 10^-2.",
+          "value": {
+            "type": "decimal",
+            "exponent": "-2",
+            "mantissa": "314"
+          },
+          "dcbor": "c4822119013a"
+        }
+      ]
+    },
+    {
+      "name": "canonical",
+      "description": "Values whose encoding exercises a boundary of the profile: integer argument widths, key ordering, nesting, and the raw-UTF-8 rule. Encode(value) MUST produce these bytes and Decode(bytes) MUST produce this value.",
+      "cases": [
+        {
+          "name": "uint_23_head",
+          "note": "The largest value that fits in the head byte.",
+          "value": {
+            "type": "uint",
+            "number": "23"
+          },
+          "dcbor": "17"
+        },
+        {
+          "name": "uint_24_one_byte_argument",
+          "note": "The first value needing a one-byte argument: 18 18.",
+          "value": {
+            "type": "uint",
+            "number": "24"
+          },
+          "dcbor": "1818"
+        },
+        {
+          "name": "uint_255",
+          "value": {
+            "type": "uint",
+            "number": "255"
+          },
+          "dcbor": "18ff"
+        },
+        {
+          "name": "uint_256_two_byte_argument",
+          "value": {
+            "type": "uint",
+            "number": "256"
+          },
+          "dcbor": "190100"
+        },
+        {
+          "name": "uint_65535",
+          "value": {
+            "type": "uint",
+            "number": "65535"
+          },
+          "dcbor": "19ffff"
+        },
+        {
+          "name": "uint_65536_four_byte_argument",
+          "value": {
+            "type": "uint",
+            "number": "65536"
+          },
+          "dcbor": "1a00010000"
+        },
+        {
+          "name": "uint_4294967295",
+          "value": {
+            "type": "uint",
+            "number": "4294967295"
+          },
+          "dcbor": "1affffffff"
+        },
+        {
+          "name": "uint_4294967296_eight_byte_argument",
+          "value": {
+            "type": "uint",
+            "number": "4294967296"
+          },
+          "dcbor": "1b0000000100000000"
+        },
+        {
+          "name": "uint_max",
+          "note": "2^64-1, the largest CBOR unsigned integer.",
+          "value": {
+            "type": "uint",
+            "number": "18446744073709551615"
+          },
+          "dcbor": "1bffffffffffffffff"
+        },
+        {
+          "name": "uint_timestamp",
+          "note": "1740067200, the timestamp of the worked examples: 1a 67b75180.",
+          "value": {
+            "type": "uint",
+            "number": "1740067200"
+          },
+          "dcbor": "1a67b75180"
+        },
+        {
+          "name": "neg_minus_1",
+          "note": "Major type 1 encodes -1-n, so -1 is 20.",
+          "value": {
+            "type": "neg",
+            "number": "-1"
+          },
+          "dcbor": "20"
+        },
+        {
+          "name": "neg_minus_24",
+          "value": {
+            "type": "neg",
+            "number": "-24"
+          },
+          "dcbor": "37"
+        },
+        {
+          "name": "neg_minus_25",
+          "note": "The first negative value needing a one-byte argument.",
+          "value": {
+            "type": "neg",
+            "number": "-25"
+          },
+          "dcbor": "3818"
+        },
+        {
+          "name": "neg_int64_min",
+          "note": "-2^63, the most negative value a signed 64-bit integer holds.",
+          "value": {
+            "type": "neg",
+            "number": "-9223372036854775808"
+          },
+          "dcbor": "3b7fffffffffffffff"
+        },
+        {
+          "name": "neg_min",
+          "note": "-2^64, the most negative CBOR integer. It does not fit in a signed 64-bit integer; a reader that needs one rejects it where the protocol does not permit it.",
+          "value": {
+            "type": "neg",
+            "number": "-18446744073709551616"
+          },
+          "dcbor": "3bffffffffffffffff"
+        },
+        {
+          "name": "empty_text",
+          "note": "60: a text string of length 0.",
+          "value": {
+            "type": "text"
+          },
+          "dcbor": "60"
+        },
+        {
+          "name": "empty_bytes",
+          "note": "40: a byte string of length 0.",
+          "value": {
+            "type": "bytes"
+          },
+          "dcbor": "40"
+        },
+        {
+          "name": "empty_map",
+          "note": "a0: a map with no entries.",
+          "value": {
+            "type": "map"
+          },
+          "dcbor": "a0"
+        },
+        {
+          "name": "text_precomposed_e_acute",
+          "note": "\"é\" as U+00E9: two UTF-8 bytes. The profile forbids Unicode normalization, so this is a different string from the decomposed spelling below and the atoms containing them are different entities.",
+          "value": {
+            "type": "text",
+            "text": "é"
+          },
+          "dcbor": "62c3a9"
+        },
+        {
+          "name": "text_decomposed_e_acute",
+          "note": "\"é\" as U+0065 U+0301: three UTF-8 bytes, rendering identically to the case above and encoding differently.",
+          "value": {
+            "type": "text",
+            "text": "é"
+          },
+          "dcbor": "6365cc81"
+        },
+        {
+          "name": "text_four_byte_rune",
+          "note": "A code point outside the basic multilingual plane, encoded as four UTF-8 bytes.",
+          "value": {
+            "type": "text",
+            "text": "🗿"
+          },
+          "dcbor": "64f09f97bf"
+        },
+        {
+          "name": "map_key_order_length_first",
+          "note": "The encoded keys sort 6162 (\"b\") before 626161 (\"aa\"): the head byte carries the length, so a shorter key always sorts first. The entries are listed here in canonical order.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "b",
+                "value": {
+                  "type": "uint",
+                  "number": "2"
+                }
+              },
+              {
+                "key": "aa",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              }
+            ]
+          },
+          "dcbor": "a261620262616101"
+        },
+        {
+          "name": "map_key_order_bytewise",
+          "note": "Keys of equal length sort by their UTF-8 bytes; uppercase sorts before lowercase.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "B",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "a",
+                "value": {
+                  "type": "uint",
+                  "number": "0"
+                }
+              },
+              {
+                "key": "b",
+                "value": {
+                  "type": "uint",
+                  "number": "2"
+                }
+              }
+            ]
+          },
+          "dcbor": "a3614201616100616202"
+        },
+        {
+          "name": "block_key_order",
+          "note": "The eight keys of a public block map, in the canonical order every implementation must produce: v, ts, ops, pub, sig, prev, refs, type.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067200"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array"
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "uint",
+                  "number": "0"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "uint",
+                  "number": "0"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "null"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "dcbor": "a86176016274731a67b75180636f707380637075620063736967006470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "nested_structure",
+          "note": "Arrays and maps nest; a molecule's fillers list is an array of maps.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "bond",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+                }
+              },
+              {
+                "key": "fillers",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "0"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "4"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "map",
+                            "entries": [
+                              {
+                                "key": "value",
+                                "value": {
+                                  "type": "uint",
+                                  "number": "42"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a264626f6e645820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426766696c6c65727382a26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842a26474797065046576616c7565a16576616c7565182a"
+        }
+      ]
+    },
+    {
+      "name": "decimal_fractions",
+      "description": "Tag 4, the only tag in the profile. The canonicalization rules of spec/03-encoding.md, \"Decimal fractions\", make one byte string per value; the non-canonical spellings are in the invalid section.",
+      "cases": [
+        {
+          "name": "pi_two_places",
+          "note": "3.14 = 314 × 10^-2, the worked example of spec/03-encoding.md.",
+          "value": {
+            "type": "decimal",
+            "exponent": "-2",
+            "mantissa": "314"
+          },
+          "dcbor": "c4822119013a"
+        },
+        {
+          "name": "negative_mantissa",
+          "note": "-3.14. The sign lives in the mantissa; the exponent stays negative.",
+          "value": {
+            "type": "decimal",
+            "exponent": "-2",
+            "mantissa": "-314"
+          },
+          "dcbor": "c48221390139"
+        },
+        {
+          "name": "one_thousandth",
+          "note": "0.001 = 1 × 10^-3.",
+          "value": {
+            "type": "decimal",
+            "exponent": "-3",
+            "mantissa": "1"
+          },
+          "dcbor": "c4822201"
+        },
+        {
+          "name": "mantissa_not_divisible_by_10",
+          "note": "31.4 = 314 × 10^-1. The same digits as 3.14 with a different exponent denote a different value.",
+          "value": {
+            "type": "decimal",
+            "exponent": "-1",
+            "mantissa": "314"
+          },
+          "dcbor": "c4822019013a"
+        },
+        {
+          "name": "large_mantissa",
+          "note": "The mantissa may use the whole signed 64-bit range: 2^63-1 × 10^-1.",
+          "value": {
+            "type": "decimal",
+            "exponent": "-1",
+            "mantissa": "9223372036854775807"
+          },
+          "dcbor": "c482201b7fffffffffffffff"
+        },
+        {
+          "name": "smallest_exponent",
+          "note": "The exponent may reach -2^63.",
+          "value": {
+            "type": "decimal",
+            "exponent": "-9223372036854775808",
+            "mantissa": "3"
+          },
+          "dcbor": "c4823b7fffffffffffffff03"
+        }
+      ]
+    },
+    {
+      "name": "invalid",
+      "description": "Byte strings a conforming decoder MUST reject, each naming the rule it violates. An implementation that accepts any of them computes identifiers for structures another implementation would refuse.",
+      "cases": [
+        {
+          "name": "uint_24_in_one_byte_argument",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "23 encoded as 18 17; values below 24 belong in the head byte.",
+          "bytes": "1817"
+        },
+        {
+          "name": "uint_two_byte_argument_for_small_value",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "23 encoded as 19 0017.",
+          "bytes": "190017"
+        },
+        {
+          "name": "uint_eight_byte_argument_for_small_value",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "23 encoded as 1b 0000000000000017.",
+          "bytes": "1b0000000000000017"
+        },
+        {
+          "name": "uint_255_in_two_byte_argument",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "255 fits in a one-byte argument.",
+          "bytes": "1900ff"
+        },
+        {
+          "name": "neg_non_shortest",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "-24 encoded with a one-byte argument.",
+          "bytes": "3817"
+        },
+        {
+          "name": "text_length_non_shortest",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "A 23-byte text string with a one-byte length argument.",
+          "bytes": "78177878787878787878787878787878787878787878787878"
+        },
+        {
+          "name": "array_length_non_shortest",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "A one-element array with a one-byte length argument.",
+          "bytes": "980141"
+        },
+        {
+          "name": "tag_4_non_shortest",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 1 (shortest integer encoding)",
+          "reason": "Tag 4 written as d8 04 rather than c4.",
+          "bytes": "d8048221196ab3"
+        },
+        {
+          "name": "map_keys_unsorted",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 2 (sorted map keys)",
+          "reason": "\"b\" before \"a\".",
+          "bytes": "a2616200616100"
+        },
+        {
+          "name": "map_keys_unsorted_by_length",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 2 (sorted map keys)",
+          "reason": "\"aa\" (626161) before \"b\" (6162): the ordering is over the encoded key, so the shorter key comes first.",
+          "bytes": "a262616100616201"
+        },
+        {
+          "name": "map_duplicate_key",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 3 (no duplicate map keys)",
+          "reason": "The key \"a\" appears twice.",
+          "bytes": "a2616100616100"
+        },
+        {
+          "name": "indefinite_byte_string",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 4 (no indefinite-length items)",
+          "reason": "Major type 2 with additional information 31.",
+          "bytes": "5f42010243030405ff"
+        },
+        {
+          "name": "indefinite_text_string",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 4 (no indefinite-length items)",
+          "reason": "Major type 3 with additional information 31.",
+          "bytes": "7f657374726561646d696e67ff"
+        },
+        {
+          "name": "indefinite_array",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 4 (no indefinite-length items)",
+          "reason": "Major type 4 with additional information 31.",
+          "bytes": "9f01ff"
+        },
+        {
+          "name": "indefinite_map",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 4 (no indefinite-length items)",
+          "reason": "Major type 5 with additional information 31.",
+          "bytes": "bf61610101ff"
+        },
+        {
+          "name": "half_float",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 5 (no floating-point values)",
+          "reason": "Major type 7, additional information 25.",
+          "bytes": "f93c00"
+        },
+        {
+          "name": "single_float",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 5 (no floating-point values)",
+          "reason": "Major type 7, additional information 26.",
+          "bytes": "fa47c35000"
+        },
+        {
+          "name": "double_float",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 5 (no floating-point values)",
+          "reason": "Major type 7, additional information 27.",
+          "bytes": "fb3ff199999999999a"
+        },
+        {
+          "name": "tag_0_date_time",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 6 (no tags, with one exception)",
+          "reason": "Tag 0 (RFC 3339 date/time string).",
+          "bytes": "c06161"
+        },
+        {
+          "name": "tag_1_epoch_time",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 6 (no tags, with one exception)",
+          "reason": "Tag 1 (epoch-based date/time). A Dialog timestamp is a plain integer.",
+          "bytes": "c11a514b67b0"
+        },
+        {
+          "name": "tag_2_bignum",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 6 (no tags, with one exception)",
+          "reason": "Tag 2 (unsigned bignum).",
+          "bytes": "c249010000000000000000"
+        },
+        {
+          "name": "tag_42_cid",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 6 (no tags, with one exception)",
+          "reason": "Tag 42, the IPLD CID tag. Dialog carries references as plain 32-byte byte strings.",
+          "bytes": "d82a49000102030405060708"
+        },
+        {
+          "name": "false",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 7 (null is the only simple value)",
+          "reason": "The profile admits no booleans.",
+          "bytes": "f4"
+        },
+        {
+          "name": "true",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 7 (null is the only simple value)",
+          "reason": "The profile admits no booleans.",
+          "bytes": "f5"
+        },
+        {
+          "name": "undefined",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 7 (null is the only simple value)",
+          "reason": "Major type 7, simple value 23.",
+          "bytes": "f7"
+        },
+        {
+          "name": "simple_value_0",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 7 (null is the only simple value)",
+          "reason": "Major type 7, simple value 0.",
+          "bytes": "e0"
+        },
+        {
+          "name": "one_byte_simple_value",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 7 (null is the only simple value)",
+          "reason": "Major type 7, additional information 24.",
+          "bytes": "f8ff"
+        },
+        {
+          "name": "map_key_uint",
+          "rule": "spec/03-encoding.md, Deterministic CBOR (map keys are text strings)",
+          "reason": "A map keyed by an integer.",
+          "bytes": "a10102"
+        },
+        {
+          "name": "map_key_bytes",
+          "rule": "spec/03-encoding.md, Deterministic CBOR (map keys are text strings)",
+          "reason": "A map keyed by a byte string.",
+          "bytes": "a1410102"
+        },
+        {
+          "name": "text_invalid_utf8",
+          "rule": "spec/03-encoding.md, Text strings and Unicode (text strings MUST be well-formed UTF-8)",
+          "reason": "A one-byte text string holding 0x80, a bare continuation byte.",
+          "bytes": "6180"
+        },
+        {
+          "name": "map_key_invalid_utf8",
+          "rule": "spec/03-encoding.md, Text strings and Unicode (text strings MUST be well-formed UTF-8)",
+          "reason": "A map key that is not well-formed UTF-8.",
+          "bytes": "a1618000"
+        },
+        {
+          "name": "decimal_exponent_zero",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "#6.4([0, 314]): a whole number must be a plain integer, so the exponent MUST be negative.",
+          "bytes": "c4820019013a"
+        },
+        {
+          "name": "decimal_exponent_positive",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "#6.4([2, 314]): the exponent MUST be negative.",
+          "bytes": "c4820219013a"
+        },
+        {
+          "name": "decimal_mantissa_zero",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "#6.4([-1, 0]): zero is a whole number and is encoded as the integer 0.",
+          "bytes": "c4822000"
+        },
+        {
+          "name": "decimal_mantissa_trailing_zero",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "#6.4([-3, 3140]) denotes 3.14, which is #6.4([-2, 314]): trailing zeros MUST be absorbed into the exponent.",
+          "bytes": "c48222190c44"
+        },
+        {
+          "name": "decimal_array_of_one",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "Tag 4 content MUST be an array of exactly two integers.",
+          "bytes": "c4812100"
+        },
+        {
+          "name": "decimal_array_of_three",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "Tag 4 content MUST be an array of exactly two integers.",
+          "bytes": "c4832119013a00"
+        },
+        {
+          "name": "decimal_indefinite_array",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "Tag 4 content with an indefinite-length array.",
+          "bytes": "c49f2119013aff"
+        },
+        {
+          "name": "decimal_float_exponent",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "Neither component may be a float.",
+          "bytes": "c482f93c0019013a"
+        },
+        {
+          "name": "decimal_nested_tag",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "Neither component may itself be a tag.",
+          "bytes": "c482c4822119013a01"
+        },
+        {
+          "name": "decimal_mantissa_above_int64",
+          "rule": "spec/03-encoding.md, Decimal fractions (both components lie in -2^63 … 2^63-1)",
+          "reason": "A mantissa of 2^64-1.",
+          "bytes": "c482201bffffffffffffffff"
+        },
+        {
+          "name": "decimal_exponent_below_int64",
+          "rule": "spec/03-encoding.md, Decimal fractions (both components lie in -2^63 … 2^63-1)",
+          "reason": "An exponent of -2^64.",
+          "bytes": "c4823bffffffffffffffff01"
+        },
+        {
+          "name": "empty_input",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "No data item at all.",
+          "bytes": ""
+        },
+        {
+          "name": "truncated_argument",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "A one-byte argument with no byte after it.",
+          "bytes": "18"
+        },
+        {
+          "name": "truncated_text_string",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "A two-byte text string with one byte of content.",
+          "bytes": "6261"
+        },
+        {
+          "name": "truncated_byte_string",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "A 32-byte byte string with no content.",
+          "bytes": "5820"
+        },
+        {
+          "name": "declared_length_beyond_input",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "A byte string declaring 2^64-1 bytes.",
+          "bytes": "5bffffffffffffffff"
+        },
+        {
+          "name": "trailing_bytes",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "Two data items where one is expected.",
+          "bytes": "0000"
+        },
+        {
+          "name": "trailing_bytes_after_map",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "A complete map followed by a null.",
+          "bytes": "a1616100f6"
+        },
+        {
+          "name": "reserved_additional_information",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "Additional information 28 is reserved.",
+          "bytes": "1c"
+        },
+        {
+          "name": "break_outside_indefinite",
+          "rule": "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)",
+          "reason": "A break byte with no indefinite-length item to close.",
+          "bytes": "ff"
+        }
+      ]
+    }
+  ]
+}

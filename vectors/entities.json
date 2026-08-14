@@ -1,0 +1,909 @@
+{
+  "vectors": "dialog-conformance/1",
+  "area": "entities",
+  "description": "The three content-addressed primitives — atoms, bonds and molecules — and the fillers a molecule is built from. Every case gives the structure, its canonical dCBOR bytes, the 32-byte digest those bytes hash to, and the 36-byte CID with its canonical base32 text form.",
+  "spec": [
+    "spec/01-data-model.md",
+    "spec/03-encoding.md",
+    "spec/06-meta-bonds.md"
+  ],
+  "sections": [
+    {
+      "name": "atoms",
+      "description": "atom = { \"description\" => tstr }. The digest of an atom is SHA-256 over these bytes and nothing else, so two atoms whose descriptions differ by one code point are two entities.",
+      "cases": [
+        {
+          "name": "france",
+          "kind": "atom",
+          "note": "The worked example of spec/03-encoding.md, \"Encoding an atom\": every step of it, from the CBOR bytes to the base32 text form, is checked by this case.",
+          "description": "France",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "description",
+                "value": {
+                  "type": "text",
+                  "text": "France"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16b6465736372697074696f6e664672616e6365",
+          "digest": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842",
+          "cid": "01711220e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842",
+          "cid_text": "bafyreihfo5q3iopobs5x554uekymz2jh27ibi7qauuubzqltwbdvkevyii"
+        },
+        {
+          "name": "paris_the_capital_of_france",
+          "kind": "atom",
+          "note": "The atom example of spec/01-data-model.md. Its description is 28 bytes, so the text string takes a one-byte length argument (78 1c).",
+          "description": "Paris, the capital of France",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "description",
+                "value": {
+                  "type": "text",
+                  "text": "Paris, the capital of France"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16b6465736372697074696f6e781c50617269732c20746865206361706974616c206f66204672616e6365",
+          "digest": "6545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd",
+          "cid": "017112206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd",
+          "cid_text": "bafyreidfiucqui6ufw55tl3dnis7w2rxhptk45pz3eufhhczinqjmvar7u"
+        },
+        {
+          "name": "paris_france",
+          "kind": "atom",
+          "note": "A second name for the same city, and a different entity. The two are related with the \"_A_ is the same as _B_\" meta-bond, never merged by an implementation.",
+          "description": "Paris, France",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "description",
+                "value": {
+                  "type": "text",
+                  "text": "Paris, France"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16b6465736372697074696f6e6d50617269732c204672616e6365",
+          "digest": "d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cd",
+          "cid": "01711220d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cd",
+          "cid_text": "bafyreigqs6d3j34skcfpxt3cjdoc2vocag2jozgh3ou7bcbsj2io3kbezu"
+        },
+        {
+          "name": "eiffel_tower",
+          "kind": "atom",
+          "note": "Subject of the scalar molecule below.",
+          "description": "The Eiffel Tower",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "description",
+                "value": {
+                  "type": "text",
+                  "text": "The Eiffel Tower"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16b6465736372697074696f6e705468652045696666656c20546f776572",
+          "digest": "4087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966",
+          "cid": "017112204087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966",
+          "cid_text": "bafyreicaq637wxx62cvtqj46kjqmu6bd5244wuqqqsj2s4alfpjrsvizmy"
+        },
+        {
+          "name": "metre",
+          "kind": "atom",
+          "note": "A unit atom. A scalar filler's optional unit field carries this digest, and that digest is subject to the same reachability rule as any other (spec/02-block-format.md, rule 4).",
+          "description": "metre",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "description",
+                "value": {
+                  "type": "text",
+                  "text": "metre"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16b6465736372697074696f6e656d65747265",
+          "digest": "d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17",
+          "cid": "01711220d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17",
+          "cid_text": "bafyreigqbzfjwp74dghlv7zuhpqxyh7kwistvcp3hdz3ntvmxdxke5aoc4"
+        }
+      ]
+    },
+    {
+      "name": "bonds",
+      "description": "bond = { \"template\" => tstr }. The variables are the _X_ placeholders of the template, in the order they appear; a molecule's fillers are matched to them positionally.",
+      "cases": [
+        {
+          "name": "capital_of",
+          "kind": "bond",
+          "note": "The bond example of spec/01-data-model.md.",
+          "template": "_A_ is the capital of _B_",
+          "variables": [
+            "A",
+            "B"
+          ],
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "template",
+                "value": {
+                  "type": "text",
+                  "text": "_A_ is the capital of _B_"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16874656d706c61746578195f415f20697320746865206361706974616c206f66205f425f",
+          "digest": "f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340",
+          "cid": "01711220f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340",
+          "cid_text": "bafyreihssw4jfckzpncim6ck2a6qx2f5vme2buqaocujhl5e6tjqpaitia"
+        },
+        {
+          "name": "height",
+          "kind": "bond",
+          "note": "A two-variable bond whose second filler is a scalar with a unit.",
+          "template": "_A_ is _B_ tall",
+          "variables": [
+            "A",
+            "B"
+          ],
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "template",
+                "value": {
+                  "type": "text",
+                  "text": "_A_ is _B_ tall"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16874656d706c6174656f5f415f206973205f425f2074616c6c",
+          "digest": "3106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c",
+          "cid": "017112203106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c",
+          "cid_text": "bafyreibra24zgqwyqunlhuwb5q5lkspvctuzz5ahggvsxhv4tje52nr2fq"
+        }
+      ]
+    },
+    {
+      "name": "meta_bonds",
+      "description": "The five standard meta-bonds of spec/06-meta-bonds.md. The specification prints their templates and no digests; these are the identifiers by which every implementation recognizes a meta-molecule, so they are pinned here.",
+      "cases": [
+        {
+          "name": "equivalence",
+          "kind": "bond",
+          "note": "Transitive equivalence between two entities of the same kind (spec/06-meta-bonds.md §1).",
+          "template": "_A_ is the same as _B_",
+          "variables": [
+            "A",
+            "B"
+          ],
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "template",
+                "value": {
+                  "type": "text",
+                  "text": "_A_ is the same as _B_"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16874656d706c617465765f415f206973207468652073616d65206173205f425f",
+          "digest": "6d6f0db1c36db5247eab0b51e16f22704b796ea1505d36e1e5e93e47d45d31fb",
+          "cid": "017112206d6f0db1c36db5247eab0b51e16f22704b796ea1505d36e1e5e93e47d45d31fb",
+          "cid_text": "bafyreidnn4g3dq3nwush5kylkhqw6itqjn4w5ikqlu3odzpjhzd5ixjr7m"
+        },
+        {
+          "name": "truth_assertion",
+          "kind": "bond",
+          "note": "Asserts a molecule (§2).",
+          "template": "_A_ is true",
+          "variables": [
+            "A"
+          ],
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "template",
+                "value": {
+                  "type": "text",
+                  "text": "_A_ is true"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16874656d706c6174656b5f415f2069732074727565",
+          "digest": "d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be3",
+          "cid": "01711220d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be3",
+          "cid_text": "bafyreigw3qinpridvnfmtsvekpvtumuyjk6iqxh2qudub2l4t4eidos34m"
+        },
+        {
+          "name": "truth_retraction",
+          "kind": "bond",
+          "note": "Retracts or denies a molecule (§3).",
+          "template": "_A_ is untrue",
+          "variables": [
+            "A"
+          ],
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "template",
+                "value": {
+                  "type": "text",
+                  "text": "_A_ is untrue"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16874656d706c6174656d5f415f20697320756e74727565",
+          "digest": "f166a1ddfcdc18cbd101601b9ae717a940c0f176da3a1a66912bdcaf413ab06c",
+          "cid": "01711220f166a1ddfcdc18cbd101601b9ae717a940c0f176da3a1a66912bdcaf413ab06c",
+          "cid_text": "bafyreihrm2q537g4ddf5caladonoof5jidapc5w2hingnejl3sxucovqnq"
+        },
+        {
+          "name": "contradiction",
+          "kind": "bond",
+          "note": "Declares two molecules contradictory (§4).",
+          "template": "_A_ contradicts _B_",
+          "variables": [
+            "A",
+            "B"
+          ],
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "template",
+                "value": {
+                  "type": "text",
+                  "text": "_A_ contradicts _B_"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16874656d706c617465735f415f20636f6e7472616469637473205f425f",
+          "digest": "0e2b8fc4d1e53e5d5866b43b4054b18cc54f5077b313d9f657fd4d3c456d81e3",
+          "cid": "017112200e2b8fc4d1e53e5d5866b43b4054b18cc54f5077b313d9f657fd4d3c456d81e3",
+          "cid_text": "bafyreiaofoh4jupfhzovqzvuhnafjmmmyvhva55tcpm7mv75ju6ek3mb4m"
+        },
+        {
+          "name": "supersession",
+          "kind": "bond",
+          "note": "Versioning: molecule A replaces molecule B (§5).",
+          "template": "_A_ supersedes _B_",
+          "variables": [
+            "A",
+            "B"
+          ],
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "template",
+                "value": {
+                  "type": "text",
+                  "text": "_A_ supersedes _B_"
+                }
+              }
+            ]
+          },
+          "dcbor": "a16874656d706c617465725f415f2073757065727365646573205f425f",
+          "digest": "63d8f626dc5cbf19013da53635ed3cd37bcf0fbd33def852101ff4bc4cc0c66b",
+          "cid": "0171122063d8f626dc5cbf19013da53635ed3cd37bcf0fbd33def852101ff4bc4cc0c66b",
+          "cid_text": "bafyreidd3d3cnxc4x4mqcpnfgy262pgtpphq7pjt334feea76s6ezqggnm"
+        }
+      ]
+    },
+    {
+      "name": "molecules",
+      "description": "molecule = { \"bond\" => bstr .size 32, \"fillers\" => [+ filler] }. The bond is referenced by its raw digest, never by a CID.",
+      "cases": [
+        {
+          "name": "paris_is_the_capital_of_france",
+          "kind": "molecule",
+          "note": "The molecule example of spec/01-data-model.md: \"[Paris, the capital of France] is the capital of [France]\". Two atom fillers, positionally matched to _A_ and _B_.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "bond",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340"
+                }
+              },
+              {
+                "key": "fillers",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "0"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "6545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "0"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a264626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842",
+          "digest": "f9f124b06af6aa7d5f2381462afdeaca628fe3ac8b994253e5c08a3f5d128afb",
+          "cid": "01711220f9f124b06af6aa7d5f2381462afdeaca628fe3ac8b994253e5c08a3f5d128afb",
+          "cid_text": "bafyreihz6esla2xwvj6v6i4biyvp32wkmkh6hleltfbfhzoari7v2euk7m"
+        },
+        {
+          "name": "eiffel_tower_is_330_metres_tall",
+          "kind": "molecule",
+          "note": "A molecule whose second filler is a scalar carrying a unit digest: \"[The Eiffel Tower] is [330 metre] tall\".",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "bond",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "3106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c"
+                }
+              },
+              {
+                "key": "fillers",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "0"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "4087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "4"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "map",
+                            "entries": [
+                              {
+                                "key": "unit",
+                                "value": {
+                                  "type": "bytes",
+                                  "bytes": "d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17"
+                                }
+                              },
+                              {
+                                "key": "value",
+                                "value": {
+                                  "type": "uint",
+                                  "number": "330"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a264626f6e6458203106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c6766696c6c65727382a26474797065006576616c756558204087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966a26474797065046576616c7565a264756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e176576616c756519014a",
+          "digest": "3a620b19f32ed73a6fd61b67c8bd38dfb231545a15b67c1322f3f07e8fb5ecc7",
+          "cid": "017112203a620b19f32ed73a6fd61b67c8bd38dfb231545a15b67c1322f3f07e8fb5ecc7",
+          "cid_text": "bafyreib2mifrt4zo245g7vq3m7el2og7wiyviwqvwz6bgixt6b7i7npmy4"
+        },
+        {
+          "name": "paris_equivalence",
+          "kind": "molecule",
+          "note": "A meta-molecule: the two Paris atoms are declared the same (spec/06-meta-bonds.md, \"Declaring atom equivalence\"). A meta-molecule is an ordinary molecule; only its bond digest marks it.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "bond",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "6d6f0db1c36db5247eab0b51e16f22704b796ea1505d36e1e5e93e47d45d31fb"
+                }
+              },
+              {
+                "key": "fillers",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "0"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "6545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "0"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cd"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a264626f6e6458206d6f0db1c36db5247eab0b51e16f22704b796ea1505d36e1e5e93e47d45d31fb6766696c6c65727382a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fda26474797065006576616c75655820d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cd",
+          "digest": "7597a123dda5bc68e448c9e070b4ee62e50b963c627672feb7a44ef96aa000ed",
+          "cid": "017112207597a123dda5bc68e448c9e070b4ee62e50b963c627672feb7a44ef96aa000ed",
+          "cid_text": "bafyreidvs6qshxnfxruoisgj4bylj3tc4ufzmpdcozzp5n5ej34wviaa5u"
+        }
+      ]
+    },
+    {
+      "name": "fillers",
+      "description": "One case per filler type, including every scalar shape: a plain integer, a negative integer, a decimal fraction, a number with a unit, and a datetime range. A filler carries no identifier of its own.",
+      "cases": [
+        {
+          "name": "atom_reference",
+          "type": 0,
+          "note": "Type 0: the raw 32-byte digest of an atom.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "0"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "bond_reference",
+          "type": 1,
+          "note": "Type 1: the digest of a bond.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340"
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065016576616c75655820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340"
+        },
+        {
+          "name": "molecule_reference",
+          "type": 2,
+          "note": "Type 2: the digest of a molecule. This is how a meta-molecule names the molecule it asserts.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "2"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "3a620b19f32ed73a6fd61b67c8bd38dfb231545a15b67c1322f3f07e8fb5ecc7"
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065026576616c756558203a620b19f32ed73a6fd61b67c8bd38dfb231545a15b67c1322f3f07e8fb5ecc7"
+        },
+        {
+          "name": "ipfs_uri",
+          "type": 3,
+          "note": "Type 3: an IPFS content identifier as text. It is not an internal reference; its format is IPFS's, not Dialog's.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "3"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "text",
+                  "text": "bafyreihfo5q3iopobs5x554uekymz2jh27ibi7qauuubzqltwbdvkevyii"
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065036576616c7565783b6261667972656968666f357133696f706f6273357835353475656b796d7a326a683237696269377161757575627a716c74776264766b6576796969"
+        },
+        {
+          "name": "scalar_integer",
+          "type": 4,
+          "note": "A unitless whole number. Whole numbers are plain CBOR integers, never decimal fractions.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "value",
+                      "value": {
+                        "type": "uint",
+                        "number": "330"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a16576616c756519014a"
+        },
+        {
+          "name": "scalar_negative_integer",
+          "type": 4,
+          "note": "A negative whole number, major type 1.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "value",
+                      "value": {
+                        "type": "neg",
+                        "number": "-40"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a16576616c75653827"
+        },
+        {
+          "name": "scalar_decimal_fraction",
+          "type": 4,
+          "note": "3.14 as tag 4 [-2, 314] (spec/03-encoding.md, \"Decimal fractions\").",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "value",
+                      "value": {
+                        "type": "decimal",
+                        "exponent": "-2",
+                        "mantissa": "314"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a16576616c7565c4822119013a"
+        },
+        {
+          "name": "scalar_with_unit",
+          "type": 4,
+          "note": "330 metres. The unit field carries the digest of the atom naming the unit, and that atom MUST be reachable from the block (spec/02-block-format.md, rule 4).",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "unit",
+                      "value": {
+                        "type": "bytes",
+                        "bytes": "d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17"
+                      }
+                    },
+                    {
+                      "key": "value",
+                      "value": {
+                        "type": "uint",
+                        "number": "330"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a264756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e176576616c756519014a"
+        },
+        {
+          "name": "scalar_decimal_with_unit",
+          "type": 4,
+          "note": "3.14 metres: a decimal fraction and a unit together. The map keys sort unit before value.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "unit",
+                      "value": {
+                        "type": "bytes",
+                        "bytes": "d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17"
+                      }
+                    },
+                    {
+                      "key": "value",
+                      "value": {
+                        "type": "decimal",
+                        "exponent": "-2",
+                        "mantissa": "314"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a264756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e176576616c7565c4822119013a"
+        },
+        {
+          "name": "scalar_datetime_range",
+          "type": 4,
+          "note": "A datetime range. Both endpoints are UTC RFC 3339 date-times at second precision, and a range never carries a unit.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "to",
+                      "value": {
+                        "type": "text",
+                        "text": "2024-02-21T15:30:00Z"
+                      }
+                    },
+                    {
+                      "key": "from",
+                      "value": {
+                        "type": "text",
+                        "text": "2024-02-20T15:30:00Z"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d74323032342d30322d32305431353a33303a30305a"
+        },
+        {
+          "name": "scalar_datetime_instant",
+          "type": 4,
+          "note": "A range whose endpoints are equal — the protocol's way of writing a single instant.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "to",
+                      "value": {
+                        "type": "text",
+                        "text": "2024-02-20T15:30:00Z"
+                      }
+                    },
+                    {
+                      "key": "from",
+                      "value": {
+                        "type": "text",
+                        "text": "2024-02-20T15:30:00Z"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a262746f74323032342d30322d32305431353a33303a30305a6466726f6d74323032342d30322d32305431353a33303a30305a"
+        }
+      ]
+    }
+  ]
+}

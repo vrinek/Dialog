@@ -1,0 +1,1079 @@
+{
+  "vectors": "dialog-conformance/1",
+  "area": "blocks",
+  "description": "A complete, deterministic chain scenario — genesis, an appended block, a foreign-reference block by a second author, and a rotation with its successor genesis — plus a fork and the blocks a conforming implementation MUST reject. Ed25519 signing is deterministic, so every signature here is reproducible from the seeds in inputs.",
+  "spec": [
+    "spec/02-block-format.md",
+    "spec/03-encoding.md",
+    "spec/04-cryptography.md"
+  ],
+  "inputs": {
+    "note": "Every key comes from a seed of 32 equal bytes. These are test keys with published private material and MUST NOT be used for anything but conformance testing.",
+    "keys": [
+      {
+        "name": "alice",
+        "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+        "private_key": "01010101010101010101010101010101010101010101010101010101010101018a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+        "public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      {
+        "name": "bob",
+        "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+        "private_key": "02020202020202020202020202020202020202020202020202020202020202028139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+        "public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+      },
+      {
+        "name": "alice_successor",
+        "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+        "private_key": "0303030303030303030303030303030303030303030303030303030303030303ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+        "public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+      }
+    ]
+  },
+  "sections": [
+    {
+      "name": "chain",
+      "description": "The scenario, in the order the blocks are published. A consumer that stores them in order and validates each one MUST accept all five; the digests link them, so any encoding difference shows up as a broken prev.",
+      "cases": [
+        {
+          "name": "alice_genesis",
+          "description": "Alice's genesis block: prev is null, and the four operations define two atoms, a bond and the molecule that uses them. The molecule's references resolve inside this same block.",
+          "author": "alice",
+          "type": "public",
+          "prev": null,
+          "ts": 1740067200,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067200"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "France"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "Paris, the capital of France"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_bond"
+                          }
+                        },
+                        {
+                          "key": "template",
+                          "value": {
+                            "type": "text",
+                            "text": "_A_ is the capital of _B_"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_molecule"
+                          }
+                        },
+                        {
+                          "key": "bond",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340"
+                          }
+                        },
+                        {
+                          "key": "fillers",
+                          "value": {
+                            "type": "array",
+                            "items": [
+                              {
+                                "type": "map",
+                                "entries": [
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "type": "uint",
+                                      "number": "0"
+                                    }
+                                  },
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "type": "bytes",
+                                      "bytes": "6545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd"
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "map",
+                                "entries": [
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "type": "uint",
+                                      "number": "0"
+                                    }
+                                  },
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "type": "bytes",
+                                      "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "2e476e2e2afbc05d6e4a12203656796a2911aa17cd5feee1501054a5ba7cf9b86da1a9975d8bc7e00ed3a15ad9288061d3214d8e466aebb6b379f15a11d35903"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "null"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b75180636f707384a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e6365a2626f706b6372656174655f61746f6d6b6465736372697074696f6e781c50617269732c20746865206361706974616c206f66204672616e6365a2626f706b6372656174655f626f6e646874656d706c61746578195f415f20697320746865206361706974616c206f66205f425fa3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6470726576f66472656673806474797065667075626c6963",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b75180636f707384a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e6365a2626f706b6372656174655f61746f6d6b6465736372697074696f6e781c50617269732c20746865206361706974616c206f66204672616e6365a2626f706b6372656174655f626f6e646874656d706c61746578195f415f20697320746865206361706974616c206f66205f425fa3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6470726576f66472656673806474797065667075626c6963",
+          "signature": "2e476e2e2afbc05d6e4a12203656796a2911aa17cd5feee1501054a5ba7cf9b86da1a9975d8bc7e00ed3a15ad9288061d3214d8e466aebb6b379f15a11d35903",
+          "block": "a86176016274731a67b75180636f707384a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e6365a2626f706b6372656174655f61746f6d6b6465736372697074696f6e781c50617269732c20746865206361706974616c206f66204672616e6365a2626f706b6372656174655f626f6e646874656d706c61746578195f415f20697320746865206361706974616c206f66205f425fa3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758402e476e2e2afbc05d6e4a12203656796a2911aa17cd5feee1501054a5ba7cf9b86da1a9975d8bc7e00ed3a15ad9288061d3214d8e466aebb6b379f15a11d359036470726576f66472656673806474797065667075626c6963",
+          "digest": "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728",
+          "cid": "01711220c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728",
+          "cid_text": "bafyreigapyryv5cdwbx7jasczzcieva5whw4bchhf3f5kep5thrtnjrxfa"
+        },
+        {
+          "name": "alice_second",
+          "description": "The next block of Alice's chain: prev is the digest of alice_genesis. Its molecule carries a scalar filler with a unit, whose digest is the metre atom this block defines.",
+          "author": "alice",
+          "type": "public",
+          "prev": "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728",
+          "ts": 1740067260,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067260"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "The Eiffel Tower"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "metre"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_bond"
+                          }
+                        },
+                        {
+                          "key": "template",
+                          "value": {
+                            "type": "text",
+                            "text": "_A_ is _B_ tall"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_molecule"
+                          }
+                        },
+                        {
+                          "key": "bond",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "3106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c"
+                          }
+                        },
+                        {
+                          "key": "fillers",
+                          "value": {
+                            "type": "array",
+                            "items": [
+                              {
+                                "type": "map",
+                                "entries": [
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "type": "uint",
+                                      "number": "0"
+                                    }
+                                  },
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "type": "bytes",
+                                      "bytes": "4087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966"
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "map",
+                                "entries": [
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "type": "uint",
+                                      "number": "4"
+                                    }
+                                  },
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "type": "map",
+                                      "entries": [
+                                        {
+                                          "key": "unit",
+                                          "value": {
+                                            "type": "bytes",
+                                            "bytes": "d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17"
+                                          }
+                                        },
+                                        {
+                                          "key": "value",
+                                          "value": {
+                                            "type": "uint",
+                                            "number": "330"
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "6094bcb1363ec6285fa34436e2738b1dabe02695bac065effc60c7f737ced5ca3c83e4daef153c63932ce57870c84f0ad1678ca0733eda17f5897627ac3c1106"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b751bc636f707384a2626f706b6372656174655f61746f6d6b6465736372697074696f6e705468652045696666656c20546f776572a2626f706b6372656174655f61746f6d6b6465736372697074696f6e656d65747265a2626f706b6372656174655f626f6e646874656d706c6174656f5f415f206973205f425f2074616c6ca3626f706f6372656174655f6d6f6c6563756c6564626f6e6458203106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c6766696c6c65727382a26474797065006576616c756558204087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966a26474797065046576616c7565a264756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e176576616c756519014a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c64707265765820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286472656673806474797065667075626c6963",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b751bc636f707384a2626f706b6372656174655f61746f6d6b6465736372697074696f6e705468652045696666656c20546f776572a2626f706b6372656174655f61746f6d6b6465736372697074696f6e656d65747265a2626f706b6372656174655f626f6e646874656d706c6174656f5f415f206973205f425f2074616c6ca3626f706f6372656174655f6d6f6c6563756c6564626f6e6458203106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c6766696c6c65727382a26474797065006576616c756558204087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966a26474797065046576616c7565a264756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e176576616c756519014a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c64707265765820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286472656673806474797065667075626c6963",
+          "signature": "6094bcb1363ec6285fa34436e2738b1dabe02695bac065effc60c7f737ced5ca3c83e4daef153c63932ce57870c84f0ad1678ca0733eda17f5897627ac3c1106",
+          "block": "a86176016274731a67b751bc636f707384a2626f706b6372656174655f61746f6d6b6465736372697074696f6e705468652045696666656c20546f776572a2626f706b6372656174655f61746f6d6b6465736372697074696f6e656d65747265a2626f706b6372656174655f626f6e646874656d706c6174656f5f415f206973205f425f2074616c6ca3626f706f6372656174655f6d6f6c6563756c6564626f6e6458203106b99342d8851ab3d2c1ec3ab549f514e99cf40731ab2b9ebc9a49dd363a2c6766696c6c65727382a26474797065006576616c756558204087b7fb5efed0ab38279e5260ca7823eeb9cb52108493a9700b2bd319551966a26474797065046576616c7565a264756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e176576616c756519014a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758406094bcb1363ec6285fa34436e2738b1dabe02695bac065effc60c7f737ced5ca3c83e4daef153c63932ce57870c84f0ad1678ca0733eda17f5897627ac3c110664707265765820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286472656673806474797065667075626c6963",
+          "digest": "765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4",
+          "cid": "01711220765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4",
+          "cid_text": "bafyreidwl6yj3uqyughr7pmc4otnsgduotzi2mkw3u3aw4j5vpwvo3xfyq"
+        },
+        {
+          "name": "bob_foreign_reference",
+          "description": "Bob's genesis block, referencing Alice's genesis block in refs. Its molecule uses a bond and an atom defined there and an atom defined by its own first operation.",
+          "author": "bob",
+          "type": "public",
+          "prev": null,
+          "refs": [
+            "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728"
+          ],
+          "ts": 1740067320,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067320"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "Paris, France"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_molecule"
+                          }
+                        },
+                        {
+                          "key": "bond",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340"
+                          }
+                        },
+                        {
+                          "key": "fillers",
+                          "value": {
+                            "type": "array",
+                            "items": [
+                              {
+                                "type": "map",
+                                "entries": [
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "type": "uint",
+                                      "number": "0"
+                                    }
+                                  },
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "type": "bytes",
+                                      "bytes": "d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cd"
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "map",
+                                "entries": [
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "type": "uint",
+                                      "number": "0"
+                                    }
+                                  },
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "type": "bytes",
+                                      "bytes": "e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "ebd77fdcad0b47c23a13d8aef3166ac000eaecee9bd371b7915434e93f8624bdc091db7571957ff0ba07c2af8fb6bb3deb0cbb7795f0865fba42f11da8c2b60b"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "null"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "bytes",
+                      "bytes": "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728"
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b751f8636f707382a2626f706b6372656174655f61746f6d6b6465736372697074696f6e6d50617269732c204672616e6365a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c75655820d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b3946470726576f66472656673815820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286474797065667075626c6963",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b751f8636f707382a2626f706b6372656174655f61746f6d6b6465736372697074696f6e6d50617269732c204672616e6365a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c75655820d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b3946470726576f66472656673815820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286474797065667075626c6963",
+          "signature": "ebd77fdcad0b47c23a13d8aef3166ac000eaecee9bd371b7915434e93f8624bdc091db7571957ff0ba07c2af8fb6bb3deb0cbb7795f0865fba42f11da8c2b60b",
+          "block": "a86176016274731a67b751f8636f707382a2626f706b6372656174655f61746f6d6b6465736372697074696f6e6d50617269732c204672616e6365a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c75655820d09787b4ef92508afbcf6248dc2d55c201b49764c7dba9f088324e90eda824cda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394637369675840ebd77fdcad0b47c23a13d8aef3166ac000eaecee9bd371b7915434e93f8624bdc091db7571957ff0ba07c2af8fb6bb3deb0cbb7795f0865fba42f11da8c2b60b6470726576f66472656673815820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286474797065667075626c6963",
+          "digest": "7d868ecd54fb169d9188c7b80bb6f6ec46b80371d0790c15bcde1edecfa66035",
+          "cid": "017112207d868ecd54fb169d9188c7b80bb6f6ec46b80371d0790c15bcde1edecfa66035",
+          "cid_text": "bafyreid5q2hm2vh3c2ozdcghxaf3n5xmi24ag4oqpegblpg6d3pm7jtagu"
+        },
+        {
+          "name": "alice_rotation",
+          "description": "The rotation block that ends Alice's chain. Exactly one rotate_key operation, prev not null, and new_pub naming a different key.",
+          "author": "alice",
+          "type": "rotation",
+          "prev": "765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4",
+          "ts": 1740067380,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067380"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "rotate_key"
+                          }
+                        },
+                        {
+                          "key": "new_pub",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "41e8734d89ed44961b8464cfb7230c5fe57ac0e9c974aa6bf87d34936ac3c9c3b8c70db406305e6e79609aeec69b2297fcc65934e1217be2b81d68d43ca46e05"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "rotation"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b75234636f707381a2626f706a726f746174655f6b6579676e65775f7075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c64707265765820765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4647265667380647479706568726f746174696f6e",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b75234636f707381a2626f706a726f746174655f6b6579676e65775f7075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c64707265765820765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4647265667380647479706568726f746174696f6e",
+          "signature": "41e8734d89ed44961b8464cfb7230c5fe57ac0e9c974aa6bf87d34936ac3c9c3b8c70db406305e6e79609aeec69b2297fcc65934e1217be2b81d68d43ca46e05",
+          "block": "a86176016274731a67b75234636f707381a2626f706a726f746174655f6b6579676e65775f7075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584041e8734d89ed44961b8464cfb7230c5fe57ac0e9c974aa6bf87d34936ac3c9c3b8c70db406305e6e79609aeec69b2297fcc65934e1217be2b81d68d43ca46e0564707265765820765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4647265667380647479706568726f746174696f6e",
+          "digest": "ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead",
+          "cid": "01711220ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead",
+          "cid_text": "bafyreifmiqzojubcnzahpvave6xd57gf76izawuylzb5nqxfk5a2ucvovu"
+        },
+        {
+          "name": "alice_successor_genesis",
+          "description": "The successor chain's genesis block. It is public and names the rotation block in refs, which is what makes the succession verifiable to a node with no keys.",
+          "author": "alice_successor",
+          "type": "public",
+          "prev": null,
+          "refs": [
+            "ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead"
+          ],
+          "ts": 1740067440,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067440"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "Lyon"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "cd06cf039c8a42e6f6723d6c287064f6f54e8c10b732cd509fde9fb54e841a5bf063aa8894599e4495c9d38cd8ad6ef5a90444f3d533bbc80ff6a72811db6400"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "null"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "bytes",
+                      "bytes": "ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead"
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b75270636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e644c796f6e637075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16470726576f66472656673815820ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead6474797065667075626c6963",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b75270636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e644c796f6e637075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16470726576f66472656673815820ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead6474797065667075626c6963",
+          "signature": "cd06cf039c8a42e6f6723d6c287064f6f54e8c10b732cd509fde9fb54e841a5bf063aa8894599e4495c9d38cd8ad6ef5a90444f3d533bbc80ff6a72811db6400",
+          "block": "a86176016274731a67b75270636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e644c796f6e637075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1637369675840cd06cf039c8a42e6f6723d6c287064f6f54e8c10b732cd509fde9fb54e841a5bf063aa8894599e4495c9d38cd8ad6ef5a90444f3d533bbc80ff6a72811db64006470726576f66472656673815820ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead6474797065667075626c6963",
+          "digest": "88fc611ac139c7ce8f80609eda165d87a34005ee5e058f68c8a51b53add9c7ef",
+          "cid": "0171122088fc611ac139c7ce8f80609eda165d87a34005ee5e058f68c8a51b53add9c7ef",
+          "cid_text": "bafyreiei7rqrvqjzy7hi7adat3nbmxmhunaal3s6awhwrsffdnj23woh54"
+        }
+      ]
+    },
+    {
+      "name": "forks",
+      "description": "Two blocks of one chain sharing a prev. Detection is normative; what a node does about it is not.",
+      "cases": [
+        {
+          "name": "alice_second_vs_alice_fork",
+          "description": "Two blocks signed by Alice carry the same prev. A node that holds both MUST detect the fork; whether it rejects, flags or keeps the first is its own policy.",
+          "rule": "spec/02-block-format.md, Validation rule 9 (fork detection)",
+          "author": "alice",
+          "prev": "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728",
+          "blocks": [
+            "765fb09dd218a18f1fbd82e3a6d9187474f28d3156dd360b713dabed576ee5c4",
+            "c6bac45650ee5cda10d07544ec3f34393f44c95f9bbdd936830e2370cffbef38"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fork_block",
+      "description": "The forking block in full. It is a well-formed, correctly signed block: what makes it a fork is the chain it arrives into, not anything inside it.",
+      "cases": [
+        {
+          "name": "alice_fork",
+          "description": "A second block claiming alice_genesis as its predecessor. It is valid in isolation; against a store that already holds alice_second it is a fork.",
+          "author": "alice",
+          "type": "public",
+          "prev": "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728",
+          "ts": 1740067261,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067261"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "Marseille"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "b9de20eb51b289343dcbdee75267d59c6fae852c9de060372c4f035c42d86721a8531aff6b1e5c791b91bbc8b14d87e2d58629f6051c5094eecf91be0b4ab408"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a63728"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b751bd636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e694d61727365696c6c656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c64707265765820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286472656673806474797065667075626c6963",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b751bd636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e694d61727365696c6c656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c64707265765820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286472656673806474797065667075626c6963",
+          "signature": "b9de20eb51b289343dcbdee75267d59c6fae852c9de060372c4f035c42d86721a8531aff6b1e5c791b91bbc8b14d87e2d58629f6051c5094eecf91be0b4ab408",
+          "block": "a86176016274731a67b751bd636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e694d61727365696c6c656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840b9de20eb51b289343dcbdee75267d59c6fae852c9de060372c4f035c42d86721a8531aff6b1e5c791b91bbc8b14d87e2d58629f6051c5094eecf91be0b4ab40864707265765820c07e238af443b06ff48242ce4482541db1edc088e72ecbd511fd99e336a637286472656673806474797065667075626c6963",
+          "digest": "c6bac45650ee5cda10d07544ec3f34393f44c95f9bbdd936830e2370cffbef38",
+          "cid": "01711220c6bac45650ee5cda10d07544ec3f34393f44c95f9bbdd936830e2370cffbef38",
+          "cid_text": "bafyreiggxlcfmuholtnbbudvitwd6nbzh5cmsx43xxmtnayoenym767pha"
+        }
+      ]
+    },
+    {
+      "name": "invalid",
+      "description": "Blocks a conforming implementation MUST reject, each naming the rule it violates. Every one of them is canonical dCBOR and — except where the case is about the signature — correctly signed, so the rejection can only come from the named rule.",
+      "cases": [
+        {
+          "name": "tampered_signature",
+          "rule": "spec/02-block-format.md, Validation rule 2 (signature check)",
+          "reason": "A valid genesis block with one bit of its sig field flipped.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758400809b3b948e5a3b056eae06d962f5f8a3f32d37eea21f87ef3bcf76700ebde18b0caa09af23a9d81afd7e84d4c8b7b32cefd866efdbbed76d3dca27e8eddfa076470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "unknown_version",
+          "rule": "spec/02-block-format.md, Validation rule 1 (version check)",
+          "reason": "The v field is 2. A field a later version introduces arrives in a block this version rejects on its version, never as an extra key.",
+          "bytes": "a86176026274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758402d469c7e3d6ccd9d0700b86e46fb020aa13972a8c3bcfe80ec864eacec51ad46cc4512881e9af3102705c0d1a12057e1f7ccb2bc37240a673df5feea337b8e0a6470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "unknown_block_type",
+          "rule": "spec/02-block-format.md, Validation dispatch",
+          "reason": "The type field is \"secret\". There are exactly three block types.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758409aa0025e5bc7d4b5701ea9312b3e8a0745caf81112dde38bba9e2b419d81e8f3086a4438657d4e922a0995729dbe5f7c9b05d6dbc71e48f5ad1b49e2cfd0d3086470726576f6647265667380647479706566736563726574"
+        },
+        {
+          "name": "empty_ops",
+          "rule": "spec/02-block-format.md, Validation rule 7 (non-empty operations)",
+          "reason": "The ops list is empty.",
+          "bytes": "a86176016274731a67b75180636f7073806370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758403a7824b732c01743f05fae2e1efd22cade324d16a14e1598af8da4991ffaf680564ca7cef3013a537442dcf97e8d493e5ef401ee0797c7757de88175e28e400d6470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "unknown_block_key",
+          "rule": "spec/02-block-format.md, Validation rule 8 (deterministic encoding, including the closed-map rule)",
+          "reason": "The block map carries a \"note\" key its definition does not declare. An unknown key is a rejection, never something to ignore: a decoder that ignored it would hash bytes it did not account for.",
+          "bytes": "a96176016274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840737655aaedb3b8fc8bc4a7f48bc48bbad70aa25d0a71ab3584558936ad2d4ea6494a3492979c2e836502403780e0f06807c3a9191efaf94f2ff7d355e269c80f646e6f74656568656c6c6f6470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "missing_block_key",
+          "rule": "spec/02-block-format.md, Validation rule 8 (deterministic encoding, including the closed-map rule)",
+          "reason": "The block map omits the declared ts key.",
+          "bytes": "a7617601636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840b43215d8ce612ea8abbc9575f0dcc181790f5982efa9ef874f4a7ac420ec54bb38607312133b2dc3780dd3329793815377e51cef5428c219e2a8cd5c67c9e0086470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "public_block_with_enc",
+          "rule": "spec/02-block-format.md, Validation dispatch",
+          "reason": "A public block carrying an enc field, which belongs to a private block.",
+          "bytes": "a96176016274731a67b7518063656e635830aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758406b52d264a72b8d422923d3ed3bb40aa708ddd249520bba4d63656126fa4402416ad029edefe7f7ff9129d254b99a427ec2e4e9380605e50d823f675c2e07a40e6470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "unknown_operation",
+          "rule": "spec/02-block-format.md, Validation rule 8 (deterministic encoding, including the closed-map rule)",
+          "reason": "An operation whose op value is \"delete_atom\". There are exactly four operation types.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706b64656c6574655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758400e7abb4ac90c21be0901d95cf982c4c1fbc7ea503999520ec9cda82863e04695bbfb7957abdbad98bb1812158ebf5698f422207e4a4c5197f2eefa4a53adbe026470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "unknown_operation_key",
+          "rule": "spec/02-block-format.md, Validation rule 8 (deterministic encoding, including the closed-map rule)",
+          "reason": "A create_atom operation carrying an extra \"lang\" key. The closed-map rule governs operation maps too.",
+          "bytes": "a86176016274731a67b75180636f707381a3626f706b6372656174655f61746f6d646c616e676266726b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758405b3e5ff8073e2aa7d40a5bb56cbb72822b28911ef855c8a0e1c995b0e0ab4bd6e4e67cf6499c1eb8613753a55d951b415458c14b43fe7ac2e2d5579b6bb1bd0f6470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "rotate_key_in_public_block",
+          "rule": "spec/02-block-format.md, Validation dispatch",
+          "reason": "A rotate_key operation in a public block. It may appear only in a rotation block, so that a chain ends where the type field says it ends.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706a726f746174655f6b6579676e65775f7075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584064d5608ff627cf48f99bdf1845bebb091d27eba5666fd0a64858bafa696b2c51de0c4b8d6adc399d0a3e6ebb0dbea926976ae59f01f729a8020c0a63febdb50a6470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "rotation_block_as_genesis",
+          "rule": "spec/02-block-format.md, Rotation block",
+          "reason": "A rotation block with a null prev. A rotation block ends a chain, and there is no chain to end.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706a726f746174655f6b6579676e65775f7075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584078dbdddccfc2a2a99392e8cc2716f569b8e3c9acbc1bea47e7c000f10a4a3e6a8a0ade175c901fdce9ab85663546436e54b040cfceccda3c0e883f8ba1b390076470726576f6647265667380647479706568726f746174696f6e"
+        },
+        {
+          "name": "rotation_block_two_operations",
+          "rule": "spec/02-block-format.md, Rotation block",
+          "reason": "A rotation block carrying a second operation. It MUST contain exactly one rotate_key operation and no others.",
+          "bytes": "a86176016274731a67b75180636f707382a2626f706a726f746174655f6b6579676e65775f7075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840b2a4251c832499dff2c6aa1f7585116e56fe65986bed51a1d4844c3711d06a634b2a7cb8f4d58280339fdcd67f45a011672d1f443cf78a1499afd5ccdb2d8302647072657658206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f3577647265667380647479706568726f746174696f6e"
+        },
+        {
+          "name": "rotation_to_the_same_key",
+          "rule": "spec/02-block-format.md, Rotation block",
+          "reason": "new_pub equals the block's own pub. A chain would end in favour of itself.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706a726f746174655f6b6579676e65775f70756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758404b3019db171a1b45973c20fb579452e46f5cb885b531c386f1b51615171b36e3fd66bb01f25e7620075e7b87f270e8d83782aa1c1fe3b93eb7a697960fcf8308647072657658206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f3577647265667380647479706568726f746174696f6e"
+        },
+        {
+          "name": "duplicate_refs",
+          "rule": "spec/02-block-format.md, Validation rule 10 (reference hygiene)",
+          "reason": "The refs list names the same digest twice. The duplicate half of rule 10 is structural and is checked at decoding.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758409e2a65de9163fbdb3de1a093ecde77a784cbf804b72616c9f918cf2052ff6985ca120533f52068152ef8df93c2d74dce3d76c73d1b03b5d69653be4cd595b9076470726576f664726566738258206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f357758206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f35776474797065667075626c6963"
+        },
+        {
+          "name": "cid_in_prev",
+          "rule": "spec/03-encoding.md, Internal references",
+          "reason": "The prev field carries a 36-byte CIDv1 instead of the raw 32-byte digest. Internal references are digests; the CID appears only at the API boundary.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584004b718c672653ce145bc36537dadf7f92bb117088dcc3ef31afb3a5ab0e79a32c3f09b2e9782676d748965f8eab10a2843e942a353d561ef778a56ec5644bd0964707265765824017112206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f35776472656673806474797065667075626c6963"
+        },
+        {
+          "name": "filler_type_out_of_range",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A filler of type 5. The v1 vocabulary is types 0 to 4.",
+          "bytes": "a86176016274731a67b75180636f707381a3626f706f6372656174655f6d6f6c6563756c6564626f6e6458206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f35776766696c6c65727381a26474797065056576616c756558206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f35776370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758400e4438d838e44d30e58af44d1fce02621f2e5b003fb3bd667865494112883baa043a255dcd485380cf0dfccb5c09a487b559db2aadc154df29ef31e01bf92d056470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "filler_value_shape_mismatch",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A type 0 filler carrying text. Each type tag is bound to exactly one value shape.",
+          "bytes": "a86176016274731a67b75180636f707381a3626f706f6372656174655f6d6f6c6563756c6564626f6e6458206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f35776766696c6c65727381a26474797065006576616c7565664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840daebd0336569451812caf995607a0c14472fa4e677408fbd896568a5e016df2208bcf43dd80d194e66f7e19e247404958d81f02563b8b3ff9b13fd38d66ac8026470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "empty_fillers",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A create_molecule operation with an empty fillers list; the CDDL requires at least one.",
+          "bytes": "a86176016274731a67b75180636f707381a3626f706f6372656174655f6d6f6c6563756c6564626f6e6458206185067ff3f33957b3100f05265100ecf8da1eade9cb844ba53300f5cb7f35776766696c6c657273806370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840fe7c1c8c52c1837336e961205e2e9ee30a9fac194ec855ff8a9ec1667212914b16e0feaa26a049bc9b7e1dc5cc2eb0a495dabc00969b0605f7b95c26f9e0f8016470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "private_block_with_plaintext_ops",
+          "rule": "spec/02-block-format.md, Validation dispatch",
+          "reason": "A private block carrying a plaintext ops field. Its operations live inside enc.",
+          "bytes": "a861760163656e635830aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584017aa7d1da4dedead727631daaddac9f509141ce76fc7b3eede7c0c9c80bc136f2c01173de776e770d2eb457755e314f80cb1208afd961b0016ac3bc8e0e536066470726576f664747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333"
+        },
+        {
+          "name": "private_block_short_enc",
+          "rule": "spec/02-block-format.md, Private block",
+          "reason": "An enc field shorter than the 16-byte Poly1305 tag cannot be the output of the AEAD.",
+          "bytes": "a761760163656e6348aaaaaaaaaaaaaaaa6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840419a40090baecde36398842d850ffe16d8ba94b54f6ac93cbf8eff3f1496efe57d81c639a6b987be0ee1b9764d9a34ba534078b8f620de7b2ca67c85a9523a0c6470726576f664747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333"
+        },
+        {
+          "name": "private_block_wrong_nonce_size",
+          "rule": "spec/02-block-format.md, Private block",
+          "reason": "A 12-byte nonce. XChaCha20 takes 24 bytes.",
+          "bytes": "a761760163656e635830aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840ed76e3cc2de6a06e18c4b366d7e36477eb5029d837dc618f9a49ad873ce1dd714ec63405a6eab70923057a33de4118390547ba51403c2e4219c2cae7e09031006470726576f664747970656770726976617465656e6f6e63654c333333333333333333333333"
+        },
+        {
+          "name": "private_block_missing_nonce",
+          "rule": "spec/02-block-format.md, Validation rule 8 (deterministic encoding, including the closed-map rule)",
+          "reason": "A private block with no nonce field.",
+          "bytes": "a661760163656e635830aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840dceb46f95dd77831cac794fdeee39454f118fc74cc2194892b7193644441eeae80b47b147d238a374289123b3ca92e37aab09d026e155fae61a8db30760c72076470726576f664747970656770726976617465"
+        },
+        {
+          "name": "signed_by_another_key",
+          "rule": "spec/02-block-format.md, Validation rule 2 (signature check)",
+          "reason": "A block claiming Alice's pub and signed by Bob's key.",
+          "bytes": "a86176016274731a67b75180636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e63656370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584090807bc76300004ed1ce8543db89c323dc00580224ee7f98ea21e11f5418d928ea537f5e68a1201d149e4dc24131c469355e7f0ec520f44466c89b436de929096470726576f66472656673806474797065667075626c6963"
+        }
+      ]
+    }
+  ]
+}
