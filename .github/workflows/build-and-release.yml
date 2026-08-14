@@ -18,6 +18,13 @@ env:
   # Base filename without extension - version will be appended for tags
   BASE_FILENAME: "dialog-protocol"
 
+# A workflow with no permissions block inherits whatever the repository's
+# default happens to be, which is not a decision anyone made here. Read-only is
+# the floor; the release job raises itself to contents: write, which is the one
+# job that has any business writing anything.
+permissions:
+  contents: read
+
 jobs:
   build-and-upload:
     runs-on: ubuntu-22.04
