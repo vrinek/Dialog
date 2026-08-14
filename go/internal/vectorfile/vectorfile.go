@@ -88,6 +88,10 @@ func (f File) JSON() ([]byte, error) {
 
 // Read parses a committed vectors file.
 func Read(path string) (Document, error) {
+	// The callers are the vector generator and the conformance test, both of
+	// which name files inside this repository. The package is internal, so
+	// there is no path here that an untrusted caller can choose.
+	//nolint:gosec // G304: an internal package reading this repository's own files.
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return Document{}, err

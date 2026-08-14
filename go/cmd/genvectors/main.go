@@ -41,6 +41,10 @@ func run(dir string, check bool) error {
 		return err
 	}
 	if !check {
+		// The vectors are source files in a public repository, read by every
+		// implementation that wants to interoperate; they get the permissions
+		// the rest of the checkout has, not a secret's.
+		//nolint:gosec // G301: a directory of committed source files, not private data.
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
@@ -53,6 +57,10 @@ func run(dir string, check bool) error {
 			return err
 		}
 		path := filepath.Join(dir, f.Name)
+		// The path is this program's own output directory joined with a
+		// filename from the generator's fixed table; the only way to steer it
+		// is to run the developer command with -o, which is what -o is for.
+		//nolint:gosec // G304: the path comes from a flag of a local dev tool.
 		got, readErr := os.ReadFile(path)
 		if readErr == nil && bytes.Equal(got, want) {
 			continue
@@ -61,6 +69,7 @@ func run(dir string, check bool) error {
 			stale = append(stale, f.Name)
 			continue
 		}
+		//nolint:gosec // G306: same as above — these files are committed and world-readable by design.
 		if err := os.WriteFile(path, want, 0o644); err != nil {
 			return err
 		}

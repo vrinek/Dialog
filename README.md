@@ -37,7 +37,9 @@ every other implementation can be checked against.
 | [`block`](go/block) | Blocks, the four operations, the signing input, chain and reachability validation, key rotation and fork detection |
 | [`privacy`](go/privacy) | Private-block encryption (XChaCha20-Poly1305 with AAD) and per-recipient key wrapping (X25519 + HKDF-SHA-256) |
 
-No third-party dependencies except `golang.org/x/crypto`; the CBOR codec is
+One third-party dependency, `golang.org/x/crypto`. (`go.mod` names a second,
+the ruleguard DSL; no build ever compiles it — it exists so the static-analysis
+rules in `go/ruleguard/` type-check.) The CBOR codec is
 hand-rolled, because Dialog's profile is a small restricted subset and writing
 it audits the specification more honestly than a general-purpose library would.
 

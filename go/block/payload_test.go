@@ -29,7 +29,11 @@ func TestPayloadRoundTrip(t *testing.T) {
 	if got.TS != p.TS || len(got.Refs) != 1 || got.Refs[0] != provider || len(got.Ops) != 2 {
 		t.Fatalf("round trip = %+v, want %+v", got, p)
 	}
-	if got.Ops[0].(CreateAtom).Description() != "France" {
+	first, ok := got.Ops[0].(CreateAtom)
+	if !ok {
+		t.Fatalf("first operation is %T, want CreateAtom", got.Ops[0])
+	}
+	if first.Description() != "France" {
 		t.Errorf("first operation = %v, want create_atom(\"France\")", got.Ops[0])
 	}
 

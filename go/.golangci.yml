@@ -1,0 +1,93 @@
+# Static analysis for the Dialog reference implementation.
+#
+# Run it with the pinned version, never the one your distribution ships:
+#
+#   go tool -modfile=tools.go.mod golangci-lint run
+#
+# The linters here are the ones whose findings are bugs in a protocol
+# implementation — error wrapping, unchecked assertions, non-exhaustive
+# switches over the protocol's own enumerations — plus a determinism guard
+# written as a ruleguard rule, because a randomised iteration order is the one
+# failure mode content addressing cannot survive.
+version: "2"
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    # Import discipline: the library's dependency list is a promise.
+    - depguard
+    # errors.Is/As over == and type assertions, and %w where a caller may
+    # reasonably want to unwrap.
+    - errorlint
+    # Every enum switch over a protocol constant must name every case, so that
+    # adding a block type or a filler kind breaks the build rather than
+    # silently falling through.
+    - exhaustive
+    # x.(T) without the second return value panics; a decoder must not.
+    - forcetypeassert
+    - gocritic
+    - gosec
+    - misspell
+    - unconvert
+
+  settings:
+    depguard:
+      rules:
+        everything:
+          list-mode: strict
+          files:
+            - $all
+          allow:
+            - $gostd
+            - golang.org/x/crypto
+            - github.com/vrinek/Dialog/go
+          deny:
+            - pkg: github.com/fxamacker/cbor
+              desc: >-
+                Dialog's dCBOR profile is a restricted subset with its own
+                canonicality rules; a general-purpose CBOR library does not
+                implement it and MUST NOT be substituted for the dcbor package
+                (spec/03-encoding.md).
+
+    exhaustive:
+      # A switch that ends in `default:` has said what it does about the cases
+      # it did not name, which is all this linter is asking for.
+      default-signifies-exhaustive: true
+
+    gocritic:
+      # Diagnostics only: the checks that find bugs. The style and opinion
+      # groups would rewrite working code to taste, and this codebase's taste
+      # is settled.
+      enabled-tags:
+        - diagnostic
+      enabled-checks:
+        # Not a diagnostic; it is how the determinism guard below is run.
+        - ruleguard
+      settings:
+        ruleguard:
+          rules: ${base-path}/ruleguard/rules.go
+          failOn: all
+
+    govet:
+      enable:
+        # Neither is on by default. nilness finds nil dereferences and
+        # impossible nil comparisons; unusedwrite finds a value written to a
+        # struct field or array element that nothing reads — in an encoder,
+        # that is a field that never reaches the wire.
+        - nilness
+        - unusedwrite
+
+  exclusions:
+    rules:
+      # Test code seeds keys, nonces and "randomness" from constants on
+      # purpose: the conformance vectors are only reproducible because nothing
+      # in their derivation is random. gosec cannot tell a fixed test vector
+      # from a weak key, and it is right to flag the pattern everywhere else.
+      - path: _test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt

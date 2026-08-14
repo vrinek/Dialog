@@ -2,6 +2,7 @@ package dcbor
 
 import (
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -149,7 +150,7 @@ func TestDecodeRejects(t *testing.T) {
 				t.Errorf("Decode(%s) error = %v, want it to contain %q", tc.hex, err, tc.want)
 			}
 			var se *SyntaxError
-			if !errorAs(err, &se) {
+			if !errors.As(err, &se) {
 				t.Errorf("Decode error is %T, want *SyntaxError", err)
 			}
 		})
@@ -177,7 +178,7 @@ func TestSyntaxErrorOffset(t *testing.T) {
 	// {"a": <double float>} — the offending item starts at byte 3.
 	_, err := Decode(mustHex(t, "a16161fb3ff199999999999a"))
 	var se *SyntaxError
-	if !errorAs(err, &se) {
+	if !errors.As(err, &se) {
 		t.Fatalf("Decode error = %v, want *SyntaxError", err)
 	}
 	if se.Offset != 3 {
@@ -218,21 +219,4 @@ func TestDecodeCopiesInput(t *testing.T) {
 	if !Equal(v, Bytes{1, 2, 3}) {
 		t.Errorf("decoded byte string aliases the input buffer: %#v", v)
 	}
-}
-
-// errorAs is errors.As, spelled out for the single concrete error type this
-// package defines.
-func errorAs(err error, target **SyntaxError) bool {
-	for err != nil {
-		if se, ok := err.(*SyntaxError); ok {
-			*target = se
-			return true
-		}
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
 }

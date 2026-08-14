@@ -98,6 +98,9 @@ CI.
 - Protocol is language-agnostic; the specification is normative, not the code
 - Reference implementation: Go, in `go/` (Go 1.26, module `github.com/vrinek/Dialog/go`)
 - Dependencies: standard library plus `golang.org/x/crypto`; the CBOR codec is hand-rolled on purpose
+  (`go.mod` also names `github.com/quasilyte/go-ruleguard/dsl`, which nothing
+  compiles: ruleguard type-checks `go/ruleguard/rules.go` against it, and the
+  `ruleguard` build tag keeps the file out of every build)
 - Prefer deterministic, widely-supported languages for reference code
 
 ### Specification Writing Style

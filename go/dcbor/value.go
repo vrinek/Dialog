@@ -176,8 +176,13 @@ func (NullValue) isValue() {}
 // for negative ones.
 func Int(i int64) Value {
 	if i < 0 {
+		// -(i+1) is in 0..2^63-1 for every negative int64, including
+		// math.MinInt64, whose +1 makes the negation representable. That is
+		// exactly CBOR's negative-integer encoding: n stands for -1-n.
+		//nolint:gosec // G115: -(i+1) is non-negative for all i < 0.
 		return Neg(uint64(-(i + 1)))
 	}
+	//nolint:gosec // G115: i >= 0 here.
 	return Uint(i)
 }
 
@@ -187,6 +192,7 @@ func (u Uint) Int64() (v int64, ok bool) {
 	if uint64(u) > math.MaxInt64 {
 		return 0, false
 	}
+	//nolint:gosec // G115: the guard above is the range check.
 	return int64(u), true
 }
 
@@ -196,6 +202,7 @@ func (n Neg) Int64() (v int64, ok bool) {
 	if uint64(n) > math.MaxInt64 {
 		return 0, false
 	}
+	//nolint:gosec // G115: the guard above is the range check.
 	return -1 - int64(n), true
 }
 

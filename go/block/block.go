@@ -393,7 +393,7 @@ func assemble(c Content, sig []byte) (*Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !ed25519.Verify(ed25519.PublicKey(c.Pub), input, sig) {
+	if !ed25519.Verify(c.Pub, input, sig) {
 		return nil, &SignatureError{Pub: slices.Clone(c.Pub)}
 	}
 
@@ -518,7 +518,7 @@ func (b *Block) SigningInput() []byte {
 // so; Verify exists for callers that want the check written down, and for
 // validation rule 2.
 func (b *Block) Verify() error {
-	if !ed25519.Verify(ed25519.PublicKey(b.content.Pub), b.SigningInput(), b.sig[:]) {
+	if !ed25519.Verify(b.content.Pub, b.SigningInput(), b.sig[:]) {
 		return &SignatureError{Pub: b.PublicKey()}
 	}
 	return nil

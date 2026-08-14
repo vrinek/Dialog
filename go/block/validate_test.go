@@ -1,7 +1,6 @@
 package block
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"slices"
 	"strings"
@@ -653,7 +652,7 @@ func TestRotation(t *testing.T) {
 			t.Fatalf("got %d chains, want 2", len(chains))
 		}
 		pub, ok := chains[0].NextPublicKey()
-		if !ok || !ed25519.PublicKey(pub).Equal(newPub) {
+		if !ok || !pub.Equal(newPub) {
 			t.Errorf("NextPublicKey = %x, %v, want %x", pub, ok, newPub)
 		}
 		for _, w := range chains[1].Report.Warnings {
@@ -834,7 +833,7 @@ func TestRotation(t *testing.T) {
 		if len(successors) != 2 || fork == nil {
 			t.Fatalf("Successors = %v, fork %v, want both genesis blocks and a fork", successors, fork)
 		}
-		if !ed25519.PublicKey(fork.Pub).Equal(newPub) || len(fork.Blocks) != 2 {
+		if !fork.Pub.Equal(newPub) || len(fork.Blocks) != 2 {
 			t.Errorf("fork = %+v, want the successor key's two genesis blocks", fork)
 		}
 

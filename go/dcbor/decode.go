@@ -283,8 +283,12 @@ func (d *decoder) stringPayload(start int, ai byte, what string) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
+	// count has already established that n is no larger than the number of
+	// bytes left in d.data, which is an int, so the conversion cannot overflow
+	// on any platform.
+	//nolint:gosec // G115: n <= len(d.data)-d.pos, checked by count.
 	raw := d.data[d.pos : d.pos+int(n)]
-	d.pos += int(n)
+	d.pos += int(n) //nolint:gosec // G115: same bound as the line above.
 	return raw, nil
 }
 
@@ -301,6 +305,9 @@ func (d *decoder) count(start int, ai byte, what string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	// d.pos never passes len(d.data) — every read bounds-checks first — so the
+	// subtraction is non-negative and the conversion is exact.
+	//nolint:gosec // G115: 0 <= len(d.data)-d.pos by the decoder's invariant.
 	if remaining := uint64(len(d.data) - d.pos); n > remaining {
 		return 0, d.errorAt(start, fmt.Sprintf("%s of length %d exceeds the %d byte(s) of remaining input", what, n, remaining))
 	}

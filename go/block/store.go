@@ -217,12 +217,18 @@ func (s *MemStore) BlocksReferencing(d cid.Digest) []cid.Digest {
 	return slices.Clone(s.referrers[d])
 }
 
-// Forks returns every fork the store holds, in no particular order.
+// Forks returns every fork the store holds, ordered by the lowest block digest
+// in each. Two stores holding the same blocks therefore report the same list in
+// the same order, whatever order the blocks arrived in.
 func (s *MemStore) Forks() []Fork {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var forks []Fork
+	// Ranging over the index is safe here only because the result is sorted
+	// below: every position is visited, and the order they are visited in
+	// cannot reach the caller.
+	//nolint:gocritic // the map iteration order is erased by the sort below.
 	for _, digests := range s.position {
 		if len(digests) < 2 {
 			continue
@@ -230,6 +236,11 @@ func (s *MemStore) Forks() []Fork {
 		b := s.blocks[digests[0]]
 		forks = append(forks, s.forkAt(b.PublicKey(), b.content.Prev, positionKey(b.content.Pub, b.content.Prev)))
 	}
+	// Each fork's Blocks are sorted and no digest belongs to two positions, so
+	// the lowest digest is a total order over the forks.
+	sort.Slice(forks, func(i, j int) bool {
+		return string(forks[i].Blocks[0][:]) < string(forks[j].Blocks[0][:])
+	})
 	return forks
 }
 
@@ -240,6 +251,9 @@ func (s *MemStore) Tips(pub ed25519.PublicKey) []cid.Digest {
 	defer s.mu.RUnlock()
 
 	var tips []cid.Digest
+	// The candidates are collected in map order and sorted before they are
+	// returned, so no caller can observe the order they were found in.
+	//nolint:gocritic // the map iteration order is erased by the sort below.
 	for d, b := range s.blocks {
 		if !slices.Equal(b.content.Pub, pub) {
 			continue

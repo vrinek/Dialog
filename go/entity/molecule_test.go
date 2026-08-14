@@ -28,7 +28,7 @@ func TestMoleculeFillerCount(t *testing.T) {
 	bond := MustBond(capitalTemplate) // two variables
 	one := []Filler{AtomFiller(testDigest(1))}
 	two := []Filler{AtomFiller(testDigest(1)), AtomFiller(testDigest(2))}
-	three := append(two, AtomFiller(testDigest(3)))
+	three := []Filler{AtomFiller(testDigest(1)), AtomFiller(testDigest(2)), AtomFiller(testDigest(3))}
 
 	if _, err := NewMoleculeFor(bond, one); err == nil || !strings.Contains(err.Error(), "1 filler(s) but bond") {
 		t.Errorf("NewMoleculeFor with too few fillers: error = %v, want a count mismatch", err)

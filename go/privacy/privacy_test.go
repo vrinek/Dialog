@@ -116,7 +116,11 @@ func TestRoundTrip(t *testing.T) {
 		if p.TS != 1740067200 || len(p.Ops) != 1 {
 			t.Fatalf("recipient %d recovered %+v, want the sealed payload", i, p)
 		}
-		if got := p.Ops[0].(block.CreateAtom).Description(); got != "My private note" {
+		op, ok := p.Ops[0].(block.CreateAtom)
+		if !ok {
+			t.Fatalf("recipient %d recovered a %T, want block.CreateAtom", i, p.Ops[0])
+		}
+		if got := op.Description(); got != "My private note" {
 			t.Errorf("recipient %d recovered the operation %q", i, got)
 		}
 	}

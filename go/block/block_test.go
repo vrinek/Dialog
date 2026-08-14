@@ -442,7 +442,7 @@ func TestRotateKeyOnlyInRotationBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Rotation: %v", err)
 	}
-	if op, ok := rotation.RotateKey(); !ok || !ed25519.PublicKey(op.NewPublicKey()).Equal(testPub(t, 2)) {
+	if op, ok := rotation.RotateKey(); !ok || !op.NewPublicKey().Equal(testPub(t, 2)) {
 		t.Errorf("the rotation block does not carry the rotate_key operation naming the successor key")
 	}
 }
