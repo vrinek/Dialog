@@ -29,7 +29,7 @@ defaults:
 
 jobs:
   check:
-    name: Build, vet, test, vectors
+    name: Build, vet, lint, test, vectors
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -63,7 +63,22 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test -count=1 ./...
+        # -race because the store is used concurrently and a data race there
+        # would corrupt a chain; -shuffle=on because a suite whose order
+        # matters is hiding shared state, and this one asserts a great deal
+        # about determinism.
+        run: go test -count=1 -race -shuffle=on ./...
+
+      - name: Lint
+        # The pinned golangci-lint from tools.go.mod, never a distribution's:
+        # a different version disagrees about what a finding is, and this run
+        # is the arbiter. It carries the ruleguard determinism rule.
+        run: go tool -modfile=tools.go.mod golangci-lint run
+
+      - name: Check for known vulnerabilities
+        # govulncheck fails only on advisories this code actually reaches, so
+        # a red run here names a call path, not a version number.
+        run: go tool -modfile=tools.go.mod govulncheck ./...
 
       - name: Check go.mod tidiness
         run: go mod tidy -diff
