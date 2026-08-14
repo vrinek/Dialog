@@ -23,7 +23,8 @@ import "github.com/quasilyte/go-ruleguard/dsl"
 // run — and a bug that a test suite passes ninety-nine times out of a hundred.
 //
 // So it is banned outright in the packages that produce or consume canonical
-// bytes. Where iteration really is order-independent — building a set, or
+// bytes, and in the vector generator, whose output is committed and diffed.
+// Where iteration really is order-independent — building a set, or
 // collecting keys that are sorted immediately afterwards — say so with a
 // `//nolint:gocritic // reason` and the reason it cannot matter. Tests are
 // exempt: they compare against fixed expectations, and an ordering bug there
@@ -35,7 +36,7 @@ func mapIterationOrder(m dsl.Matcher) {
 		`for range $x { $*_ }`,
 	).
 		Where(m["x"].Type.Underlying().Is(`map[$_]$_`) &&
-			m.File().PkgPath.Matches(`github\.com/vrinek/Dialog/go/(dcbor|cid|entity|block|privacy)$`) &&
+			m.File().PkgPath.Matches(`github\.com/vrinek/Dialog/go/(dcbor|cid|entity|block|privacy|internal/vectors|internal/vectorfile)$`) &&
 			!m.File().Name.Matches(`_test\.go$`)).
 		Report(`range over a map: iteration order is randomised, so canonical bytes must never depend on it (spec/03-encoding.md). Sort the keys and range over the sorted slice, or explain with //nolint:gocritic why order cannot matter here.`)
 }
