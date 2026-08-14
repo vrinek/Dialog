@@ -1,0 +1,335 @@
+// Package vectorfile declares the on-disk shape of Dialog's conformance test
+// vectors — the JSON files under vectors/ at the root of this repository —
+// and reads them back.
+//
+// It is a leaf: it imports nothing of the protocol. That is deliberate. The
+// generator (internal/vectors) builds these types out of the dcbor, cid,
+// entity, block and privacy packages, and the tests of those same packages
+// read the committed files through this one. A package that both produced and
+// verified the vectors would prove nothing; keeping the schema here lets the
+// verification side depend on the files alone.
+//
+// The format is documented for other languages in vectors/README.md. This
+// package is its Go binding, not its definition.
+package vectorfile
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+// Format is the value of every file's "vectors" field. It names the shape of
+// the JSON — the envelope, the value model, the field names — and not the
+// protocol version, which is a block's v field.
+const Format = "dialog-conformance/1"
+
+// A Document is one vectors file: everything pinned about one area of the
+// protocol.
+type Document struct {
+	// Vectors is Format.
+	Vectors string `json:"vectors"`
+	// Area names the file: dcbor, entities, blocks or privacy.
+	Area string `json:"area"`
+	// Description says what the file pins, in prose.
+	Description string `json:"description"`
+	// Spec lists the specification documents the area is defined by.
+	Spec []string `json:"spec"`
+	// Inputs holds the fixed constants the cases are derived from, when the
+	// area has any (seeds, keys, nonces).
+	Inputs any `json:"inputs,omitempty"`
+	// Sections group the cases.
+	Sections []Section `json:"sections"`
+}
+
+// A Section is a group of cases with a common shape: every case in one
+// section is the same JSON object type.
+type Section struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Cases holds a slice of one of the case types below. It is typed as any
+	// because the type differs per section; DecodeCases converts it.
+	Cases any `json:"cases"`
+}
+
+// Section returns the named section.
+func (d Document) Section(name string) (Section, bool) {
+	for _, s := range d.Sections {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return Section{}, false
+}
+
+// A File is a Document together with the name it is written under.
+type File struct {
+	Name string
+	Doc  Document
+}
+
+// JSON renders the file exactly as it is committed: indented with two spaces
+// and terminated by a newline. The rendering is deterministic — every field
+// order is a struct's — so a regenerated file is byte-identical unless the
+// values changed.
+func (f File) JSON() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	// Descriptions are prose and may hold any UTF-8; HTML escaping would
+	// mangle it into < sequences no other language's reader expects.
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(f.Doc); err != nil {
+		return nil, fmt.Errorf("vectorfile: encoding %s: %w", f.Name, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// Read parses a committed vectors file.
+func Read(path string) (Document, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return Document{}, err
+	}
+	var doc Document
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&doc); err != nil {
+		return Document{}, fmt.Errorf("vectorfile: %s: %w", path, err)
+	}
+	if doc.Vectors != Format {
+		return Document{}, fmt.Errorf("vectorfile: %s declares format %q, want %q", path, doc.Vectors, Format)
+	}
+	return doc, nil
+}
+
+// DecodeInputs converts a document's inputs into the type the area declares,
+// on a document that was built or one that was parsed.
+func DecodeInputs[T any](d Document) (T, error) {
+	var out T
+	raw, err := json.Marshal(d.Inputs)
+	if err != nil {
+		return out, fmt.Errorf("vectorfile: %s inputs: %w", d.Area, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&out); err != nil {
+		return out, fmt.Errorf("vectorfile: %s inputs: %w", d.Area, err)
+	}
+	return out, nil
+}
+
+// DecodeCases converts a section's cases into the typed slice the section
+// holds. It works both on a document that was just built, whose Cases is
+// already a []T, and on one that was parsed from JSON, whose Cases is a slice
+// of generic maps.
+func DecodeCases[T any](s Section) ([]T, error) {
+	raw, err := json.Marshal(s.Cases)
+	if err != nil {
+		return nil, fmt.Errorf("vectorfile: section %q: %w", s.Name, err)
+	}
+	var out []T
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&out); err != nil {
+		return nil, fmt.Errorf("vectorfile: section %q: %w", s.Name, err)
+	}
+	return out, nil
+}
+
+// A Value is the JSON model of a dCBOR value: enough for a reader in any
+// language to rebuild the value and encode it, without parsing CBOR first.
+// Integers are decimal strings because CBOR's integer range does not survive
+// a JSON number in every language.
+//
+//	{"type": "uint",    "number": "1"}
+//	{"type": "neg",     "number": "-1"}
+//	{"type": "text",    "text": "France"}
+//	{"type": "bytes",   "bytes": "<hex>"}
+//	{"type": "array",   "items": [...]}          ; absent items = empty array
+//	{"type": "map",     "entries": [{"key": "...", "value": {...}}, ...]}
+//	{"type": "decimal", "exponent": "-2", "mantissa": "314"}
+//	{"type": "null"}
+//
+// Map entries are listed in the canonical encoding order — the bytewise
+// lexicographic order of the encoded keys — so a consumer that preserves the
+// order it reads produces canonical bytes without sorting.
+type Value struct {
+	Type     string  `json:"type"`
+	Number   string  `json:"number,omitempty"`
+	Text     string  `json:"text,omitempty"`
+	Bytes    string  `json:"bytes,omitempty"`
+	Exponent string  `json:"exponent,omitempty"`
+	Mantissa string  `json:"mantissa,omitempty"`
+	Items    []Value `json:"items,omitempty"`
+	Entries  []Entry `json:"entries,omitempty"`
+}
+
+// An Entry is one key/value pair of a map Value. Dialog map keys are always
+// text strings (spec/03-encoding.md), so the key is a plain JSON string.
+type Entry struct {
+	Key   string `json:"key"`
+	Value Value  `json:"value"`
+}
+
+// A DCBORCase is one value and the one byte string that encodes it.
+type DCBORCase struct {
+	Name  string `json:"name"`
+	Note  string `json:"note,omitempty"`
+	Value Value  `json:"value"`
+	DCBOR string `json:"dcbor"`
+}
+
+// An InvalidCase is a byte string an implementation MUST reject, together
+// with the rule it violates. It is used for both dCBOR input and whole
+// blocks.
+type InvalidCase struct {
+	Name   string `json:"name"`
+	Rule   string `json:"rule"`
+	Reason string `json:"reason"`
+	Bytes  string `json:"bytes"`
+}
+
+// An EntityCase is one content-addressed entity: what it says, the bytes it
+// encodes to, and the identifiers those bytes produce.
+type EntityCase struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	Note string `json:"note,omitempty"`
+	// Description is an atom's description string; Template is a bond's
+	// template. A molecule has neither: it is described by its value.
+	Description string `json:"description,omitempty"`
+	Template    string `json:"template,omitempty"`
+	// Variables are the variables of a bond template, in order.
+	Variables []string `json:"variables,omitempty"`
+	Value     Value    `json:"value"`
+	DCBOR     string   `json:"dcbor"`
+	Digest    string   `json:"digest"`
+	CID       string   `json:"cid"`
+	CIDText   string   `json:"cid_text"`
+}
+
+// A FillerCase is one filler of a molecule. A filler is not content-addressed
+// on its own — it is hashed as part of the molecule that holds it — so it has
+// bytes and no identifier.
+type FillerCase struct {
+	Name  string `json:"name"`
+	Type  uint64 `json:"type"`
+	Note  string `json:"note,omitempty"`
+	Value Value  `json:"value"`
+	DCBOR string `json:"dcbor"`
+}
+
+// A KeyCase is one Ed25519 identity of a scenario.
+type KeyCase struct {
+	Name string `json:"name"`
+	Seed string `json:"seed"`
+	// PrivateKey is the 64-byte expanded form (seed || public key) that many
+	// libraries take; Seed is the 32-byte form RFC 8032 calls the private key.
+	PrivateKey string `json:"private_key"`
+	PublicKey  string `json:"public_key"`
+}
+
+// BlockInputs is the inputs block of vectors/blocks.json.
+type BlockInputs struct {
+	Note string    `json:"note"`
+	Keys []KeyCase `json:"keys"`
+}
+
+// A BlockCase is one block: its fields, the exact bytes the signature covers,
+// the signature, and the bytes the digest is taken over.
+type BlockCase struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Author      string `json:"author"`
+	Type        string `json:"type"`
+	// Prev is the hex digest of the previous block, or null for a genesis
+	// block.
+	Prev *string  `json:"prev"`
+	Refs []string `json:"refs,omitempty"`
+	TS   uint64   `json:"ts,omitempty"`
+	// Enc and Nonce are a private block's ciphertext and nonce; the other two
+	// block types have neither.
+	Enc   string `json:"enc,omitempty"`
+	Nonce string `json:"nonce,omitempty"`
+	// Value is the complete block map — operations, signature and all — as a
+	// value model. It is the block's structure in full; the fields above are
+	// the summary a reader wants at a glance.
+	Value Value `json:"value"`
+	// SigningBytes is dCBOR(block without "sig"); SigningInput is
+	// "dialog-v1-block" || SigningBytes, the byte string Ed25519 signs
+	// (spec/04-cryptography.md, "Signing procedure").
+	SigningBytes string `json:"signing_bytes"`
+	SigningInput string `json:"signing_input"`
+	Signature    string `json:"signature"`
+	Block        string `json:"block"`
+	Digest       string `json:"digest"`
+	CID          string `json:"cid"`
+	CIDText      string `json:"cid_text"`
+}
+
+// A ForkCase names two blocks of one chain that share a prev — the condition
+// rule 9 requires a node to detect.
+type ForkCase struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Rule        string   `json:"rule"`
+	Author      string   `json:"author"`
+	Prev        string   `json:"prev"`
+	Blocks      []string `json:"blocks"`
+}
+
+// PrivacyInputs is the inputs block of vectors/privacy.json: every byte the
+// private-block cases are derived from.
+type PrivacyInputs struct {
+	Note string `json:"note"`
+	// Keys are the author, the recipient and a third party who holds no key
+	// to this chain.
+	Keys []KeyCase `json:"keys"`
+	// ContentKey is the chain's symmetric key, 32 bytes.
+	ContentKey string `json:"content_key"`
+	// BlockNonce is the 24-byte XChaCha20 nonce of the sealed block, and
+	// WrapNonce the 24-byte nonce of the key wrap.
+	BlockNonce string `json:"block_nonce"`
+	WrapNonce  string `json:"wrap_nonce"`
+}
+
+// A PrivacyCase is one named byte string of the private-block path, with the
+// dCBOR value behind it where it has one.
+type PrivacyCase struct {
+	Name  string `json:"name"`
+	Note  string `json:"note,omitempty"`
+	Value *Value `json:"value,omitempty"`
+	Hex   string `json:"hex"`
+}
+
+// An X25519Case is the conversion of one Ed25519 identity to the X25519
+// key agreement (spec/04-cryptography.md, "Ed25519-to-X25519 conversion").
+type X25519Case struct {
+	Name             string `json:"name"`
+	Note             string `json:"note,omitempty"`
+	Seed             string `json:"seed"`
+	Ed25519PublicKey string `json:"ed25519_public_key"`
+	X25519PrivateKey string `json:"x25519_private_key"`
+	X25519PublicKey  string `json:"x25519_public_key"`
+}
+
+// A WrapCase is one per-recipient key wrap: the agreement it rests on, the
+// key HKDF derives from it, and the 72 bytes that travel.
+type WrapCase struct {
+	Name string `json:"name"`
+	Note string `json:"note,omitempty"`
+	// Own is the party doing the wrapping and Peer the other end, by key name.
+	Own  string `json:"own"`
+	Peer string `json:"peer"`
+	// SharedSecret is the raw X25519 agreement, Info the HKDF info string,
+	// and WrappingKey the 32 bytes HKDF-SHA-256 produces from them.
+	SharedSecret string `json:"shared_secret"`
+	Info         string `json:"info"`
+	WrappingKey  string `json:"wrapping_key"`
+	// Nonce is the wrap's 24-byte nonce and WrappedKey the 72-byte result:
+	// nonce || ciphertext || tag.
+	Nonce      string `json:"nonce"`
+	WrappedKey string `json:"wrapped_key"`
+}
