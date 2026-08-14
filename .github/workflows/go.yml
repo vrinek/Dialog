@@ -1,0 +1,82 @@
+name: Go
+
+# The Go reference implementation and the conformance vectors it generates.
+# The PDF pipeline is a separate workflow (build-and-release.yml) and is not
+# affected by anything here.
+on:
+  push:
+    branches:
+      - '**'
+    # Go module releases are tagged go/vX.Y.Z (a subdirectory module needs the
+    # directory prefix for `go get` to resolve it). Building the tag proves the
+    # module is sound before anyone depends on it.
+    tags:
+      - 'go/v[0-9]+.[0-9]+.[0-9]+*'
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same ref makes the previous run's answer irrelevant.
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: go
+
+jobs:
+  check:
+    name: Build, vet, test, vectors
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # The module's own go directive is the single source of truth for the
+          # toolchain version; nothing here has to be updated to move it.
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Check formatting
+        # gofmt -l exits 0 whether or not it found anything, so the file list
+        # is the failure signal and has to be tested for emptiness.
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean; run 'gofmt -w .' in go/"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Check go.mod tidiness
+        run: go mod tidy -diff
+
+      - name: Regenerate the conformance vectors
+        run: go run ./cmd/genvectors
+
+      - name: Check the conformance vectors are current
+        working-directory: .
+        run: |
+          if ! git diff --exit-code vectors/; then
+            echo "::error::vectors/ does not match what the implementation produces."
+            echo "Run 'cd go && go run ./cmd/genvectors' and commit the result."
+            echo "Review that diff as a breaking change: these bytes are the interop"
+            echo "contract, and every implementation that matched the old ones is"
+            echo "broken by the new ones."
+            exit 1
+          fi

@@ -4,8 +4,14 @@ on:
   push:
     branches:
       - '**'
+    # Specification releases are tagged vX.Y.Z; the Go module is tagged
+    # go/vX.Y.Z, which a pattern anchored at "v" cannot match (a filter
+    # pattern's * does not cross a /). The exclusion says so explicitly: a Go
+    # module release is not a specification release and MUST NOT publish a PDF
+    # under its tag name.
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - '!go/**'
   workflow_dispatch:
 
 env:
