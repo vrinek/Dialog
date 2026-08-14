@@ -13,6 +13,12 @@ spec/           # Protocol specification documents (Markdown)
   04-cryptography.md     # Ed25519, X25519, encryption
   05-processing-model.md   # L1/L2/L3 architecture
   06-meta-bonds.md       # Standard meta-bond library
+go/                      # Go reference implementation (module github.com/vrinek/Dialog/go)
+  dcbor/ cid/ entity/ block/ privacy/   # the protocol, one package per layer
+  cmd/genvectors/        # writes the conformance vectors to vectors/
+  internal/              # the vector generator and its JSON schema
+  conformance_test.go    # checks the implementation against committed vectors/
+vectors/                 # Conformance test vectors (generated, language-agnostic)
 docs/
   brainstorms/           # Design decision records
   plans/                 # Implementation plans
@@ -22,17 +28,44 @@ todos/                   # Pending spec fixes (numbered)
 
 ## Build/Test Commands
 
-This is a documentation project. No build/test commands exist yet.
+The specification is prose and needs no build. The Go reference implementation
+in `go/` does. Run all three from `go/`, and all three before every commit:
 
-When implementing reference code in the future:
-- Run linting before committing
-- Run full test suite before committing
+```bash
+nix shell nixpkgs#go --command gofmt -l .        # must print nothing
+nix shell nixpkgs#go --command go vet ./...
+nix shell nixpkgs#go --command go test -count=1 ./...
+```
 
-## Code Style Guidelines (For Future Implementation)
+Go is not installed system-wide; `nix shell nixpkgs#go --command` is how it is
+invoked. The toolchain version comes from `go/go.mod`.
+
+The PDF is built with `./build-pdf.sh` (needs pandoc and chromium) and the HTML
+with `./build-html.sh`; both take an optional `--version vX.Y.Z`.
+
+### Conformance vectors
+
+`vectors/` holds the conformance test vectors: the canonical bytes, digests,
+CIDs, signatures and ciphertexts that every implementation must reproduce. They
+are generated, never hand-edited:
+
+```bash
+cd go && nix shell nixpkgs#go --command go run ./cmd/genvectors
+```
+
+**Any change that alters canonical bytes MUST regenerate `vectors/`, and the
+resulting diff MUST be reviewed as a breaking-change signal.** A diff there
+means every implementation that matched the old bytes is now wrong. If a change
+was not meant to move any byte and the diff is non-empty, the change is a bug,
+not the vectors. `go test ./...` fails when the two drift apart, and so does
+CI.
+
+## Code Style Guidelines
 
 ### Language & Framework
-- Protocol is language-agnostic
-- Reference implementations: TBD
+- Protocol is language-agnostic; the specification is normative, not the code
+- Reference implementation: Go, in `go/` (Go 1.24, module `github.com/vrinek/Dialog/go`)
+- Dependencies: standard library plus `golang.org/x/crypto`; the CBOR codec is hand-rolled on purpose
 - Prefer deterministic, widely-supported languages for reference code
 
 ### Specification Writing Style
@@ -65,8 +98,8 @@ When implementing reference code in the future:
 - Link to other spec docs: `[01-data-model.md](01-data-model.md)`
 - Link to external RFCs: `[RFC 2119](https://...)`
 
-### Error Handling (For Future Code)
-- Validation errors: Clear, actionable messages
+### Error Handling
+- Validation errors: Clear, actionable messages naming the rule that failed
 - Content addressing failures: Distinguish encoding vs hashing errors
 - Cryptographic failures: Fail secure, don't leak partial state
 
@@ -76,6 +109,10 @@ When implementing reference code in the future:
 - Co-authored commits: Include `Co-Authored-By: Claude...` when appropriate
 - Spec changes: Update version and status headers
 - TODOs: Create numbered files in `todos/` directory
+- Releases: tag **twice** at the same commit — `vX.Y.Z` for the spec and its
+  PDF, `go/vX.Y.Z` for the Go module. A subdirectory module resolves for
+  `go get` only through a tag carrying its directory prefix, so a bare
+  `vX.Y.Z` releases nothing to Go users. See README, "Releases"
 
 ## Writing New Spec Sections
 
@@ -87,7 +124,12 @@ When implementing reference code in the future:
 
 ## When Adding Code
 
-1. Add appropriate build/lint/test commands to this file
-2. Follow existing code style in the codebase
-3. Use CBOR libraries that support dCBOR deterministic encoding
-4. Implement content-addressing exactly per spec
+1. Follow existing code style in the codebase; document each type and function
+   with the spec section it implements
+2. Implement content-addressing exactly per spec — bytes first, then digest,
+   then CID
+3. Encode with the `dcbor` package; a general-purpose CBOR library does not
+   implement Dialog's profile and MUST NOT be substituted for it
+4. Cover the new behaviour with tests, and add a conformance vector if it fixes
+   bytes another implementation would have to reproduce
+5. Keep this file's commands accurate if the toolchain changes
