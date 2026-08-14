@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("\xa2htemplatex\x19_A_ is the capital of _B_kdescriptionfFrance")

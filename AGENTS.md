@@ -45,8 +45,36 @@ runs on comes from `go/go.mod`, whose `toolchain go1.26.6` directive makes the
 default). Nothing has to be installed for that to work, and CI's `setup-go`
 reads the same file, so `go/go.mod` is the one place the version is written.
 
+CI runs the suite as `go test -count=1 -race -shuffle=on ./...`. `-race` needs
+a C compiler, which the nix shell above does not have; add one when you want to
+reproduce a CI failure locally:
+
+```bash
+CGO_ENABLED=1 nix shell nixpkgs#go nixpkgs#gcc --command go test -race -shuffle=on ./...
+```
+
 The PDF is built with `./build-pdf.sh` (needs pandoc and chromium) and the HTML
 with `./build-html.sh`; both take an optional `--version vX.Y.Z`.
+
+### Fuzzing
+
+Six fuzz targets cover the decoders — `dcbor`, `entity` (two), `block` and
+`privacy` (two). A plain `go test` replays their committed corpus in
+milliseconds and nothing more; actual fuzzing happens nightly in
+`.github/workflows/fuzz.yml`, ten minutes per target. To fuzz one locally
+(`-fuzz` takes a pattern that must match exactly one target):
+
+```bash
+nix shell nixpkgs#go --command go test -run '^$' -fuzz '^FuzzRoundTrip$' -fuzztime=3m ./dcbor/
+```
+
+Seeds live both in `f.Add` calls and in `go/<pkg>/testdata/fuzz/<Target>/`,
+which is committed. Put an input there when it is one the fuzzer cannot build
+for itself — anything needing a valid signature, or a structure past a CBOR
+head-size boundary — and always when the fuzzer finds a crasher: commit the
+minimised input under that directory with a name saying which rule it broke, so
+every later run replays it as a regression test. The generated corpus in the
+build cache is not committed and is not interesting.
 
 ### Development tools
 

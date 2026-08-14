@@ -15,6 +15,11 @@ import (
 //
 // The seeds are a valid block of each type plus a handful of near misses, so
 // the fuzzer starts next to the boundaries rather than in random noise.
+//
+// testdata/fuzz/FuzzDecodeBlock/ adds a signed public block with 24 refs, one
+// past what a one-byte array head holds. A fuzzer cannot forge a signature, so
+// every byte past the signature check has to arrive as a seed; this is the
+// only way the refs-length boundary is reached at all.
 func FuzzDecodeBlock(f *testing.F) {
 	author, err := NewBuilder(testKey(f, 1))
 	if err != nil {

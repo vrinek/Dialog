@@ -11,6 +11,13 @@ import (
 // addressing depends on: every byte string Decode accepts is the only
 // encoding of the value it decodes to, so re-encoding it must reproduce it
 // byte for byte.
+//
+// testdata/fuzz/FuzzRoundTrip/ holds two seeds that no amount of mutation
+// would assemble: an array nested exactly at MaxDepth, and a 24-entry map —
+// one past the largest count a one-byte head can hold — whose keys come in two
+// lengths, so that key ordering is exercised where the encoded head changes
+// size. Anything the nightly job finds belongs there too, named for the rule
+// it broke.
 func FuzzRoundTrip(f *testing.F) {
 	for _, tc := range allTables() {
 		b, err := hex.DecodeString(strings.ReplaceAll(tc.hex, " ", ""))

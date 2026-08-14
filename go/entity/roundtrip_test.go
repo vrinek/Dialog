@@ -115,6 +115,11 @@ func TestRoundTripMolecules(t *testing.T) {
 // makes a molecule's digest well defined. If re-encoding a decoded molecule
 // could differ from its input, two implementations could compute different
 // identifiers for the same bytes.
+//
+// The seeds here are random molecules of up to four fillers.
+// testdata/fuzz/FuzzDecodeMolecule/ adds the one shape they cannot reach: 24
+// fillers, one past the count a one-byte array head can carry, covering all
+// five filler types in a single value.
 func FuzzDecodeMolecule(f *testing.F) {
 	rng := rand.New(rand.NewSource(1))
 	for i := 0; i < 32; i++ {
@@ -144,6 +149,13 @@ func FuzzDecodeMolecule(f *testing.F) {
 
 // FuzzDecodeAtomAndBond asserts the same canonical-form property for the two
 // single-field entities, and that neither accepts the other's encoding.
+//
+// testdata/fuzz/FuzzDecodeAtomAndBond/ holds the two inputs that matter most
+// to that second claim and that mutation will not stumble on: a canonical map
+// carrying both "description" and "template" — the exact shape that would
+// decode as an atom and a bond at once if either decoder were lax about extra
+// keys — and an atom whose description is multi-byte UTF-8 with a combining
+// sequence, which the decoder must accept and must not normalise.
 func FuzzDecodeAtomAndBond(f *testing.F) {
 	f.Add(MustAtom("France").Bytes())
 	f.Add(MustBond("_A_ is the capital of _B_").Bytes())
