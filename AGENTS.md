@@ -29,12 +29,13 @@ todos/                   # Pending spec fixes (numbered)
 ## Build/Test Commands
 
 The specification is prose and needs no build. The Go reference implementation
-in `go/` does. Run all three from `go/`, and all three before every commit:
+in `go/` does. Run all four from `go/`, and all four before every commit:
 
 ```bash
 nix shell nixpkgs#go --command gofmt -l .        # must print nothing
 nix shell nixpkgs#go --command go vet ./...
 nix shell nixpkgs#go --command go test -count=1 ./...
+nix shell nixpkgs#go --command go tool -modfile=tools.go.mod golangci-lint run
 ```
 
 Go is not installed system-wide; `nix shell nixpkgs#go --command` is how it is
@@ -46,6 +47,33 @@ reads the same file, so `go/go.mod` is the one place the version is written.
 
 The PDF is built with `./build-pdf.sh` (needs pandoc and chromium) and the HTML
 with `./build-html.sh`; both take an optional `--version vX.Y.Z`.
+
+### Development tools
+
+Linters and scanners are pinned in `go/tools.go.mod`, deliberately apart from
+`go/go.mod`: the library keeps its single dependency, and nobody importing it
+resolves a linter. Run them with `go tool -modfile=tools.go.mod <name>` from
+`go/`:
+
+```bash
+nix shell nixpkgs#go --command go tool -modfile=tools.go.mod golangci-lint run
+nix shell nixpkgs#go --command go tool -modfile=tools.go.mod govulncheck ./...
+```
+
+The first run of either builds the tool from source and takes a minute; after
+that it is cached. Do not install these from nixpkgs — its golangci-lint lags
+several minor versions behind and would disagree with CI about what is a
+finding. `tools.go.mod` is the pin, and CI uses exactly the same command.
+Add or move a tool with:
+
+```bash
+nix shell nixpkgs#go --command go get -tool -modfile=tools.go.mod <pkg>@<version>
+```
+
+`go/.golangci.yml` configures the linters, including a determinism guard: a
+gocritic ruleguard rule (`go/ruleguard/rules.go`) that rejects `range` over a
+map in non-test protocol code, because map iteration order is randomised and
+canonical bytes MUST NOT depend on it.
 
 ### Conformance vectors
 
