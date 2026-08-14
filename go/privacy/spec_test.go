@@ -10,6 +10,7 @@ import (
 
 	"github.com/vrinek/Dialog/go/block"
 	"github.com/vrinek/Dialog/go/cid"
+	"github.com/vrinek/Dialog/go/internal/vectorfile"
 )
 
 // The worked example of spec/04-cryptography.md, "Encrypting a private block",
@@ -160,151 +161,298 @@ func TestSpecPrivateBlockShape(t *testing.T) {
 	}
 }
 
-// The conformance vectors. Every input is fixed: the author's Ed25519 seed is
-// 32 bytes of 0x01, the recipients' 0x02 and 0x03, the content key is 32 bytes
-// of 0x11, the block nonce is 24 bytes of 0x33 and the key-wrap nonces 24 bytes
-// of 0x22. The payload is the one spec/04's example encrypts.
+// The conformance vectors live in vectors/privacy.json, not in this file.
+//
+// They were once constants here, and a copy in each place is a copy that can
+// drift: the vector set is generated from this package (cmd/genvectors), and
+// this test verifies this package, so a divergence between the two would mean
+// one of them silently stopped describing the protocol. There is therefore
+// exactly one copy of every byte — the committed file — and this test reads
+// it. Regenerate with `go run ./cmd/genvectors` and review the diff.
+//
+// Every input is fixed and comes from the file's inputs section: the author's
+// Ed25519 seed is 32 bytes of 0x01, the recipient's 0x02 and the third
+// party's 0x03, the content key is 32 bytes of 0x11, the block nonce 24 bytes
+// of 0x33 and the key-wrap nonce 24 bytes of 0x22. The payload is the one
+// spec/04's example encrypts.
 //
 // These bytes are the interop contract: a second implementation that produces
-// them from the same inputs implements the same protocol, and one that does not
-// has found either a bug or an ambiguity worth filing.
-const (
-	// dCBOR({"refs": [], "ts": 1740067200,
-	//        "ops": [{"op": "create_atom", "description": "My private note"}]})
-	vectorPlaintextHex = "a3" +
-		"627473" + "1a67b75180" +
-		"636f7073" + "81a2626f706b6372656174655f61746f6d6b6465736372697074696f6e6f4d792070726976617465206e6f7465" +
-		"64726566" + "7380"
+// them from the same inputs implements the same protocol, and one that does
+// not has found either a bug or an ambiguity worth filing.
+const vectorsPath = "../../vectors/privacy.json"
 
-	// dCBOR({"v": 1, "type": "private", "pub": <the seed-0x01 key>, "prev": null})
-	vectorAADHex = "a4" +
-		"6176" + "01" +
-		"63707562" + "5820" + "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c" +
-		"6470726576" + "f6" +
-		"6474797065" + "6770726976617465"
+// specVectors is the committed file, indexed by case name.
+type specVectors struct {
+	inputs vectorfile.PrivacyInputs
+	bytes  map[string]vectorfile.PrivacyCase
+	x25519 map[string]vectorfile.X25519Case
+	wraps  map[string]vectorfile.WrapCase
+	block  vectorfile.BlockCase
+}
 
-	// XChaCha20-Poly1305(key: 32×0x11, nonce: 24×0x33, plaintext, aad) — the
-	// 55-byte plaintext followed by the 16-byte Poly1305 tag.
-	vectorEncHex = "19c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425" +
-		"ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841" +
-		"d9559fbcf77be720fe02305ea226863a"
+func loadSpecVectors(t testing.TB) specVectors {
+	t.Helper()
+	doc, err := vectorfile.Read(vectorsPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", vectorsPath, err)
+	}
+	inputs, err := vectorfile.DecodeInputs[vectorfile.PrivacyInputs](doc)
+	if err != nil {
+		t.Fatalf("%s: %v", vectorsPath, err)
+	}
+	v := specVectors{
+		inputs: inputs,
+		bytes:  map[string]vectorfile.PrivacyCase{},
+		x25519: map[string]vectorfile.X25519Case{},
+		wraps:  map[string]vectorfile.WrapCase{},
+	}
+	for _, name := range []string{"payload", "aead"} {
+		for _, c := range sectionCases[vectorfile.PrivacyCase](t, doc, name) {
+			v.bytes[c.Name] = c
+		}
+	}
+	for _, c := range sectionCases[vectorfile.X25519Case](t, doc, "x25519") {
+		v.x25519[c.Name] = c
+	}
+	for _, c := range sectionCases[vectorfile.WrapCase](t, doc, "key_wrap") {
+		v.wraps[c.Name] = c
+	}
+	v.block = sectionCases[vectorfile.BlockCase](t, doc, "private_block")[0]
+	return v
+}
 
-	// The remaining values are the worked example of spec/04-cryptography.md,
-	// "Wrapping a chain key", which gives every one of them in hex: the
-	// specification pins these bytes and this test is what holds the package to
-	// them.
-	//
-	// HKDF-SHA-256(salt: empty, ikm: X25519(sk₁, pk₂), info: "dialog-v1-key-wrap", 32).
-	vectorWrappingKeyHex = "657dbd5e5d21dcb81a44415ddf3a8b9f9fa44c7d832d678c9962079aa01fe68d"
+func sectionCases[T any](t testing.TB, doc vectorfile.Document, name string) []T {
+	t.Helper()
+	s, ok := doc.Section(name)
+	if !ok {
+		t.Fatalf("%s has no %q section", vectorsPath, name)
+	}
+	out, err := vectorfile.DecodeCases[T](s)
+	if err != nil {
+		t.Fatalf("%s, section %s: %v", vectorsPath, name, err)
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s, section %s is empty", vectorsPath, name)
+	}
+	return out
+}
 
-	// The content key (32×0x11) wrapped for the seed-0x02 recipient under a
-	// nonce of 24×0x22: nonce || XChaCha20-Poly1305(wrapping key, nonce, key,
-	// aad: empty), 72 bytes.
-	vectorWrappedKeyHex = "222222222222222222222222222222222222222222222222" +
-		"bdafc49fb94819665a9993f60272336caf98fd5fd4fb1b302e94cc2b5a8ccbd6" +
-		"1b25f1def2b48d225f13e64d5f0ffa90"
-)
+// hexCase returns the pinned bytes of a named case.
+func (v specVectors) hexCase(t testing.TB, name string) string {
+	t.Helper()
+	c, ok := v.bytes[name]
+	if !ok {
+		t.Fatalf("%s has no case %q", vectorsPath, name)
+	}
+	return c.Hex
+}
 
-// TestVectors pins the exact bytes this package produces for fixed inputs.
+// keyNamed rebuilds one of the file's Ed25519 identities from its seed, and
+// checks the file's own public key against it — an inconsistent vector file is
+// a bug wherever it comes from.
+func (v specVectors) keyNamed(t testing.TB, name string) ed25519.PrivateKey {
+	t.Helper()
+	for _, k := range v.inputs.Keys {
+		if k.Name != name {
+			continue
+		}
+		seed := decodeHex(t, k.Seed)
+		if len(seed) != ed25519.SeedSize {
+			t.Fatalf("%s: the %s seed is %d bytes, want %d", vectorsPath, name, len(seed), ed25519.SeedSize)
+		}
+		priv := ed25519.NewKeyFromSeed(seed)
+		pub, ok := priv.Public().(ed25519.PublicKey)
+		if !ok {
+			t.Fatalf("%s: the %s seed does not yield an Ed25519 public key", vectorsPath, name)
+		}
+		if got := hex.EncodeToString(pub); got != k.PublicKey {
+			t.Fatalf("%s: the %s public key is %s, but its seed derives %s", vectorsPath, name, k.PublicKey, got)
+		}
+		return priv
+	}
+	t.Fatalf("%s has no key named %q", vectorsPath, name)
+	return nil
+}
+
+func (v specVectors) pubNamed(t testing.TB, name string) ed25519.PublicKey {
+	t.Helper()
+	pub, ok := v.keyNamed(t, name).Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatalf("the %s key does not yield an Ed25519 public key", name)
+	}
+	return pub
+}
+
+func decodeHex(t testing.TB, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		t.Fatalf("%q is not hex: %v", s, err)
+	}
+	return b
+}
+
+// repeatedByte returns the byte a fixed nonce or key is made of, failing if
+// the input is not one byte repeated — which is what makes it reproducible
+// from a fixedRand source.
+func repeatedByte(t testing.TB, what, hexBytes string, size int) byte {
+	t.Helper()
+	b := decodeHex(t, hexBytes)
+	if len(b) != size {
+		t.Fatalf("%s is %d bytes, want %d", what, len(b), size)
+	}
+	for _, c := range b {
+		if c != b[0] {
+			t.Fatalf("%s is not a single repeated byte, so this test cannot reproduce it", what)
+		}
+	}
+	return b[0]
+}
+
+// TestVectors holds this package to the exact bytes of vectors/privacy.json.
 func TestVectors(t *testing.T) {
-	key := testContentKey(t, 0x11)
-	payload := block.Payload{TS: 1740067200, Ops: []block.Operation{block.MustCreateAtom("My private note")}}
+	v := loadSpecVectors(t)
+	author, recipient := v.keyNamed(t, "author"), v.keyNamed(t, "recipient")
 
+	key, err := ParseKey(decodeHex(t, v.inputs.ContentKey))
+	if err != nil {
+		t.Fatalf("ParseKey: %v", err)
+	}
+	blockNonce := repeatedByte(t, "the block nonce", v.inputs.BlockNonce, NonceSize)
+	wrapNonce := repeatedByte(t, "the wrap nonce", v.inputs.WrapNonce, NonceSize)
+
+	payload := samplePayload()
 	plaintext, err := payload.Encode()
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
-	if got := hex.EncodeToString(plaintext); got != vectorPlaintextHex {
-		t.Errorf("plaintext = %s, want %s", got, vectorPlaintextHex)
+	if got, want := hex.EncodeToString(plaintext), v.hexCase(t, "plaintext"); got != want {
+		t.Errorf("plaintext = %s, want %s", got, want)
 	}
 
-	h := Header{Version: block.Version, Pub: testPub(t, 1)}
+	h := Header{Version: block.Version, Pub: v.pubNamed(t, "author")}
 	aad, err := h.AAD()
 	if err != nil {
 		t.Fatalf("AAD: %v", err)
 	}
-	if got := hex.EncodeToString(aad); got != vectorAADHex {
-		t.Errorf("aad = %s, want %s", got, vectorAADHex)
+	if got, want := hex.EncodeToString(aad), v.hexCase(t, "aad_genesis"); got != want {
+		t.Errorf("aad = %s, want %s", got, want)
 	}
 
-	enc, nonce, err := Seal(h, key, payload, fixedRand(0x33))
+	enc, nonce, err := Seal(h, key, payload, fixedRand(blockNonce))
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
 	}
-	if got, want := hex.EncodeToString(nonce), "333333333333333333333333333333333333333333333333"; got != want {
+	if got, want := hex.EncodeToString(nonce), v.inputs.BlockNonce; got != want {
 		t.Errorf("nonce = %s, want %s", got, want)
 	}
-	if got := hex.EncodeToString(enc); got != vectorEncHex {
-		t.Errorf("enc = %s, want %s", got, vectorEncHex)
+	if got, want := hex.EncodeToString(enc), v.hexCase(t, "enc"); got != want {
+		t.Errorf("enc = %s, want %s", got, want)
 	}
 
-	// The wrapping key for the author (seed 0x01) and the first recipient
-	// (seed 0x02), and the wrapped content key under a nonce of 24 bytes of
-	// 0x22.
-	wrappingKey, err := WrappingKey(testKey(t, 1), testPub(t, 2))
+	// The wrapping key and the wrapped content key, for each recipient the
+	// file names.
+	for name, w := range v.wraps {
+		t.Run("wrap/"+name, func(t *testing.T) {
+			own, peer := v.keyNamed(t, w.Own), v.pubNamed(t, w.Peer)
+			if w.Info != WrapInfo {
+				t.Errorf("HKDF info = %q, want %q", w.Info, WrapInfo)
+			}
+			wrappingKey, err := WrappingKey(own, peer)
+			if err != nil {
+				t.Fatalf("WrappingKey: %v", err)
+			}
+			if got := hex.EncodeToString(wrappingKey); got != w.WrappingKey {
+				t.Errorf("wrapping key = %s, want %s", got, w.WrappingKey)
+			}
+			wrapped, err := Wrap(key, own, peer, fixedRand(wrapNonce))
+			if err != nil {
+				t.Fatalf("Wrap: %v", err)
+			}
+			if got := hex.EncodeToString(wrapped); got != w.WrappedKey {
+				t.Errorf("wrapped key = %s, want %s", got, w.WrappedKey)
+			}
+		})
+	}
+
+	// The sealed block: the ciphertext above inside a signed private block,
+	// which the recipient opens with the key they unwrapped.
+	sealed, err := SealBlock(mustBuilder(t, author), key, samplePayload(), fixedRand(blockNonce))
 	if err != nil {
-		t.Fatalf("WrappingKey: %v", err)
+		t.Fatalf("SealBlock: %v", err)
 	}
-	if got := hex.EncodeToString(wrappingKey); got != vectorWrappingKeyHex {
-		t.Errorf("wrapping key = %s, want %s", got, vectorWrappingKeyHex)
+	if got := hex.EncodeToString(sealed.Bytes()); got != v.block.Block {
+		t.Errorf("private block = %s, want %s", got, v.block.Block)
 	}
-	wrapped, err := Wrap(key, testKey(t, 1), testPub(t, 2), fixedRand(0x22))
+	if got := sealed.Digest().String(); got != v.block.Digest {
+		t.Errorf("private block digest = %s, want %s", got, v.block.Digest)
+	}
+	wrapped := decodeHex(t, v.wraps["author_to_recipient"].WrappedKey)
+	unwrapped, err := Unwrap(wrapped, recipient, v.pubNamed(t, "author"))
 	if err != nil {
-		t.Fatalf("Wrap: %v", err)
+		t.Fatalf("Unwrap: %v", err)
 	}
-	if got := hex.EncodeToString(wrapped); got != vectorWrappedKeyHex {
-		t.Errorf("wrapped key = %s, want %s", got, vectorWrappedKeyHex)
+	opened, err := Open(sealed, unwrapped)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
 	}
+	if opened.TS != payload.TS || len(opened.Ops) != len(payload.Ops) {
+		t.Errorf("the recipient opened %+v, want the sealed payload", opened)
+	}
+}
+
+func mustBuilder(t testing.TB, priv ed25519.PrivateKey) *block.Builder {
+	t.Helper()
+	b, err := block.NewBuilder(priv)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+	return b
 }
 
 // TestX25519Conversion covers the Ed25519-to-X25519 conversion the key wrap
 // rests on (spec/04-cryptography.md, "Ed25519-to-X25519 conversion").
 func TestX25519Conversion(t *testing.T) {
 	// The conversions of the worked example in spec/04-cryptography.md,
-	// "Wrapping a chain key": both halves for both parties, and the shared
+	// "Wrapping a chain key": both halves for every party, and the shared
 	// secret they agree on. These are the bytes an implementation that reads
 	// only the specification must reproduce — the private half in particular,
-	// which is SHA-512 over the seed and not the seed itself.
+	// which is SHA-512 over the seed and not the seed itself. They are read
+	// from the conformance vectors, which is where they are written down.
 	t.Run("worked example", func(t *testing.T) {
-		for _, tc := range []struct {
-			seed                  byte
-			x25519Priv, x25519Pub string
-		}{
-			{1, "58e86efb75fa4e2c410f46e16de9f6acae1a1703528651b69bc176c088bef36e",
-				"1b1b58dd50ea14b60da17b790cd02754d970c9bab864ebb3c0f3016fe51d3f57"},
-			{2, "a83c626bc9c38c8c201878ebb1d5b0b50ac40e8986c78793db1d4ef369fca14e",
-				"60346e7c911a5f6ba154129174cafe75b294ac3bbd5549632f48cec6266f8410"},
-		} {
-			priv, err := X25519PrivateFromEd25519(testKey(t, tc.seed))
+		v := loadSpecVectors(t)
+		for name, tc := range v.x25519 {
+			priv, err := X25519PrivateFromEd25519(v.keyNamed(t, name))
 			if err != nil {
-				t.Fatalf("seed %d: X25519PrivateFromEd25519: %v", tc.seed, err)
+				t.Fatalf("%s: X25519PrivateFromEd25519: %v", name, err)
 			}
-			if got := hex.EncodeToString(priv.Bytes()); got != tc.x25519Priv {
-				t.Errorf("seed %d: X25519 private key = %s, want %s", tc.seed, got, tc.x25519Priv)
+			if got := hex.EncodeToString(priv.Bytes()); got != tc.X25519PrivateKey {
+				t.Errorf("%s: X25519 private key = %s, want %s", name, got, tc.X25519PrivateKey)
 			}
-			pub, err := X25519PublicFromEd25519(testPub(t, tc.seed))
+			pub, err := X25519PublicFromEd25519(v.pubNamed(t, name))
 			if err != nil {
-				t.Fatalf("seed %d: X25519PublicFromEd25519: %v", tc.seed, err)
+				t.Fatalf("%s: X25519PublicFromEd25519: %v", name, err)
 			}
-			if got := hex.EncodeToString(pub.Bytes()); got != tc.x25519Pub {
-				t.Errorf("seed %d: X25519 public key = %s, want %s", tc.seed, got, tc.x25519Pub)
+			if got := hex.EncodeToString(pub.Bytes()); got != tc.X25519PublicKey {
+				t.Errorf("%s: X25519 public key = %s, want %s", name, got, tc.X25519PublicKey)
 			}
 		}
-		author, err := X25519PrivateFromEd25519(testKey(t, 1))
-		if err != nil {
-			t.Fatalf("X25519PrivateFromEd25519: %v", err)
-		}
-		reader, err := X25519PublicFromEd25519(testPub(t, 2))
-		if err != nil {
-			t.Fatalf("X25519PublicFromEd25519: %v", err)
-		}
-		shared, err := author.ECDH(reader)
-		if err != nil {
-			t.Fatalf("ECDH: %v", err)
-		}
-		const want = "4181d7302557342bdb6d061c4b1eebea828ecb625c3368b7111680793307220b"
-		if got := hex.EncodeToString(shared); got != want {
-			t.Errorf("shared secret = %s, want %s", got, want)
+		for name, w := range v.wraps {
+			own, err := X25519PrivateFromEd25519(v.keyNamed(t, w.Own))
+			if err != nil {
+				t.Fatalf("%s: X25519PrivateFromEd25519: %v", name, err)
+			}
+			peer, err := X25519PublicFromEd25519(v.pubNamed(t, w.Peer))
+			if err != nil {
+				t.Fatalf("%s: X25519PublicFromEd25519: %v", name, err)
+			}
+			shared, err := own.ECDH(peer)
+			if err != nil {
+				t.Fatalf("%s: ECDH: %v", name, err)
+			}
+			if got := hex.EncodeToString(shared); got != w.SharedSecret {
+				t.Errorf("%s: shared secret = %s, want %s", name, got, w.SharedSecret)
+			}
 		}
 	})
 
