@@ -60,6 +60,16 @@ L1 → L2 → L3 pipeline. L1 (block storage/validation) already exists in `go/b
    filed as `todos/049`, `050` and `051`.
 2. `go/accept` (L3): subscriptions, filtering, meta-bond application, conflict
    surfacing, queries. Spec/05 "Layer 3", spec/06 application rules.
+   — **done:** `View` built by `Build(graph, block.Source, *Subscriptions)`, a
+   pure snapshot recomputed rather than maintained; per-entity filtering; all
+   five meta-bonds read from subscribed authors' molecules only — equivalence
+   closure by union-find, truth by per-lineage latest-wins over a block-order
+   index walked from the L1 source (never `ts`), contradiction and supersession
+   with transitive chains and cycle detection; four `Conflict` kinds surfaced
+   and none resolved; every query in digest order, with the determinism guard
+   extended to cover `accept`. Todos 049, 050 and 051 ratified and applied to
+   spec/05 and spec/06 first; four new ambiguities filed as `todos/052` to
+   `055`.
 3. Docs: README architecture section gains implementation pointers; AGENTS.md
    package list; this plan marked complete.
 
