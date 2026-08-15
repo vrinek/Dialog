@@ -53,6 +53,11 @@ L1 → L2 → L3 pipeline. L1 (block storage/validation) already exists in `go/b
    idempotent re-ingestion, queries (by digest, by kind, by author, provenance),
    scenario tests from real signed blocks. Spec/05 "Accumulation rules", "No
    interpretation".
+   — **done:** `Graph` with `Ingest`/`IngestPayload` over caller-validated
+   blocks, `Authorship` records deduplicated on (author, block), every query
+   answering in digest order (the determinism guard now covers `graph`), and
+   scenario, spec-example and 100-rebuild determinism tests. Three ambiguities
+   filed as `todos/049`, `050` and `051`.
 2. `go/accept` (L3): subscriptions, filtering, meta-bond application, conflict
    surfacing, queries. Spec/05 "Layer 3", spec/06 application rules.
 3. Docs: README architecture section gains implementation pointers; AGENTS.md
