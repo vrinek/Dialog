@@ -24,8 +24,11 @@ import "github.com/quasilyte/go-ruleguard/dsl"
 //
 // So it is banned outright in the packages that produce or consume canonical
 // bytes, in the vector generator, whose output is committed and diffed, and in
-// the graph package, whose every query MUST answer in an order that does not
-// depend on the order blocks arrived in (spec/05-processing-model.md).
+// the graph and accept packages, whose every query MUST answer in an order that
+// does not depend on the order blocks arrived in (spec/05-processing-model.md).
+// L3 is where that matters most visibly: a view is rebuilt from scratch on
+// demand, so a query whose order came from a map would answer differently on two
+// rebuilds of the very same data.
 // Where iteration really is order-independent — building a set, or
 // collecting keys that are sorted immediately afterwards — say so with a
 // `//nolint:gocritic // reason` and the reason it cannot matter. Tests are
@@ -38,7 +41,7 @@ func mapIterationOrder(m dsl.Matcher) {
 		`for range $x { $*_ }`,
 	).
 		Where(m["x"].Type.Underlying().Is(`map[$_]$_`) &&
-			m.File().PkgPath.Matches(`github\.com/vrinek/Dialog/go/(dcbor|cid|entity|block|privacy|graph|internal/vectors|internal/vectorfile)$`) &&
+			m.File().PkgPath.Matches(`github\.com/vrinek/Dialog/go/(dcbor|cid|entity|block|privacy|graph|accept|internal/vectors|internal/vectorfile)$`) &&
 			!m.File().Name.Matches(`_test\.go$`)).
 		Report(`range over a map: iteration order is randomised, so canonical bytes must never depend on it (spec/03-encoding.md). Sort the keys and range over the sorted slice, or explain with //nolint:gocritic why order cannot matter here.`)
 }
