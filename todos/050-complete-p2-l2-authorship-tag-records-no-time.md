@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "050"
 tags: [specification-gap, processing-model, layer-2, layer-3, conflict-resolution]
@@ -120,10 +120,10 @@ ceiling, and say plainly at the point of use what latest-wins costs.
 
 ## Acceptance Criteria
 
-- [ ] Whether the L2 tag list is closed or a minimum is stated
-- [ ] The provenance a latest-wins strategy needs is either available at L2 or
+- [x] Whether the L2 tag list is closed or a minimum is stated
+- [x] The provenance a latest-wins strategy needs is either available at L2 or
       the strategy is qualified where it is suggested
-- [ ] The asymmetry of `ts` between key holders and other nodes is acknowledged
+- [x] The asymmetry of `ts` between key holders and other nodes is acknowledged
 
 ## Work Log
 
@@ -137,6 +137,51 @@ twice in opposite directions — the accumulation rules do not list it, the L3
 strategy menu assumes something like it. `go/graph` implements the rules as
 written and keeps no time, which means the `accept` package (L3) cannot offer
 latest-wins without a change here or a second read of L1.
+
+### 2026-08-15 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1, with the second half made normative
+rather than advisory. The tag list is a **minimum**: an implementation MAY record
+further provenance beside the two required tags, as long as no such value takes
+part in a validity decision. And latest-wins is now defined rather than merely
+mentioned — the order is the author chain's **block order**, the `prev` sequence
+from genesis to tip, recovered through the provenance tag, which names the block.
+A block's `ts` MUST NOT be used as that order: it is untrusted wall-clock
+metadata an author picks freely, and a private block keeps it inside `enc`, so an
+order built on it resolves the same conflict differently on two nodes. An
+application may still sort by timestamp; that is simply not what this
+specification means by block order.
+
+Two consequences are stated with it. Block order continues across a key rotation
+— every block of a successor chain comes after every block of the chain it
+succeeds, the two joined by the reference the successor's genesis block carries —
+and an ambiguous succession makes the order ambiguous, to be surfaced rather than
+guessed. And assertion order is defined *within one author's chain only*: two
+authors' assertions are never ordered against each other, because disagreement
+between subscribed authors is a conflict the protocol requires to be surfaced,
+not settled by an ordering.
+
+**Changes:**
+
+- `spec/05-processing-model.md`, "Accumulation rules": the tag list is a
+  minimum, with the "no effect on validity" bound and a pointer to the one L3
+  rule that needs more.
+- `spec/05-processing-model.md`, "Meta-molecule application": the latest-wins
+  bullet now points at a new "Assertion order" subsection defining block order,
+  its continuation across a rotation, the `ts` prohibition and its two reasons,
+  and the within-one-chain scope.
+- `spec/06-meta-bonds.md`, "Truth retraction": "the later assertion (by block
+  order)" now says what block order is and cross-references the new subsection.
+- `go/graph/graph.go`: doc-comment change on `Authorship` — the two tags are a
+  floor, this implementation records nothing beyond them, and block order is
+  reached through the provenance tag rather than through a stored timestamp.
+- `go/accept`: implements the rule. A per-author block-order index is built by
+  walking each subscribed author's chain in the L1 source, continuing across a
+  verified succession, and truth assertions are ordered by it and never by `ts`;
+  `TestTimestampsAreIgnored` publishes a later assertion with an earlier `ts` and
+  requires the chain position to win.
 
 ## Notes
 

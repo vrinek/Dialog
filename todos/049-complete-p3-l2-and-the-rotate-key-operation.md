@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "049"
 tags: [specification-gap, processing-model, key-rotation, layer-2]
@@ -115,8 +115,8 @@ both are about where key succession stops being L1's business.
 
 ## Acceptance Criteria
 
-- [ ] The accumulation rules say what a `rotate_key` operation contributes to L2
-- [ ] Whether a node may record processed blocks (for idempotent re-processing)
+- [x] The accumulation rules say what a `rotate_key` operation contributes to L2
+- [x] Whether a node may record processed blocks (for idempotent re-processing)
       is stated or explicitly left to the implementation
 
 ## Work Log
@@ -132,6 +132,32 @@ thing a node does at all, and whether the graph is allowed to remember that it
 did. The implementation accepts the block, records it and adds no entity, and
 its doc comment says that acting on the rotation is L1's job — a reading, not a
 rule.
+
+### 2026-08-15 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1, exactly as proposed, and Option 2 stays
+out of scope here. L2 accumulation applies to entity-creating operations only:
+`rotate_key` contributes nothing to the graph, and a node's whole response to a
+rotation block is the L1 procedure of "Chain succession (key rotation)". Nodes
+MAY record which blocks they have processed; that is bookkeeping, it is
+implementation-scoped, and it MUST NOT change what the graph contains.
+
+The L3 half of question 2 — whether a subscription follows a key succession into
+L3's filtering — is left open on purpose. It is not L2's question, and answering
+it needs the L3 filtering rules in hand, so it is filed separately as todo 055
+while implementing `go/accept`.
+
+**Changes:**
+
+- `spec/05-processing-model.md`, "Accumulation rules": two new paragraphs, one
+  saying that only the three entity-creating operations feed accumulation and
+  that a rotation block contributes nothing, one permitting a node to record the
+  blocks it has processed so that re-processing is idempotent.
+- `go/graph/graph.go`: doc-comment changes only. `Ingest` now cites the two new
+  sentences rather than reading them off `Operation.Creates`. No behaviour
+  changed — the implementation was already Option 1.
 
 ## Notes
 

@@ -57,7 +57,7 @@ Fillers:  A = molecule (type 2)
 
 Asserts that a molecule is not true according to the publishing author.
 
-**L3 semantics:** A molecule asserted as untrue by a subscribed author SHOULD be excluded or flagged in L3. If the same author previously asserted the molecule as true, the later assertion (by block order) takes precedence.
+**L3 semantics:** A molecule asserted as untrue by a subscribed author SHOULD be excluded or flagged in L3. If the same author previously asserted the molecule as true, the later assertion (by block order) takes precedence. **Block order** is the position of the publishing block in its author chain — the `prev` sequence, continuing across a key rotation into the successor chain — and never the block's self-reported `ts`; it is defined in [05-processing-model.md](05-processing-model.md), "Assertion order", which also states that the assertions of two *different* authors are not ordered against each other but conflict.
 
 #### 4. Contradiction
 

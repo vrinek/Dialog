@@ -77,6 +77,12 @@ For each valid block in L1 — that is, each block whose validation succeeded, n
    - The author's public key (from the block's `pub` field)
    - The block's CID (provenance)
 
+The two tags of step 3 are the **minimum** every entity MUST carry, not a closed list. An implementation MAY record further provenance alongside them — the block's `ts`, the block's position in its author chain, local arrival order — provided no such value takes part in a validity decision. One L3 rule depends on provenance beyond the two required tags; see "Meta-molecule application" below.
+
+Only the three entity-creating operations feed accumulation. A `rotate_key` operation creates no entity (see [02-block-format.md](02-block-format.md), "rotate_key"): step 2 has no CID to compute for it and step 3 nothing to add, so a rotation block contributes nothing to the ontology graph. A node's whole response to a rotation block is the L1 procedure of "Chain succession (key rotation)" above.
+
+A node MAY record which blocks it has already processed, so that re-processing its store is idempotent — rotation blocks and any other block that contributed no entity included. Such bookkeeping is implementation-scoped and MUST NOT change what the graph contains.
+
 L2 is append-only. Entities MUST NOT be removed or modified once added.
 
 If an entity with the same CID already exists in L2 (because the same content was published by a different author, or re-published by the same author), the new authorship record is added alongside the existing one. The entity itself is not duplicated.
@@ -149,6 +155,8 @@ Only data from subscribed authors passes from L2 to L3:
 
 Foreign chain data that was loaded into L2 for validation context is excluded from L3 unless the user independently subscribes to the foreign author.
 
+This test is uniform over every entity in L2, whatever kind of block it came from. Public and private, own chain and foreign chain, plain molecule and meta-molecule: the only question L3 asks of an entity is whether one of its authorship tags names a subscribed author. See "Private chains" below for what that means for a chain the node can decrypt.
+
 Note: Subscriptions are a cross-cutting concern. At L1, they determine which chains to fetch and store. At L3, they determine which authors' data to accept into application truth. L2 is unaffected — it accumulates all data pulled at L1 without filtering.
 
 #### Meta-molecule application
@@ -162,8 +170,18 @@ The protocol requires:
 The protocol does NOT require any specific conflict resolution strategy. Possible strategies include:
 - Flag for user intervention
 - Author priority ranking
-- Latest-wins (by timestamp or block order)
+- Latest-wins (by block order — see "Assertion order" below)
 - Application-specific logic
+
+##### Assertion order
+
+Some meta-bonds are defined in terms of one author's later statement overriding their earlier one — "If the same author previously asserted the molecule as true, the later assertion (by block order) takes precedence" ([06-meta-bonds.md](06-meta-bonds.md), "Truth retraction"). **Block order** is the position of the block a meta-molecule was published in within its author chain: the sequence the `prev` field defines, from the genesis block to the tip. It is recovered from the provenance tag of "Accumulation rules" step 3 — which names the block — together with the chain that block sits in.
+
+Block order continues across a key rotation: every block of a successor chain comes after every block of the chain it succeeds, the two being joined by the reference the successor's genesis block carries (see "Chain succession (key rotation)"). Where a succession is ambiguous, so is the order, and the node MUST surface the conflict rather than pick a successor.
+
+A block's `ts` field MUST NOT be used as this order. It is self-reported wall-clock metadata that no node verifies (see [02-block-format.md](02-block-format.md), "Security Considerations"), so an author who backdates or postdates a block would win every ordering decision; and a private block's `ts` lives inside its `enc` field, so an order built on it would resolve the same conflict differently on two nodes depending on which decryption keys each holds. An application MAY still order by timestamp as its own strategy, but that is not the ordering this specification means by "block order".
+
+Assertion order is defined **within one author's chain only**. The assertions of two different authors are not ordered against each other: disagreement between subscribed authors is a conflict, and MUST be surfaced rather than settled by an ordering.
 
 #### Application interface
 
@@ -177,7 +195,9 @@ A user MAY maintain one or more private chains (see [04-cryptography.md](04-cryp
 
 1. L1: Private blocks are stored and validated (chain structure only via `prev`, since `refs`, `ts`, and `ops` are encrypted in the `enc` field)
 2. L2: If the node holds the decryption key, the `enc` field is decrypted to recover `refs`, `ts`, and `ops`, and the operations are added to the graph. If not, the block is opaque.
-3. L3: Private chain data from the user's own chain is included in L3 (the user always "subscribes" to their own chains).
+3. L3: Private chain data is filtered exactly as any other data is — an entity is included when one of its authorship tags names a subscribed author (see "Filtering rules"). A private block carries its author's key in the clear, in its `pub` field, so the test is the same one and needs no special case. A user is always considered subscribed to the chains signed by a key they hold, which is what makes their own private chains unconditional: that is an instance of the filtering rule, not a mechanism beside it.
+
+Decryption capability and subscription are orthogonal. An author MAY wrap a private chain's content key for another reader (see [04-cryptography.md](04-cryptography.md), "Key management"); that reader can then decrypt the chain's blocks at L2 and still not see its entities at L3, because a content key is a capability to read, not a declaration to accept. A reader who wants an author's private data in their L3 subscribes to that author, exactly as they would for public data. An author therefore cannot push data into a reader's truth by handing over a key, and a reader who loses interest unsubscribes without having to surrender anything.
 
 ## Security Considerations
 

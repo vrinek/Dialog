@@ -130,6 +130,14 @@ type Entity interface {
 // One entity may carry many: the same content published by a different author,
 // or re-published by the same author in a later block, adds a record rather than
 // a second entity.
+//
+// Those two tags are "the minimum every entity MUST carry, not a closed list";
+// an implementation MAY record further provenance beside them. This one records
+// nothing more — in particular no timestamp, an untrusted, author-chosen field
+// that a private block keeps inside its ciphertext. What the one L3 rule that
+// needs more than the two tags asks for is block order, and the provenance tag
+// is what yields it: the block it names has a position in its author's chain
+// (spec/05-processing-model.md, "Accumulation rules" and "Assertion order").
 type Authorship struct {
 	// Author is the raw 32-byte Ed25519 public key of the block's pub field.
 	Author ed25519.PublicKey
@@ -312,12 +320,18 @@ var ErrPayloadMismatch = errors.New("graph: this block has already been ingested
 // this method validates nothing, and a block that is stored but unvalidated MUST
 // NOT reach it.
 //
-// Ingesting the same block twice is a no-op. A rotation block carries a single
-// rotate_key operation, which creates no entity (spec/02-block-format.md,
-// "rotate_key"): ingesting one records the block, so that a re-ingestion is
-// still a no-op, and adds nothing to the graph. Acting on the rotation — marking
-// the old key inactive, following the succession — is L1's business
-// (spec/05-processing-model.md, "Chain succession"), not L2's.
+// Ingesting the same block twice is a no-op: "A node MAY record which blocks it
+// has already processed, so that re-processing its store is idempotent"
+// (spec/05-processing-model.md, "Accumulation rules"). The record is bookkeeping
+// and changes nothing about what the graph contains.
+//
+// A rotation block carries a single rotate_key operation, which creates no
+// entity (spec/02-block-format.md, "rotate_key"), so ingesting one records the
+// block and adds nothing to the graph: "a rotation block contributes nothing to
+// the ontology graph. A node's whole response to a rotation block is the L1
+// procedure of 'Chain succession (key rotation)'" (spec/05-processing-model.md,
+// "Accumulation rules"). Marking the old key inactive and following the
+// succession are that L1 procedure, not L2's business.
 //
 // A private block is refused with ErrPayloadRequired; use IngestPayload.
 func (g *Graph) Ingest(b *block.Block) error {

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "051"
 tags: [specification-gap, processing-model, privacy, subscriptions, layer-3]
@@ -125,9 +125,9 @@ to read, not a declaration to accept.
 
 ## Acceptance Criteria
 
-- [ ] The L3 rule covers a private chain the node can decrypt but did not write
-- [ ] "The user's own chain" is defined
-- [ ] Whether holding a content key implies an author subscription is stated
+- [x] The L3 rule covers a private chain the node can decrypt but did not write
+- [x] "The user's own chain" is defined
+- [x] Whether holding a content key implies an author subscription is stated
 
 ## Work Log
 
@@ -140,6 +140,36 @@ plaintext field of a private block, so the authorship tag is the same whoever
 decrypted it — but the question is unavoidable one layer up, and the `accept`
 package will have to pick a reading. Filed before that happens so the pick is
 recorded as a pick.
+
+### 2026-08-15 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. Decryption capability and subscription are
+orthogonal. Holding a private chain's content key does not imply that the chain's
+author is subscribed; L3 inclusion follows the author-subscription rule
+uniformly, over public and private data alike, and "the user always subscribes to
+their own chains" is a *special case of that rule* rather than a second mechanism
+beside it. A user's own chain is one signed by a key they hold. A content key is
+a capability to read, not a declaration to accept — so an author cannot push data
+into a reader's truth by wrapping a key for them, and a reader who wants that data
+in L3 subscribes to the author exactly as for public data.
+
+**Changes:**
+
+- `spec/05-processing-model.md`, "Filtering rules": a paragraph making the test
+  explicitly uniform — public or private, own chain or foreign, plain molecule or
+  meta-molecule, the only question is whether an authorship tag names a
+  subscribed author.
+- `spec/05-processing-model.md`, "Private chains", step 3: rewritten in those
+  terms, with "own chain" defined as one signed by a key the user holds, followed
+  by a paragraph stating the orthogonality of decryption and subscription.
+- `go/accept`: filtering asks the subscription set and nothing else.
+  `Subscriptions.SubscribeOwn` marks a key as the user's own, which subscribes it
+  — the flag records why the subscription exists and no query consults it for
+  inclusion. `TestPrivateChainNeedsASubscription` gives a reader the content key
+  of a chain they did not write and requires the decrypted entities to stay out
+  of their view until they subscribe to its author.
 
 ## Notes
 
