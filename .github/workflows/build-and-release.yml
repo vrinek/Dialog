@@ -130,9 +130,12 @@ jobs:
           PDF_FILENAME: ${{ steps.vars.outputs.PDF_FILENAME }}
         run: |
           cd ./artifacts
-          # The artifact is downloaded with the original filename from the build
-          # Rename it to include version for the release upload
-          mv ./*.pdf "$PDF_FILENAME"
+          # The build job may already emit the versioned filename; rename only
+          # when the downloaded artifact's name differs, so both cases work.
+          for f in ./*.pdf; do
+            [ "$f" = "./$PDF_FILENAME" ] || mv "$f" "$PDF_FILENAME"
+          done
+          test -f "$PDF_FILENAME"
 
       - name: Create/Update Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
