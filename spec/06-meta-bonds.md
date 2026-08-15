@@ -37,6 +37,8 @@ Declares transitive equivalence between two entities of the same type. Both fill
 
 **L3 semantics:** Implementations SHOULD treat equivalent entities as interchangeable when querying L3. The specific deduplication strategy (merge, prefer one, show both) is implementation-scoped.
 
+*Informative.* The reference implementation reads "interchangeable" at its word, and applies it to the other four meta-bonds as well: a truth assertion, a truth retraction, a contradiction or a supersession naming any member of an equivalence class is read as a statement about the whole class. The class, rather than the individual molecule, is what carries a truth state, what a supersession marks as replaced, and what a contradiction is surfaced between. The reasoning is that entities declared the same say the same thing, so a statement about one of them is a statement about all of them; the cost is that a subscribed author's equivalence redirects other authors' assertions onto molecules those authors never named, which is what "Security Considerations", "Equivalence attacks", is about and what subscription filtering bounds. Other strategies remain conformant — in particular, keeping every assertion attached to the entity actually named and exposing the class so that an application can widen the query itself. Whichever is chosen, a class whose members are asserted true by one subscribed author and untrue by another is a disagreement to surface under "Conflict handling" below, exactly as a single molecule in that position would be.
+
 #### 2. Truth assertion
 
 ```
