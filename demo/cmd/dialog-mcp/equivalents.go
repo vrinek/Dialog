@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/vrinek/Dialog/go/entity"
 )
 
 // equivalentsInput is the argument set of dialog_equivalents.
@@ -16,11 +15,11 @@ type equivalentsInput struct {
 
 // equivalentsOutput is what dialog_equivalents returns as structured content.
 type equivalentsOutput struct {
-	Entity     entityRef   `json:"entity"`
-	Size       int         `json:"size"`
-	Class      []entityRef `json:"class"`
-	DeclaredBy []entityRef `json:"declared_by,omitempty"`
-	Subscribed []string    `json:"subscribed"`
+	Entity     entityRef        `json:"entity"`
+	Size       int              `json:"size"`
+	Class      []entityRef      `json:"class"`
+	DeclaredBy []declarationOut `json:"declared_by,omitempty"`
+	Subscribed []string         `json:"subscribed"`
 }
 
 // Equivalents answers the question a name raises: is this the same thing under
@@ -44,11 +43,8 @@ func (s *Server) Equivalents(_ context.Context, _ *mcp.CallToolRequest, in equiv
 		Entity:     s.ref(v, d),
 		Size:       len(class),
 		Class:      s.refs(v, class),
+		DeclaredBy: s.declarations(v, v.EquivalenceDeclarations(d)),
 		Subscribed: subs,
-	}
-	if len(class) > 1 {
-		out.DeclaredBy = s.refs(v,
-			s.metaDeclarations(v, entity.MetaBondEquivalence.Digest(), class))
 	}
 
 	return text(s.equivalentsText(out)), out, nil
@@ -74,13 +70,7 @@ func (s *Server) equivalentsText(out equivalentsOutput) string {
 	for i, r := range out.Class {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, r.line())
 	}
-	if len(out.DeclaredBy) > 0 {
-		b.WriteString("\nDeclared by:\n")
-		for _, r := range out.DeclaredBy {
-			fmt.Fprintf(&b, "  - «%s»\n    published by %s\n    digest %s\n",
-				r.Text, joinNames(r.Authors), r.Digest)
-		}
-	}
+	writeDeclarations(&b, "Declared by:", out.DeclaredBy)
 	b.WriteString("\nNothing is merged away: every member keeps its own digest and its own " +
 		"authorship, and the class is what carries a truth state.\n")
 	return b.String()

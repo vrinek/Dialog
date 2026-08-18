@@ -38,20 +38,10 @@ import (
 type Server struct {
 	node     *replay.Node
 	renderer *render.Renderer
-	blocks   map[cid.Digest]blockRef
 
 	mu   sync.RWMutex
 	subs []string
 	view *accept.View
-}
-
-// A blockRef is where a block sits in its author's chain: what an assertion's
-// provenance tag means once it is read as a position rather than 32 bytes
-// (spec/05-processing-model.md, "Assertion order").
-type blockRef struct {
-	Author string
-	Height int // 1-based, genesis first
-	Of     int // the chain's length
 }
 
 // NewServer replays nothing: it takes a node that is already loaded and starts
@@ -64,13 +54,7 @@ func NewServer(n *replay.Node) (*Server, error) {
 	s := &Server{
 		node:     n,
 		renderer: render.New(n.Graph),
-		blocks:   make(map[cid.Digest]blockRef),
 		subs:     n.Authors(),
-	}
-	for _, c := range n.Chains {
-		for i, b := range c.Blocks {
-			s.blocks[b.Digest()] = blockRef{Author: c.Author, Height: i + 1, Of: len(c.Blocks)}
-		}
 	}
 	v, err := n.View(s.subs...)
 	if err != nil {
@@ -188,11 +172,44 @@ func (s *Server) authorNames(pubs []ed25519.PublicKey) []string {
 // blockLabel places a block in its author's chain. The provenance tag L2 keeps
 // is a digest; the position is what makes "later" mean anything, and it is what
 // a reader wants to be told.
-func (s *Server) blockLabel(d cid.Digest) string {
-	if b, ok := s.blocks[d]; ok {
-		return fmt.Sprintf("%s block %d of %d", b.Author, b.Height, b.Of)
+//
+// The view is what places it: L3 walks the chains to decide which assertion is
+// later and reports where it walked to (accept.View.BlockPosition), so the
+// position quoted here is the one the answer was decided by rather than a
+// second index that might disagree. A block the view never had a reason to read
+// — one whose entities this subscription set filters out — has no position, and
+// saying so is more honest than inventing one.
+func (s *Server) blockLabel(v *accept.View, d cid.Digest) string {
+	pos, ok := v.BlockPosition(d)
+	if !ok {
+		return "a block this view does not place (" + render.Short(d) + ")"
 	}
-	return "a block outside the demo (" + render.Short(d) + ")"
+	if !subscribedTo(v, pos.Author) {
+		// A view reads an unsubscribed author's chain only as far as some
+		// entity it does admit was published in — an entity a subscribed
+		// author published too, usually — so it knows where the block sits
+		// and not how long the chain is. The height is still theirs; the
+		// total would be this view's ignorance reported as a fact.
+		return fmt.Sprintf("%s block %d", s.authorName(pos.Author), pos.Height+1)
+	}
+	return s.positionLabel(pos)
+}
+
+// subscribedTo reports whether a view admits an author's entities, which is
+// what decides whether it has seen enough of their chain to say how long it is.
+func subscribedTo(v *accept.View, author ed25519.PublicKey) bool {
+	for _, k := range v.Subscriptions() {
+		if k.Equal(author) {
+			return true
+		}
+	}
+	return false
+}
+
+// positionLabel renders a chain position the way a sentence wants it: "atlas
+// block 4 of 6". accept counts from zero and people count from one.
+func (s *Server) positionLabel(p accept.ChainPosition) string {
+	return fmt.Sprintf("%s block %d of %d", s.authorName(p.Author), p.Height+1, p.Length)
 }
 
 // An entityRef is how every response names an entity: what it is, what it says,
@@ -343,40 +360,68 @@ func (s *Server) resolveAuthors(names []string) ([]string, error) {
 	return out, nil
 }
 
-// metaDeclarations finds the in-view meta-molecules of one standard meta-bond
-// whose fillers all name entities in the given set — the equivalences that put
-// an equivalence class together, or the supersession that replaced one molecule
-// with another.
+// A declarationOut is one applied meta-molecule reported as the record it is:
+// the molecule that declared a reading, and the subscribed authors who still
+// stand behind it, each placed in their own chain.
 //
-// L3 applies these readings and does not report which meta-molecule produced
-// which reading: View.Assertions gives the record for the truth meta-bonds and
-// Conflict.Meta gives it for a surfaced contradiction, but an equivalence class
-// and a supersession edge arrive unattributed. So the application scans for
-// them, which is this function, and which is filed as todos/067.
-func (s *Server) metaDeclarations(v *accept.View, metaBond cid.Digest, members []cid.Digest) []cid.Digest {
-	withdrawn := v.WithdrawnMetaMolecules()
-	var out []cid.Digest
-	for _, d := range v.DigestsOfKind(block.KindMolecule) {
-		e, ok := v.Lookup(d)
-		if !ok {
-			continue
-		}
-		m, ok := e.Molecule()
-		if !ok || m.Bond() != metaBond || slices.Contains(withdrawn, d) {
-			continue
-		}
-		named := 0
-		for _, f := range m.Fillers() {
-			ref, ok := f.Ref()
-			if ok && slices.Contains(members, ref) {
-				named++
-			}
-		}
-		if named == len(m.Fillers()) && named > 0 {
-			out = append(out, d)
-		}
+// This is what makes an answer attributable rather than authoritative. "Holland
+// and the Netherlands are the same place" is a claim by an author — gazetteer —
+// and reporting it without saying so would launder an opinion into a fact.
+type declarationOut struct {
+	Meta     entityRef    `json:"meta"`
+	Template string       `json:"template"`
+	Backing  []backingOut `json:"backing"`
+}
+
+// A backingOut is one author standing behind a declaration, and where they
+// published it. An author who has since retracted their own declaration is not
+// here: L3 drops them from the record (spec/06-meta-bonds.md, "Withdrawing
+// meta-molecules"), and a declaration every one of its authors has taken back
+// is not reported at all.
+type backingOut struct {
+	Author      string `json:"author"`
+	Block       string `json:"block"`
+	BlockDigest string `json:"block_digest"`
+}
+
+// declaration describes one of L3's declaration records against a view.
+func (s *Server) declaration(v *accept.View, d accept.Declaration) declarationOut {
+	out := declarationOut{
+		Meta:     s.ref(v, d.Meta),
+		Template: d.Template,
+	}
+	for _, b := range d.Backing {
+		out.Backing = append(out.Backing, backingOut{
+			Author:      s.authorName(b.Author),
+			Block:       s.positionLabel(b.Position),
+			BlockDigest: b.Block.String(),
+		})
 	}
 	return out
+}
+
+func (s *Server) declarations(v *accept.View, decls []accept.Declaration) []declarationOut {
+	out := make([]declarationOut, 0, len(decls))
+	for _, d := range decls {
+		out = append(out, s.declaration(v, d))
+	}
+	return out
+}
+
+// writeDeclarations renders the record behind a reading, under a heading that
+// says which reading it is.
+func writeDeclarations(b *strings.Builder, heading string, decls []declarationOut) {
+	if len(decls) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n%s\n", heading)
+	for _, d := range decls {
+		fmt.Fprintf(b, "  - «%s»\n", d.Meta.Text)
+		for _, back := range d.Backing {
+			fmt.Fprintf(b, "    declared by %s, in %s\n", back.Author, back.Block)
+		}
+		fmt.Fprintf(b, "    digest %s\n", d.Meta.Digest)
+	}
 }
 
 // joinNames renders a list the way a sentence wants it.

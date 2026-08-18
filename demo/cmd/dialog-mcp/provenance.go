@@ -78,7 +78,7 @@ func (s *Server) Provenance(_ context.Context, _ *mcp.CallToolRequest, in proven
 		out.Records = append(out.Records, provenanceRecord{
 			Author:      name,
 			Subscribed:  slices.Contains(subs, name),
-			Block:       s.blockLabel(r.Block),
+			Block:       s.blockLabel(v, r.Block),
 			BlockDigest: r.Block.String(),
 			BlockCID:    r.CID().String(),
 		})

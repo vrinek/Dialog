@@ -20,19 +20,22 @@ type truthInput struct {
 
 // truthOutput is what dialog_truth returns as structured content.
 type truthOutput struct {
-	Entity       entityRef      `json:"entity"`
-	Truth        string         `json:"truth"`
-	Assertions   []assertionOut `json:"assertions"`
-	Superseded   bool           `json:"superseded"`
-	SupersededBy []entityRef    `json:"superseded_by,omitempty"`
-	Current      []entityRef    `json:"current,omitempty"`
-	Supersedes   []entityRef    `json:"supersedes,omitempty"`
-	Contradicts  []entityRef    `json:"contradicts,omitempty"`
-	Equivalents  []entityRef    `json:"equivalents,omitempty"`
-	MetaBond     string         `json:"meta_bond,omitempty"`
-	Malformed    bool           `json:"malformed,omitempty"`
-	Withdrawn    bool           `json:"withdrawn,omitempty"`
-	Subscribed   []string       `json:"subscribed"`
+	Entity                  entityRef        `json:"entity"`
+	Truth                   string           `json:"truth"`
+	Assertions              []assertionOut   `json:"assertions"`
+	Superseded              bool             `json:"superseded"`
+	SupersededBy            []entityRef      `json:"superseded_by,omitempty"`
+	Current                 []entityRef      `json:"current,omitempty"`
+	Supersedes              []entityRef      `json:"supersedes,omitempty"`
+	SupersessionDeclaredBy  []declarationOut `json:"supersession_declared_by,omitempty"`
+	Contradicts             []entityRef      `json:"contradicts,omitempty"`
+	ContradictionDeclaredBy []declarationOut `json:"contradiction_declared_by,omitempty"`
+	Equivalents             []entityRef      `json:"equivalents,omitempty"`
+	EquivalenceDeclaredBy   []declarationOut `json:"equivalence_declared_by,omitempty"`
+	MetaBond                string           `json:"meta_bond,omitempty"`
+	Malformed               bool             `json:"malformed,omitempty"`
+	Withdrawn               bool             `json:"withdrawn,omitempty"`
+	Subscribed              []string         `json:"subscribed"`
 }
 
 // An assertionOut is one truth meta-molecule as it bears on the queried
@@ -78,9 +81,12 @@ func (s *Server) Truth(_ context.Context, _ *mcp.CallToolRequest, in truthInput)
 	if out.Superseded {
 		out.Current = s.refs(v, v.Current(d))
 	}
+	out.SupersessionDeclaredBy = s.declarations(v, v.SupersessionDeclarations(d))
 	out.Contradicts = s.refs(v, v.Contradictions(d))
+	out.ContradictionDeclaredBy = s.declarations(v, v.ContradictionDeclarations(d))
 	if class := without(v.EquivalenceClass(d), d); len(class) > 0 {
 		out.Equivalents = s.refs(v, class)
+		out.EquivalenceDeclaredBy = s.declarations(v, v.EquivalenceDeclarations(d))
 	}
 	out.MetaBond, out.Malformed, out.Withdrawn = s.metaReading(v, d)
 
@@ -91,6 +97,12 @@ func (s *Server) Truth(_ context.Context, _ *mcp.CallToolRequest, in truthInput)
 // The subject may be a different molecule: an assertion applies across an
 // equivalence class, so an author can have decided this molecule's truth
 // without ever naming it.
+//
+// The block is quoted as a position — "gazetteer block 4 of 4" — because that
+// is what decides whose word is last: "the later assertion (by block order)
+// takes precedence" (spec/06-meta-bonds.md, "Truth retraction"). L3 carries the
+// position it decided by on the assertion itself, so this renders the working
+// rather than recomputing it.
 func (s *Server) assertion(a accept.Assertion, asked cid.Digest) assertionOut {
 	says := "is true"
 	if a.Stance == accept.Retracted {
@@ -101,7 +113,7 @@ func (s *Server) assertion(a accept.Assertion, asked cid.Digest) assertionOut {
 		Stance:      a.Stance.String(),
 		Says:        says,
 		Latest:      a.Latest,
-		Block:       s.blockLabel(a.Block),
+		Block:       s.positionLabel(a.Position),
 		BlockDigest: a.Block.String(),
 		Meta:        a.Meta.String(),
 		Subject:     a.Subject.String(),
@@ -193,15 +205,18 @@ func (s *Server) truthText(out truthOutput) string {
 	for _, r := range out.Supersedes {
 		fmt.Fprintf(&b, "  It supersedes «%s» (%s).\n", r.Text, r.Digest)
 	}
+	writeDeclarations(&b, "The supersession was declared by:", out.SupersessionDeclaredBy)
 
 	if len(out.Contradicts) > 0 {
 		b.WriteString("\nDeclared to contradict:\n")
 		for _, r := range out.Contradicts {
 			fmt.Fprintf(&b, "  - «%s» (%s)\n", r.Text, r.Digest)
 		}
+		writeDeclarations(&b, "The contradiction was declared by:", out.ContradictionDeclaredBy)
 	}
 
 	writeEquivalents(&b, out)
+	writeDeclarations(&b, "The equivalence was declared by:", out.EquivalenceDeclaredBy)
 
 	if out.MetaBond != "" {
 		fmt.Fprintf(&b, "\nThis is itself a meta-molecule, on the standard bond %q.\n", out.MetaBond)

@@ -104,7 +104,7 @@ func (s *Server) conflict(v *accept.View, c accept.Conflict) conflictOut {
 		})
 	}
 	for _, d := range c.Blocks {
-		out.Blocks = append(out.Blocks, s.blockLabel(d)+" ("+d.String()+")")
+		out.Blocks = append(out.Blocks, s.blockLabel(v, d)+" ("+d.String()+")")
 	}
 	return out
 }

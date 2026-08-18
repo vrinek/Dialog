@@ -305,8 +305,23 @@ func TestTruthReportsSupersession(t *testing.T) {
 	if len(out.Current) != 1 || out.Current[0].Digest != newest.String() {
 		t.Errorf("the current version is %v, want the newest figure %s", out.Current, newest)
 	}
+
+	// The correction is attributed: who replaced this figure, and where they
+	// said so (accept.View.SupersessionDeclarations, todos/067).
+	if len(out.SupersessionDeclaredBy) != 1 {
+		t.Fatalf("the supersession is declared by %d meta-molecules, want 1",
+			len(out.SupersessionDeclaredBy))
+	}
+	backing := out.SupersessionDeclaredBy[0].Backing
+	if len(backing) != 1 || backing[0].Author != content.AuthorErrata {
+		t.Fatalf("the supersession is backed by %v, want errata alone", backing)
+	}
+	if !strings.HasPrefix(backing[0].Block, content.AuthorErrata+" block ") {
+		t.Errorf("the supersession was published in %q, want a block of errata's chain", backing[0].Block)
+	}
 	mustContain(t, "the supersession answer", resultText(t, res),
-		"36600000 people", "36621000 people", "deprecated, not deleted")
+		"36600000 people", "36621000 people", "deprecated, not deleted",
+		"declared by "+content.AuthorErrata+", in "+backing[0].Block)
 }
 
 // TestTruthReportsAWithdrawnMetaMolecule is the worked case of
@@ -493,19 +508,31 @@ func TestEquivalentsOfHolland(t *testing.T) {
 		}
 	}
 
-	// The declaration itself is named, with its author: L3 applies the reading
-	// and does not say which meta-molecule produced it, so the server finds it
-	// (see todos/067).
+	// The declaration itself is named, with the author still standing behind
+	// it and the block they published it in — accept.View.EquivalenceDeclarations,
+	// which is what todos/067 added.
 	if len(out.DeclaredBy) != 1 {
 		t.Fatalf("the class is declared by %d meta-molecules, want 1", len(out.DeclaredBy))
 	}
-	if got, want := out.DeclaredBy[0].Digest,
+	decl := out.DeclaredBy[0]
+	if got, want := decl.Meta.Digest,
 		content.AtomEquivalence("Holland", "Netherlands").Digest().String(); got != want {
 		t.Errorf("the class is declared by %s, want gazetteer's equivalence %s", got, want)
 	}
+	if decl.Template != entity.TemplateEquivalence {
+		t.Errorf("the declaration reads %q, want %q", decl.Template, entity.TemplateEquivalence)
+	}
+	if len(decl.Backing) != 1 || decl.Backing[0].Author != content.AuthorGazetteer {
+		t.Fatalf("the declaration is backed by %v, want gazetteer alone", decl.Backing)
+	}
+	if !strings.HasPrefix(decl.Backing[0].Block, content.AuthorGazetteer+" block ") {
+		t.Errorf("the declaration was published in %q, want a block of gazetteer's chain",
+			decl.Backing[0].Block)
+	}
 	mustContain(t, "the equivalents answer", body,
 		"Holland", "Netherlands", "Holland is the same as Netherlands",
-		content.AuthorAtlas, content.AuthorGazetteer, "interchangeable")
+		content.AuthorAtlas, content.AuthorGazetteer, "interchangeable",
+		"declared by "+content.AuthorGazetteer+", in "+decl.Backing[0].Block)
 
 	// An entity nobody has spoken about is a class of one, and says so.
 	res, one, err := s.Equivalents(context.Background(), nil,
