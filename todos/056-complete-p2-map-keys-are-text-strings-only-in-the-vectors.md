@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "056"
 tags: [specification-gap, encoding, dcbor, conformance-vectors]
@@ -97,9 +97,9 @@ change to the interop contract.
 
 ## Acceptance Criteria
 
-- [ ] `spec/03-encoding.md` states, normatively, that map keys are text strings
-- [ ] The two `invalid` cases cite that statement
-- [ ] A codec written from `spec/03-encoding.md` alone rejects `a10102`
+- [x] `spec/03-encoding.md` states, normatively, that map keys are text strings
+- [x] The two `invalid` cases cite that statement
+- [x] A codec written from `spec/03-encoding.md` alone rejects `a10102`
 
 ## Work Log
 
@@ -110,6 +110,30 @@ Found building the second implementation from `spec/` and `vectors/` only. The
 TypeScript decoder rejects a non-text map key with its own error class
 (`map-key-type`), which is the behaviour the vectors demand; the specification
 text it would cite does not exist.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. Map keys are text strings, stated as a
+numbered rule of the profile rather than inferred from rule 8.
+
+**Changes:**
+
+- `spec/03-encoding.md`, "Deterministic CBOR": **rule 9, "Text map keys"** —
+  every map key MUST be a text string (major type 3); encoders MUST NOT emit
+  and decoders MUST reject a key of any other major type, whether or not the
+  map's definition is known. An informative note places it as the schema-free
+  half of rule 8: rule 8 answers the question for a decoder holding a
+  definition, rule 9 for the one holding only bytes, which is the layer
+  `vectors/dcbor.json` tests and the first layer an implementer builds.
+- `vectors/dcbor.json`: `map_key_uint` and `map_key_bytes` now cite
+  "Deterministic CBOR rule 9 (text map keys)". No byte moved; the generator's
+  `ruleTextKeys` constant carries the same string.
+- `go/dcbor`: no behaviour change; `textKey` cites rule 9.
+- `ts/src/dcbor.ts`: no behaviour change; the `map-key-type` error code is
+  documented against rule 9, and the conformance suite maps the rule string to
+  it by number like every other rule.
 
 ## Notes
 

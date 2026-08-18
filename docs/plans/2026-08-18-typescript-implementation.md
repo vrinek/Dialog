@@ -60,7 +60,10 @@ by the final cross-validation phase, never read.
    of rule the vector names — and all 26 cases of `vectors/entities.json`
    re-encode, with the digest, CID and `cid_text` of all 15 entities recomputed
    from their bytes. Two gaps filed: 056 (map keys are text strings only in the
-   vectors) and 057 (no nesting bound; the codec picks 1024).
+   vectors) and 057 (no nesting bound; the codec picked 1024). Both are since
+   settled as rules 9 and 10 of spec/03-encoding.md; the bound is 64, counted
+   over containers, and `dcbor.json` grew four cases pinning it, so the counts
+   above now read 96 cases: 42 valid and 54 invalid.
 2. `entity` — every case in `vectors/entities.json`.
 3. `block` — signing, digests, structural validation; every case in
    `vectors/blocks.json` (chain, forks, invalid cases; validation rules per

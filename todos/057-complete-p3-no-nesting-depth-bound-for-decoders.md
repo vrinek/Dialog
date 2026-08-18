@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "057"
 tags: [specification-gap, encoding, dcbor, security, interoperability]
@@ -99,10 +99,10 @@ equally well; what matters is that the number is written down once.
 
 ## Acceptance Criteria
 
-- [ ] The specification states a maximum nesting depth (or states that there is
+- [x] The specification states a maximum nesting depth (or states that there is
       none and how decoders are to survive without one)
-- [ ] A conformance vector exercises the bound
-- [ ] Implementations reject over-deep input as a protocol error, never as a
+- [x] A conformance vector exercises the bound
+- [x] Implementations reject over-deep input as a protocol error, never as a
       stack overflow
 
 ## Work Log
@@ -115,6 +115,45 @@ TypeScript codec takes the defensible reading: a documented
 `MAX_NESTING_DEPTH = 1024` enforced on both encode and decode, raising a `depth`
 error. The value is a guess — the specification supplies none — so it is the one
 place this implementation could differ from another and still pass every vector.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1 with **N = 64**, not the 1024 this todo
+proposed. Protocol data needs single digits of nesting, so a tighter bound
+costs nothing and refuses more; what the number buys is that the accept/reject
+decision is identical across implementations and that a stack-exhaustion class
+disappears.
+
+The counting convention turned out to matter more than the number. Rule 10
+settles it, and both implementations conform to *that* — neither counted this
+way before:
+
+- A **container** is an array or a map. Its depth is 1 when no container
+  encloses it, one more than its enclosing container otherwise.
+- Items that are not containers add nothing; they carry the depth of the
+  container holding them.
+- A decimal fraction is **one** container: tag 4 and its two-element content
+  array together.
+
+**Changes:**
+
+- `spec/03-encoding.md`, "Deterministic CBOR": **rule 10, "Bounded nesting
+  depth"**, with the definition above and the bound of 64; an informative
+  paragraph on why a fixed number rather than an implementation's choice; a
+  security-considerations bullet on rejecting rather than recursing.
+- `go/dcbor`: `MaxDepth` was already 64 but charged a level for every item and
+  checked on entry, so 65 nested arrays passed when the innermost was empty and
+  failed when it held an integer. Encoder and decoder now count containers
+  through one `enter` helper each. No committed vector moved.
+- `ts/src/dcbor.ts`: `MAX_NESTING_DEPTH` 1024 → 64, counted the same way.
+- `vectors/dcbor.json`: `canonical/nesting_depth_64` (accepted, both
+  directions) and three `invalid` cases — `nesting_depth_65`,
+  `nesting_depth_65_decimal` (the tag 4 half of the rule) and
+  `nesting_far_beyond_the_bound` (256 levels, the stack-exhaustion case).
+  Section counts in `vectors/README.md`: canonical 25 → 26, invalid 51 → 54,
+  and `ts/test/dcbor.test.ts` asserts them.
 
 ## Notes
 
