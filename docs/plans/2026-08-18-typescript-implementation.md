@@ -53,6 +53,14 @@ by the final cross-validation phase, never read.
 1. Scaffold (`package.json`, `tsconfig.json`, lockfile) + `dcbor` + `cid`,
    passing every case in `vectors/dcbor.json` and the entity-CID parts the
    file exercises.
+   — **done:** `src/dcbor.ts` (encoder, strict decoder, `Decimal` with the tag 4
+   canonicalization rules), `src/cid.ts` (digest, CID, multihash, the multibase
+   base32 text form) and `src/hex.ts`. All 92 cases of `vectors/dcbor.json` pass
+   — 41 valid ones in both directions, 51 invalid ones rejected with the class
+   of rule the vector names — and all 26 cases of `vectors/entities.json`
+   re-encode, with the digest, CID and `cid_text` of all 15 entities recomputed
+   from their bytes. Two gaps filed: 056 (map keys are text strings only in the
+   vectors) and 057 (no nesting bound; the codec picks 1024).
 2. `entity` — every case in `vectors/entities.json`.
 3. `block` — signing, digests, structural validation; every case in
    `vectors/blocks.json` (chain, forks, invalid cases; validation rules per
@@ -68,6 +76,6 @@ by the final cross-validation phase, never read.
 - Clean-room rule above is absolute.
 - Spec is normative; vectors are ground truth; any gap between what the spec
   says and what a vector contains is a todo (never silently resolve; next free
-  number at time of writing: 056).
+  number: 058 — phase 1 filed 056 and 057).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
