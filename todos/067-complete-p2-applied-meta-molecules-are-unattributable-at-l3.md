@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "067"
 tags: [layer-3, meta-bonds, api, provenance, grounding-demo]
@@ -136,13 +136,13 @@ delete `metaDeclarations` from the demo and call the new accessors.
 
 ## Acceptance Criteria
 
-- [ ] An application can name the meta-molecule and the author behind any
+- [x] An application can name the meta-molecule and the author behind any
       equivalence class it is shown
-- [ ] The same for a supersession edge
-- [ ] The accessors exclude withdrawn meta-molecules without the caller
+- [x] The same for a supersession edge
+- [x] The accessors exclude withdrawn meta-molecules without the caller
       repeating the rule
-- [ ] The answers are deterministic, and the determinism test covers them
-- [ ] `demo/cmd/dialog-mcp` drops its own scan
+- [x] The answers are deterministic, and the determinism test covers them
+- [x] `demo/cmd/dialog-mcp` drops its own scan
 
 ## Work Log
 
@@ -153,6 +153,48 @@ delete `metaDeclarations` from the demo and call the new accessors.
 Found while building phase 2 of the grounding demo. `dialog_equivalents` is
 supposed to answer "who says these are the same thing", and the L3 API can only
 answer "they are".
+
+### 2026-08-18 - Settled: Option 1, With the Backing Per Author
+
+**By:** Claude
+
+Implemented as `accept.Declaration` and `accept.Backing`, read by
+`View.EquivalenceDeclarations`, `View.SupersessionDeclarations` and
+`View.ContradictionDeclarations` — the third for symmetry with `Conflict.Meta`
+and `Conflict.Declarers`, which report the same fact per surfaced conflict
+rather than per entity. A `Declaration` carries the meta-molecule's digest, the
+standard bond's template, the two entities its fillers name, and the `Backing`
+records: author, block, and that block's position in the author's chain
+(`todos/068`).
+
+Two decisions beyond the proposal:
+
+- **The backing is per author, not per molecule.** `applyStanding` already
+  decided which of a meta-molecule's publishing authors still back it and threw
+  away everything but the yes or no; it now returns the set. An author who
+  retracted their own declaration therefore drops out of the record while the
+  declaration stands on whoever is left, and no caller repeats the rule of
+  `spec/06-meta-bonds.md`, "Withdrawing meta-molecules". A meta-molecule nobody
+  backs any more appears in no `Declaration` at all — it is in
+  `WithdrawnMetaMolecules`, where it always was.
+
+- **No declaration claims to have caused a merge.** Every standing equivalence
+  naming a member of a class is reported, including one naming two members
+  another declaration had already unified. Which pair the union-find merged
+  first is an artifact of iteration order and not a fact about the data, and
+  reporting it would be inventing provenance. The todo listed this as something
+  the demo's scan could not do; it turns out not to be worth doing.
+
+The specification was deliberately left alone. The proposal suggested a sentence
+saying an implementation SHOULD be able to name what it applied; this is an API
+answer that moves no wire byte and binds no other implementation's surface, and
+the reference implementation demonstrating it is enough. Revisit it if a second
+implementation grows an L3.
+
+`demo/cmd/dialog-mcp`'s `metaDeclarations` scan is deleted; `dialog_equivalents`
+and `dialog_truth` read the new accessors, and both now attribute the
+supersession and the contradiction as well as the equivalence class. The
+conformance vectors are unchanged, as an additive API must leave them.
 
 ## Notes
 

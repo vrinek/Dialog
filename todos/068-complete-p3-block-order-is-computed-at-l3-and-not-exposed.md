@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "068"
 tags: [layer-3, api, assertion-order, grounding-demo]
@@ -94,9 +94,9 @@ height for L2 authorship records too (`dialog_provenance`), which an
 
 ## Acceptance Criteria
 
-- [ ] An `Assertion` says where in its author's chain it was published
-- [ ] The definition states how a key rotation counts
-- [ ] `demo/cmd/dialog-mcp` uses it for assertions instead of its own index
+- [x] An `Assertion` says where in its author's chain it was published
+- [x] The definition states how a key rotation counts
+- [x] `demo/cmd/dialog-mcp` uses it for assertions instead of its own index
 
 ## Work Log
 
@@ -107,6 +107,44 @@ height for L2 authorship records too (`dialog_provenance`), which an
 Found while building phase 2 of the grounding demo, alongside `todos/067`.
 Both are the same shape: L3 computes something to reach an answer and reports
 the answer without the working.
+
+### 2026-08-18 - Settled: Options 1 and 2 Together
+
+**By:** Claude
+
+Both, as the recommendation allowed: the second caller appeared in the same
+breath, since `dialog_provenance` places L2 authorship records and `todos/067`'s
+declaration backing places the block a meta-molecule was published in, and
+neither is an `Assertion`.
+
+`accept.ChainPosition` — author, lineage, height and length — is carried by
+`Assertion.Position` and answered for any block by `View.BlockPosition`. Height
+is zero-based and counts through a key rotation, because that is what block
+order does: "every block of a successor chain comes after every block of the
+chain it succeeds" (`spec/05-processing-model.md`, "Assertion order"), so a
+successor's genesis block is not height 0, and a rotation block that published
+nothing is still counted. The definition is pinned by a test.
+
+Length needed a decision the todo did not anticipate. `Build` now places every
+block that published an entity of the view — an O(view) walk that `blockOrder`
+memoizes, so the walks are the ones standing and truth would have made anyway —
+and Length is one past the height of the furthest block placed. That is "the
+chain as far as this view can see it", which for a subscribed author is the
+whole chain and makes "block 4 of 4" sayable, and for an unsubscribed author
+whose block reached the index through a co-published entity is a smaller number.
+The demo does not print a total in that second case: the view knows the block's
+height and not the chain's length, and "of 1" would report the view's ignorance
+as a fact about gazetteer.
+
+The alternative — placing every block L2 names, regardless of subscription —
+was rejected: it would make `Build`'s cost and its error surface scale with all
+of L2 rather than with the view, and it would break the pinned contract that a
+`Build` with nothing to order reads nothing from the source
+(`TestBuildNeedsTheBlocksItOrdersBy`).
+
+`demo/cmd/dialog-mcp` dropped its `blocks` index and its `blockRef` type;
+assertions and declarations render the position they carry, and everything else
+asks the view.
 
 ## Notes
 
