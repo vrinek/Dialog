@@ -37,6 +37,11 @@
 //	        return err
 //	}
 //
+// A caller that would rather not keep the contract by hand uses a
+// *block.ValidatingStore, which validates each block as it arrives and records
+// the verdict. Its Accepted method then answers, for any digest, whether the
+// block may be ingested.
+//
 // What this package does reject is input it cannot use at all: a nil block, a
 // private block handed to Ingest without its decrypted payload, and a payload
 // that is not a well-formed one. Those are programming errors, not validation.
