@@ -39,6 +39,7 @@ import (
 	"os"
 
 	"github.com/vrinek/Dialog/demo/internal/chainfile"
+	"github.com/vrinek/Dialog/demo/internal/render"
 	"github.com/vrinek/Dialog/go/accept"
 	"github.com/vrinek/Dialog/go/block"
 	"github.com/vrinek/Dialog/go/cid"
@@ -151,8 +152,8 @@ func checkChain(want chainfile.Chain, got *block.Chain) error {
 		}
 	}
 	if !bytes.Equal(got.Genesis().PublicKey(), want.Pub) {
-		return fmt.Errorf("replay: the %s chain is signed by %x, the index says %x",
-			want.Author, got.Genesis().PublicKey()[:8], want.Pub[:8])
+		return fmt.Errorf("replay: the %s chain is signed by %s, the index says %s",
+			want.Author, render.AuthorKey(got.Genesis().PublicKey()), render.AuthorKey(want.Pub))
 	}
 	if len(got.Report.Forks) > 0 {
 		return fmt.Errorf("replay: the %s chain forks: %v", want.Author, got.Report.Forks)

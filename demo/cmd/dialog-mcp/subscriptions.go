@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/vrinek/Dialog/demo/internal/render"
 	"github.com/vrinek/Dialog/go/accept"
 )
 
@@ -190,8 +191,8 @@ func (s *Server) authorLine(name string) string {
 	if !ok {
 		return name
 	}
-	return fmt.Sprintf("%s — %d blocks, key %x…, tip %s",
-		name, len(c.Blocks), c.Pub[:4], c.Tip())
+	return fmt.Sprintf("%s — %d blocks, key %s, tip %s",
+		name, len(c.Blocks), render.AuthorKey(c.Pub), c.Tip())
 }
 
 // diffConflicts compares two views' conflicts by identity: kind plus the

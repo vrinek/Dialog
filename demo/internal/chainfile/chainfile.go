@@ -84,8 +84,12 @@ type Index struct {
 type ChainEntry struct {
 	// Author is the demo name of the author.
 	Author string `json:"author"`
-	// PublicKey is their raw Ed25519 public key, hex-encoded — the pub field
-	// of every block of the chain.
+	// PublicKey is their Ed25519 public key in the canonical text form of
+	// spec/03-encoding.md, "Text representation of author keys": 56
+	// characters beginning "b5ua". The bytes behind it are the pub field of
+	// every block of the chain, which stays 32 raw bytes on the wire; this is
+	// how the key is written down when it names something, and here it names
+	// the chain the entry files.
 	PublicKey string `json:"public_key"`
 	// Blocks are the chain's blocks, genesis first.
 	Blocks []BlockEntry `json:"blocks"`
@@ -128,7 +132,11 @@ func Build(chains []Chain) ([]File, error) {
 	}
 	files := make([]File, 1, 1+countBlocks(chains))
 	for _, c := range chains {
-		entry := ChainEntry{Author: c.Author, PublicKey: hex.EncodeToString(c.Pub)}
+		key, err := cid.AuthorKeyText(c.Pub)
+		if err != nil {
+			return nil, fmt.Errorf("chainfile: chain %s: %w", c.Author, err)
+		}
+		entry := ChainEntry{Author: c.Author, PublicKey: key}
 		for i, b := range c.Blocks {
 			raw := b.Bytes()
 			name := path.Join(c.Author, fmt.Sprintf("%03d.block", i))
@@ -151,6 +159,19 @@ func Build(chains []Chain) ([]File, error) {
 	}
 	files[0] = File{Path: IndexName, Bytes: append(raw, '\n')}
 	return files, nil
+}
+
+// keyText renders an author key in the canonical text form of
+// spec/03-encoding.md, "Text representation of author keys", for a message that
+// names a key. The fallback is unreachable for a key that came out of a decoded
+// block — those are 32 bytes by construction — and exists so that reporting one
+// failure never has to report a second one instead.
+func keyText(pub []byte) string {
+	s, err := cid.AuthorKeyText(pub)
+	if err != nil {
+		return fmt.Sprintf("%d bytes that are not an author key", len(pub))
+	}
+	return s
 }
 
 func countBlocks(chains []Chain) int {
@@ -198,7 +219,7 @@ func Read(fsys fs.FS) (Index, []Chain, error) {
 }
 
 func readChain(fsys fs.FS, c ChainEntry) (Chain, error) {
-	pub, err := hex.DecodeString(c.PublicKey)
+	pub, err := cid.ParseAuthorKeyText(c.PublicKey)
 	if err != nil {
 		return Chain{}, fmt.Errorf("chainfile: chain %s: parsing the public key: %w", c.Author, err)
 	}
@@ -229,7 +250,7 @@ func readChain(fsys fs.FS, c ChainEntry) (Chain, error) {
 			return Chain{}, fmt.Errorf("chainfile: decoding %s: %w", entry.File, err)
 		}
 		if !bytes.Equal(b.PublicKey(), pub) {
-			return Chain{}, fmt.Errorf("chainfile: %s is signed by %x, but the index files it under %s (%x)", entry.File, b.PublicKey()[:8], c.Author, pub[:8])
+			return Chain{}, fmt.Errorf("chainfile: %s is signed by %s, but the index files it under %s (%s)", entry.File, keyText(b.PublicKey()), c.Author, c.PublicKey)
 		}
 		if got := len(b.Ops()); got != entry.Ops {
 			return Chain{}, fmt.Errorf("chainfile: %s carries %d operations, the index says %d", entry.File, got, entry.Ops)

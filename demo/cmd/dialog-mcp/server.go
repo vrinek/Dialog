@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/ed25519"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -158,7 +157,7 @@ func (s *Server) authorName(pub ed25519.PublicKey) string {
 	if name, ok := s.node.AuthorName(pub); ok {
 		return name
 	}
-	return "an author outside the demo (" + hex.EncodeToString(pub)[:16] + ")"
+	return "an author outside the demo (" + render.AuthorKey(pub) + ")"
 }
 
 func (s *Server) authorNames(pubs []ed25519.PublicKey) []string {

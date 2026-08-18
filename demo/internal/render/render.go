@@ -93,6 +93,24 @@ func (r *Renderer) Sentence(m entity.Molecule) string { return r.molecule(m, 0) 
 // already on screen and never enough to be mistaken for one.
 func Short(d cid.Digest) string { return d.String()[:8] }
 
+// AuthorKey writes an author's Ed25519 public key the way the specification
+// says a key is written outside Dialog's CBOR structures: the multibase base32
+// text form of spec/03-encoding.md, "Text representation of author keys", 56
+// characters beginning "b5ua". Every place the demo shows a key as the
+// identifier of an author or of a chain goes through this; a hex byte dump is
+// not an identifier and spec/04-cryptography.md, "Key encoding", says so.
+//
+// A key that is not 32 bytes has no text form. None can reach here from a
+// decoded block, and the fallback says what it got rather than returning an
+// error into a string-shaped caller.
+func AuthorKey(pub []byte) string {
+	s, err := cid.AuthorKeyText(pub)
+	if err != nil {
+		return fmt.Sprintf("(%d bytes that are not an author key)", len(pub))
+	}
+	return s
+}
+
 func (r *Renderer) text(d cid.Digest, depth int) string {
 	e, ok := r.src.Lookup(d)
 	if !ok {

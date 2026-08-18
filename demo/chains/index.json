@@ -5,7 +5,7 @@
   "chains": [
     {
       "author": "atlas",
-      "public_key": "bc7bd1e9402df7543daa93ce16f430ae49daacf41bc11212b80a897b597799f9",
+      "public_key": "b5ua3y66r5fac352uhwvjhtqw6qyk4so2vt2bxqisck4avcl3lf3zt6i",
       "blocks": [
         {
           "index": 0,
@@ -59,7 +59,7 @@
     },
     {
       "author": "gazetteer",
-      "public_key": "3a1afa88f4556116fc671949c976afc708f840b83ef4b94e596b2df0ce9e4e05",
+      "public_key": "b5uatugx2rd2fkyiw7rtrssojo2x4ochyic4d55fzjzmwwlpqz2pe4bi",
       "blocks": [
         {
           "index": 0,
@@ -97,7 +97,7 @@
     },
     {
       "author": "errata",
-      "public_key": "6b06356942551947bc908ee9fce73f195d8ce2e9eedcad50698b2bf666ef0c1e",
+      "public_key": "b5uawwbrvnfbfkgkhxsii52p4447rsxmm4lu65xfnkbuywk7wm3xqyhq",
       "blocks": [
         {
           "index": 0,
