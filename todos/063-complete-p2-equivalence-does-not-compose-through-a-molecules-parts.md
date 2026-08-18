@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "063"
 tags: [meta-bonds, l3, specification-consistency, equivalence]
@@ -156,10 +156,10 @@ existing test as the worked case.
 
 ## Acceptance Criteria
 
-- [ ] `spec/06-meta-bonds.md` says whether an equivalence between two molecules
+- [x] `spec/06-meta-bonds.md` says whether an equivalence between two molecules
       can be derived from equivalences between their bonds and fillers
-- [ ] The bond-equivalence example's closing sentence agrees with that answer
-- [ ] The reference implementation's behaviour is either confirmed by a test
+- [x] The bond-equivalence example's closing sentence agrees with that answer
+- [x] The reference implementation's behaviour is either confirmed by a test
       naming the rule, or changed to match it
 
 ## Work Log
@@ -172,6 +172,48 @@ Found in phase 1 of the grounding demo, modelling `gazetteer`'s naming variants
 over `atlas`'s facts. The demo keeps both shapes — one pair declared equivalent
 at the molecule level, one pair left to compose from its parts — so that the
 difference is visible in the committed chains and pinned by a test.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. Equivalence is declared, never derived.
+It relates the entities a meta-molecule names, it is transitive, and it is not
+otherwise closed: two molecules whose bonds are declared equivalent and whose
+fillers are declared equivalent position by position are two classes and not
+one, each carrying its own truth state. An author who wants two molecules
+treated as one statement publishes a molecule-level equivalence, which is the
+cost the demo paid and the reason "Declaring molecule equivalence" exists. The
+reading is stated as the reference reading rather than as a new normative rule,
+matching the framing 052 established for the same section; the question itself
+is recorded as deferred rather than closed forever.
+
+**Changes:**
+
+- `spec/06-meta-bonds.md`, "Equivalence": a second informative paragraph beside
+  052's, stating that the closure is over declared pairs only, why (the fixpoint
+  every implementation would have to compute identically, over filler types no
+  equivalence can name, to agree about what a class contains — and a class
+  carries truth; plus the blast radius one bond equivalence would otherwise
+  have, which is the "Equivalence attacks" of "Security Considerations"
+  multiplied by the graph), and where an author goes instead.
+- `spec/06-meta-bonds.md`, "Declaring bond equivalence": the closing sentence no
+  longer reads as a derivation rule. It now says what bond equivalence actually
+  gives an application — a class to walk from a molecule using one template to
+  the molecules using the other — and that it does not by itself make two
+  molecules equivalent.
+- `spec/06-meta-bonds.md`, "Declaring molecule equivalence": the "insufficient"
+  sentence is replaced by one saying that a molecule-level equivalence is the
+  only thing that says two molecules are the same statement.
+- `spec/00-overview.md`, "Open questions (v1)": equivalence composition, one
+  line.
+- `go/accept`: no behaviour change. `closeEquivalences` and `EquivalenceClass`
+  cite the rule, and `TestEquivalenceIsDeclaredNeverDerived` names it — every
+  part of two molecules interchangeable, the molecules in two classes with two
+  truth states, and the declared molecule equivalence joining them.
+- `demo`: unchanged behaviour and unchanged chains. The Lisboa/Amsterdam pair
+  stays the worked case; its test and `publish.go`'s comment now cite the
+  settled rule instead of an open finding.
 
 ## Notes
 

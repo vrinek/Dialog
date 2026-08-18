@@ -83,7 +83,7 @@ protocol findings, which get filed as todos like every other phase's.
 Library modules (`go/`, `ts/`) are read-only for this track except where a
 genuine library gap blocks the demo — file a todo instead of patching around
 it, and surface the gap in the report. Spec is normative; protocol findings
-become todos (next free: 066). Checks: demo module `gofmt -l`, `go vet`,
+become todos (next free: 067). Checks: demo module `gofmt -l`, `go vet`,
 `go test` clean before every commit; the repo's full Go battery must stay
 green (the library is untouched, so this is a smoke check). Granular commits,
 required trailers, no pushes.

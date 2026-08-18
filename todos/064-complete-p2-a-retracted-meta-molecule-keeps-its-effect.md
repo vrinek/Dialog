@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "064"
 tags: [meta-bonds, l3, specification-gap, truth]
@@ -146,11 +146,11 @@ differently with equal justification.
 
 ## Acceptance Criteria
 
-- [ ] `spec/06-meta-bonds.md` says whether a truth retraction of a meta-molecule
+- [x] `spec/06-meta-bonds.md` says whether a truth retraction of a meta-molecule
       withdraws it, and whose retraction counts
-- [ ] If it does, the order in which L3 applies the meta-bonds to each other is
+- [x] If it does, the order in which L3 applies the meta-bonds to each other is
       specified
-- [ ] The reference implementation matches, with a test over a retracted
+- [x] The reference implementation matches, with a test over a retracted
       equivalence, contradiction and supersession
 
 ## Work Log
@@ -163,6 +163,61 @@ Found in phase 1 of the grounding demo, looking for a way to let an author
 correct a naming equivalence. Reproduced against the reference implementation
 with a single-author world: the equivalence's truth state is `Retracted` and
 `Equivalent` still answers true.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. A meta-molecule's semantics apply only
+while it stands, and standing is evaluated with the same per-author,
+latest-wins truth machinery every other molecule gets. Publication is backing
+and an explicit "«M» is true" from a publishing author is backing too; that
+author's later "«M» is untrue" withdraws theirs; the effect applies while at
+least one subscribed publishing author's backing stands, so a retraction by an
+author who never published the meta-molecule withdraws nothing and is surfaced
+as an ordinary truth disagreement instead — nobody gets a veto over somebody
+else's declaration, and an author who wants one re-publishes the meta-molecule
+to become one of its authors. The truth meta-bonds are exempt from the gate,
+which closes the regress the Findings raised: a retraction of a retraction is
+one author restating a position block order already settles.
+
+**Changes:**
+
+- `spec/06-meta-bonds.md`: a new "Withdrawing meta-molecules" section — the
+  definition of backing, five numbered rules, and two informative paragraphs.
+  The first gives the application order the Cons of Option 1 asked for (decide
+  standing, close equivalences, then apply the rest) and says standing is read
+  off the meta-molecule itself rather than off its equivalence class, because
+  the closure is what standing decides. The second names the state the rules
+  produce on purpose: a meta-molecule can be Retracted as a molecule — a
+  subscribed non-author said so, and the disagreement is on the record — while
+  still applying, because its own author never took it back.
+- `spec/05-processing-model.md`, "Meta-molecule application": the rule as a
+  third protocol requirement, pointing at the new section.
+- `go/accept/standing.go`: the gate. It runs before `closeEquivalences`, filters
+  the equivalence, contradiction and supersession claims, passes the truth
+  claims through untouched, and records what it dropped for the new
+  `View.WithdrawnMetaMolecules`. An author's backing is withdrawn only when
+  every record at the last position of their chain is a retraction, so
+  publishing and retracting at one position withdraws nothing.
+- `go/accept`: `Build` gained a step and its doc comment now says `src` must
+  hold the blocks of every gated meta-molecule's provenance too. Nothing is
+  deleted — a withdrawn meta-molecule stays in the view with its truth state.
+- `go/accept/standing_test.go`: the class that splits and the assertion that
+  narrows with it, the contradiction no longer surfaced, the supersession whose
+  molecule becomes current again, one author's retraction not touching another's
+  backing (with the truth conflict it does raise), backing per author with two
+  publishers, both routes back after a retraction, the ungated truth
+  meta-molecules, and the gate read off the molecule rather than its class.
+- `go/accept/scenario_test.go`: Bob publishes a wrong equivalence and retracts
+  it, so the 100-rebuild determinism fingerprint — which now includes
+  `WithdrawnMetaMolecules` — covers a withdrawn meta-molecule.
+- `demo`: `errata` declares its two Poland corrections equivalent and withdraws
+  it a block later. Had it stood, the supersession between them would be a class
+  replacing itself. The chains were regenerated (errata's blocks 2 and 3, and
+  the index) and the counts in the replay tests, the publish test and the plan
+  moved with them; `TestWithdrawnEquivalenceDeclaresNothing` pins the new
+  behaviour.
 
 ## Notes
 

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "065"
 tags: [meta-bonds, block-format, validation, specification-gap]
@@ -162,11 +162,14 @@ section for rule 4.
 
 ## Acceptance Criteria
 
-- [ ] `spec/06-meta-bonds.md` says that a meta-bond must be reachable from the
+- [x] `spec/06-meta-bonds.md` says that a meta-bond must be reachable from the
       block whose molecule names it, and how an author arranges that
-- [ ] The examples in `spec/06-meta-bonds.md` are publishable as written
+- [x] The examples in `spec/06-meta-bonds.md` are publishable as written — the
+      requirement and the elision are both stated, rather than every example
+      rewritten
 - [ ] A conformance vector publishes a meta-molecule with its bond, and one
-      without it is invalid for rule 4
+      without it is invalid for rule 4 — deferred to `todos/066`, this change
+      set being spec-only and required to move no wire byte
 
 ## Work Log
 
@@ -187,6 +190,44 @@ author's chain, or from any block in the refs graph
 All three of the demo's authors solve it differently — publish it, re-publish
 it, or reference someone else's block — which is what suggested the strategies
 are worth naming in the specification.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. The standard meta-bonds are ordinary
+on-chain entities: being standard means being recognized at L2→L3, not existing
+before somebody publishes one. Rule 4 keeps its "no exempt position", L1
+validation stays meta-bond-agnostic, and the cost — one `create_bond` per author
+per meta-bond used, or a `refs` entry naming a block that has it — is the cost.
+The examples are fixed by saying that their `create_bond` is elided, once, in
+the first of them, rather than by rewriting all three.
+
+**Changes:**
+
+- `spec/06-meta-bonds.md`, "Meta-molecules are regular molecules": a paragraph
+  stating the requirement, the three places a bond may be reachable from, the
+  bolded "not implicitly present in any chain, and no digest is exempt from rule
+  4", and the reason (whether a block validates cannot depend on which
+  meta-bonds the validator knows — the same principle 059 settled for filler
+  shapes).
+- `spec/06-meta-bonds.md`: an informative paragraph naming the three publication
+  strategies the demo's three authors use between them — publish it, re-publish
+  it for an authorship record on an existing entity, or name a block that did in
+  `refs` — and the consequence that the five best-known entities of the protocol
+  have no canonical publication.
+- `spec/06-meta-bonds.md`, "Declaring atom equivalence": one sentence saying the
+  section's examples elide the `create_bond` and what a publishable block also
+  carries.
+- No implementation change: `go/block` already resolves a meta-bond digest
+  through the ordinary resolver, which was the correct reading all along.
+- The L3-filtering wrinkle (a view holding a meta-molecule whose bond entity it
+  does not, because no subscribed author published the bond) is the general case
+  of `todos/053`, which spec/05's "Filtering rules" informative paragraph
+  already covers: the view renders such a molecule by reading the bond from L2.
+  Nothing meta-bond-specific was added for it.
+- The conformance-vector criterion is deferred to `todos/066`: this change set
+  was required to leave `vectors/` byte-identical.
 
 ## Notes
 

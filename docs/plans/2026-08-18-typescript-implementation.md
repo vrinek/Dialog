@@ -179,7 +179,7 @@ by the final cross-validation phase, never read.
 - Clean-room rule above is absolute.
 - Spec is normative; vectors are ground truth; any gap between what the spec
   says and what a vector contains is a todo (never silently resolve; next free
-  number: 063 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
+  number: 067 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
   filed 060 and 061, phase 4 filed 062).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
