@@ -77,6 +77,13 @@ const (
 // act on the value except to decide whether to ask for more; the identity of
 // every block it stores comes from re-hashing the block
 // (spec/07-transport.md, "HTTP binding"; todo 075).
+//
+// It is REQUIRED on a 200 to tip or range and defined for no other operation. A
+// server holding no tip for the author omits it — a tip request is a 404 in that
+// case, and an empty range carries no header rather than an invented value for
+// it — and a client reads its absence as "this source claims no tip for this
+// author", never as an error (spec/07-transport.md, "HTTP binding", "Where the
+// server holds no tip"; todos/085).
 const HeaderTip = "Dialog-Tip"
 
 // MinBatchDigests is the number of digests a conforming server MUST accept in

@@ -180,13 +180,24 @@ A block digest inside a `refs` or `prev` field is 32 raw bytes and has no text f
 - `limit` is a positive decimal integer. A server MAY cap it and MUST NOT exceed it. Absent, the server chooses.
 - `HEAD` MUST be supported wherever `GET` is. Any other method on a defined path MUST return 405 with an `Allow` header.
 
-A response to `tip` or `range` MUST carry a `Dialog-Tip` header whose value is the CID text form of the tip the server holds for that author at the moment of the response:
+A 200 response to `tip` or `range` MUST carry a `Dialog-Tip` header whose value is the CID text form of the tip the server holds for that author at the moment of the response, as `tip` above defines a tip:
 
 ```
 Dialog-Tip: bafyreifvr7u624ffnnmymo5cvo4ipzx26l6bwmxcnlsmwijqgmcododv4e
 ```
 
-It is what lets a client tell a range that ended at the tip from one the server truncated, without a second request per page: when the last block of a range hashes to the `Dialog-Tip` value, the client is caught up as far as this server goes. The header is a **claim, not evidence** — a server that withholds its newest blocks reports the older tip here too, and nothing detects that (see "What a server does not guarantee" and todo 075). A client MUST NOT act on the value except to decide whether to ask for more; the identity of every block it stores comes from re-hashing the block.
+The header is defined for those two operations and for no other. `block`, `blocks` and `siblings` answer about blocks rather than about where a chain ends, and a server MAY send the header there but a client MUST NOT expect it.
+
+**Where the server holds no tip.** A server holds no tip for an author whose chain it cannot walk from the genesis position — it holds nothing of that chain, or nothing at its start (see `tip`). Then:
+
+- `tip` answers **404**: the author is unknown to this source, in the same sense as every other 404 in this profile, and the response carries no `Dialog-Tip`.
+- `range` answers 200 with an empty sequence, as "range" requires, and **omits the header**. It is omitted rather than given some empty or null value, because the header's value is a CID text form and this profile mints no second spelling of a position — an empty value, the literal `null` and a zero CID would each be one, which is exactly what `after=null` is refused for.
+
+A client MUST treat an absent `Dialog-Tip` as "this source claims no tip for this author", and MUST NOT treat it as an error or as a protocol violation. A client that needs to distinguish that from a server which does not implement the header at all asks `tip`, which answers 404 in the first case and a block in the second; the information is one request away.
+
+A 304 response to `tip` SHOULD carry the header alongside the `ETag`, and a client MUST NOT require it there: a 304 says the value the client already holds is current, which is the whole answer.
+
+The header is what lets a client tell a range that ended at the tip from one the server truncated, without a second request per page: when the last block of a range hashes to the `Dialog-Tip` value, the client is caught up as far as this server goes. The header is a **claim, not evidence** — a server that withholds its newest blocks reports the older tip here too, and nothing detects that (see "What a server does not guarantee" and todo 075). A client MUST NOT act on the value except to decide whether to ask for more; the identity of every block it stores comes from re-hashing the block.
 
 #### Bodies and content types
 
@@ -221,11 +232,11 @@ An `announce` receipt is one JSON object mapping each submitted block's CID to w
 
 | Code | Meaning in this profile |
 |------|-------------------------|
-| 200 | Here is the answer. For a range or a sibling set the answer may be an empty sequence. |
+| 200 | Here is the answer. For a range or a sibling set the answer may be an empty sequence, and an empty range from a source holding no tip for that author carries no `Dialog-Tip`. |
 | 202 | The announce was taken for later processing; the receipt is incomplete or absent. |
 | 304 | The `tip` is unchanged from the `If-None-Match` the client sent. |
 | 400 | The request was malformed: a bad author key, a bad CID, a non-canonical spelling of either, a bad `limit`. |
-| 404 | **I do not have it.** Never "it does not exist." |
+| 404 | **I do not have it.** Never "it does not exist." A `tip` for an author this source holds no tip for; a `block` it does not hold. |
 | 405 | Wrong method for a defined path. |
 | 406 | The client's `Accept` excludes the only type this server can send. |
 | 413 | The announce or fetch body is larger than this server accepts. |
@@ -347,7 +358,6 @@ The questions above were left open on purpose. The ones below were not: they are
 
 | Todo | Question | Where it bites |
 |------|----------|----------------|
-| [085](../todos/085-pending-p2-dialog-tip-is-required-where-there-is-no-tip.md) | `Dialog-Tip` is required where there is no tip | "HTTP binding"; an empty `range` for an author the source holds nothing from |
 | [086](../todos/086-pending-p2-which-tip-does-a-server-with-a-hole-report.md) | Which tip does a server with a hole report? | `tip`; "Server rules" 1 and 2; the stability of a fork's branch choice |
 | [087](../todos/087-pending-p3-no-status-code-for-an-operation-a-server-does-not-implement.md) | No status code for an OPTIONAL operation a server does not implement | "The six operations"; "Status codes"; the event stream |
 | [088](../todos/088-pending-p2-when-is-an-announce-receipts-disposition-decided.md) | When is an announce receipt's disposition decided? | `announce`; the receipt's three members |

@@ -494,6 +494,11 @@ func expect(resp *http.Response, op string, want ...int) error {
 // error: the header is the server's own statement in a form the profile fixes,
 // and a server that cannot spell it is not one whose contiguity claims are worth
 // more.
+//
+// An absent header is not an error. It means the source claims no tip for this
+// author, which is what an empty range from a source holding nothing of that
+// chain carries (spec/07-transport.md, "HTTP binding", "Where the server holds
+// no tip"; todos/085).
 func tipHeader(resp *http.Response) (*cid.Digest, error) {
 	value := resp.Header.Get(HeaderTip)
 	if value == "" {

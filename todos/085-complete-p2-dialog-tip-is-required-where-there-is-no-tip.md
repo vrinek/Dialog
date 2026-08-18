@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "085"
 tags: [transport, specification-gap, http-binding]
@@ -91,9 +91,9 @@ SHOULD accompany a 304, and a client MUST NOT require it there.
 
 ## Acceptance Criteria
 
-- [ ] The specification says what a response with no tip to report carries
-- [ ] The specification says whether a 304 carries the header
-- [ ] `go/transport` matches whatever it says
+- [x] The specification says what a response with no tip to report carries
+- [x] The specification says whether a 304 carries the header
+- [x] `go/transport` matches whatever it says
 
 ## Work Log
 
@@ -103,6 +103,38 @@ SHOULD accompany a 304, and a client MUST NOT require it there.
 
 Found writing the range handler: the header's MUST has no satisfiable form for
 an author the server holds nothing from.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended, with the 304 answered in the same passage.
+
+- `spec/07-transport.md`, "HTTP binding": the MUST is now scoped — a **200**
+  response to `tip` or `range` MUST carry `Dialog-Tip`, and the header is
+  defined for those two operations and no other (`block`, `blocks` and
+  `siblings` answer about blocks rather than about where a chain ends, so a
+  client MUST NOT expect it there).
+- A new **Where the server holds no tip** passage says what happens in the state
+  that had no spelling: `tip` answers 404 — the author is unknown to this
+  source, in the same sense as every other 404 — and `range` answers 200 with an
+  empty sequence and **omits** the header. Omission rather than an empty value,
+  the literal `null` or a zero CID, because each of those would be a second
+  spelling of a position, which is what `after=null` is refused for. A client
+  MUST read an absent header as "this source claims no tip for this author" and
+  MUST NOT treat it as an error; a client that must tell that from a server not
+  implementing the header asks `tip`.
+- The 304 question: a 304 to `tip` SHOULD carry the header alongside the
+  `ETag`, and a client MUST NOT require it there.
+- The status table's 200 and 404 rows now name the case.
+- `go/transport` already did all of this and now cites it: `HeaderTip`'s
+  doc comment (`transport.go`), `handleRange`'s omission (`server.go`), and
+  `tipHeader`'s absent-is-not-an-error reading (`client.go`).
+  `server_test.go`, `TestNoTipToReport` pins the three: an empty range with no
+  header, a 404 from `tip` for the same author, and the header on a 304.
+
+**Vectors: no byte moved.** The transport profile encodes nothing the vectors
+cover.
 
 ## Notes
 

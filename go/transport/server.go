@@ -355,7 +355,11 @@ func (s *Server) handleRange(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	// The tip is reported alongside the range so that the client can tell a
 	// range that ended at the tip from one this server truncated, without a
-	// second request per page.
+	// second request per page. Where this source holds no tip for the author the
+	// header is omitted rather than given an empty or null value: its value is a
+	// CID text form, and a second spelling of a position is what this profile
+	// refuses everywhere (spec/07-transport.md, "HTTP binding", "Where the
+	// server holds no tip"; todos/085).
 	if tip, held := s.tipOf(pub); held {
 		h.Set(HeaderTip, tip.CID().String())
 	}

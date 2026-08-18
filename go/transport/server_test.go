@@ -249,6 +249,54 @@ func TestEmptyRangeIsNotAnError(t *testing.T) {
 	}
 }
 
+// TestNoTipToReport: what a server sends where it holds no tip for an author.
+// The header is REQUIRED on a 200 to tip or range and its value is a CID text
+// form, so a source with no tip omits it rather than minting a second spelling
+// of a position; a tip request in the same state is a 404
+// (spec/07-transport.md, "HTTP binding", "Where the server holds no tip";
+// todos/085).
+func TestNoTipToReport(t *testing.T) {
+	pub, blocks := testChain(t, 30, 2)
+	unknownPub, _ := testChain(t, 31, 1)
+	_, ts := serve(t, ServerConfig{Store: memStore(t, blocks...)})
+
+	t.Run("an empty range for an author this source holds nothing from", func(t *testing.T) {
+		resp := get(t, ts, http.MethodGet, DefaultPrefix+"/chains/"+authorText(t, unknownPub)+"/blocks", nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 with an empty sequence", resp.StatusCode)
+		}
+		if got, present := resp.Header[HeaderTip]; present {
+			t.Errorf("%s = %q; a source with no tip omits the header", HeaderTip, got)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		if len(body) != 0 {
+			t.Errorf("the sequence is %d bytes, want 0", len(body))
+		}
+	})
+
+	t.Run("tip for the same author is 404", func(t *testing.T) {
+		resp := get(t, ts, http.MethodGet, DefaultPrefix+"/chains/"+authorText(t, unknownPub)+"/tip", nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		}
+		if got, present := resp.Header[HeaderTip]; present {
+			t.Errorf("%s = %q on a 404", HeaderTip, got)
+		}
+	})
+
+	t.Run("a 304 carries the header", func(t *testing.T) {
+		etag := `"` + blocks[1].CID().String() + `"`
+		resp := get(t, ts, http.MethodGet, DefaultPrefix+"/chains/"+authorText(t, pub)+"/tip",
+			http.Header{"If-None-Match": []string{etag}})
+		if resp.StatusCode != http.StatusNotModified {
+			t.Fatalf("status = %d, want 304", resp.StatusCode)
+		}
+		if got := resp.Header.Get(HeaderTip); got != blocks[1].CID().String() {
+			t.Errorf("%s on a 304 = %q, want the tip's CID", HeaderTip, got)
+		}
+	})
+}
+
 // TestConditionalTip is the baseline subscription: polling tip with
 // If-None-Match, where a 304 is a few dozen bytes
 // (spec/07-transport.md, "Subscription mapping", point 1; "Caching").
