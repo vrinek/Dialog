@@ -95,7 +95,7 @@ function expectedCode(rule: string): DcborErrorCode {
   if (rule.includes("rule 5")) return "float";
   if (rule.includes("rule 6")) return "tag";
   if (rule.includes("rule 7")) return "simple";
-  if (rule.includes("map keys are text strings")) return "map-key-type";
+  if (rule.includes("rule 9")) return "map-key-type";
   if (rule.includes("UTF-8")) return "utf8";
   if (rule.includes("RFC 8949")) return "malformed";
   throw new Error(`no error class is mapped to the rule ${JSON.stringify(rule)}`);

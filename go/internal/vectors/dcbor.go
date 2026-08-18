@@ -18,7 +18,7 @@ const (
 	ruleNoFloats     = "spec/03-encoding.md, Deterministic CBOR rule 5 (no floating-point values)"
 	ruleOnlyTag4     = "spec/03-encoding.md, Deterministic CBOR rule 6 (no tags, with one exception)"
 	ruleOnlyNull     = "spec/03-encoding.md, Deterministic CBOR rule 7 (null is the only simple value)"
-	ruleTextKeys     = "spec/03-encoding.md, Deterministic CBOR (map keys are text strings)"
+	ruleTextKeys     = "spec/03-encoding.md, Deterministic CBOR rule 9 (text map keys)"
 	ruleUTF8         = "spec/03-encoding.md, Text strings and Unicode (text strings MUST be well-formed UTF-8)"
 	ruleDecimal      = "spec/03-encoding.md, Decimal fractions"
 	ruleDecimalRange = "spec/03-encoding.md, Decimal fractions (both components lie in -2^63 … 2^63-1)"

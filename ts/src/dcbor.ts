@@ -2,9 +2,9 @@
  * Dialog's deterministic CBOR profile.
  *
  * Implements `spec/03-encoding.md`, "Deterministic CBOR": the Core
- * Deterministic Encoding Requirements of RFC 8949 §4.2.1 plus the eight rules
- * that section adds, the text-string rules of "Text strings and Unicode", and
- * the canonicalization rules of "Decimal fractions".
+ * Deterministic Encoding Requirements of RFC 8949 §4.2.1 plus the numbered
+ * rules that section adds, the text-string rules of "Text strings and
+ * Unicode", and the canonicalization rules of "Decimal fractions".
  *
  * The profile is narrow on purpose: no floating-point values, no booleans, one
  * tag (4, decimal fractions), null as the only simple value. Anything outside
@@ -55,7 +55,7 @@ export type DcborErrorCode =
   | "tag"
   /** rule 7: null is the only simple value. */
   | "simple"
-  /** map keys are text strings. */
+  /** rule 9: map keys are text strings. */
   | "map-key-type"
   /** text strings (and map keys) are well-formed UTF-8. */
   | "utf8"

@@ -253,8 +253,9 @@ func (d *decoder) mapValue(start int, ai byte, depth int) (Value, error) {
 	return m, nil
 }
 
-// textKey decodes one map key, which must be a text string, and returns both
-// the key and its full CBOR encoding (used for the ordering check).
+// textKey decodes one map key, which must be a text string
+// (spec/03-encoding.md, "Deterministic CBOR" rule 9), and returns both the key
+// and its full CBOR encoding (used for the ordering check).
 func (d *decoder) textKey() (key string, encoded []byte, err error) {
 	start := d.pos
 	if d.pos >= len(d.data) {
