@@ -1227,6 +1227,158 @@ func TestValidateWithoutSiblingsWarns(t *testing.T) {
 	t.Errorf("warnings = %v, want one for rule 9", report.Warnings)
 }
 
+// testDecrypter is a caller that happens to hold keys: it answers with the
+// payload it was given for a block, and ok false — "no key here" — for any
+// other, which is exactly the shape block.Decrypter asks for.
+type testDecrypter map[cid.Digest]Payload
+
+func (d testDecrypter) DecryptPayload(b *Block) (Payload, bool, error) {
+	p, ok := d[b.Digest()]
+	if !ok {
+		return Payload{}, false, nil
+	}
+	return p.Clone(), true, nil
+}
+
+// TestUndecryptableReferenceIsUndecided is the readability cause of *stored but
+// unvalidated* (spec/05-processing-model.md, "Undecryptable reference
+// handling"): a block resolution needs, holds, and cannot read is the same
+// verdict as one that never arrived. Validity is a property of the blocks — the
+// same block is decidable for a key holder — so a key this node was not given
+// is a capability it lacks and not evidence that another author's block is
+// wrong.
+func TestUndecryptableReferenceIsUndecided(t *testing.T) {
+	bondTemplate := "_A_ is the capital of _B_"
+	bond := entity.MustBond(bondTemplate)
+	paris := entity.MustAtom("Paris, the capital of France")
+	france := entity.MustAtom("France")
+	fillers := []entity.Filler{entity.AtomFiller(paris.Digest()), entity.AtomFiller(france.Digest())}
+
+	t.Run("a private refs target the node holds no key for", func(t *testing.T) {
+		// Alice's private block defines the bond. Bob is a recipient of his own
+		// chain's key and not of Alice's, so he holds her block as ciphertext:
+		// rule 6 does not apply — a private block's refs MAY name a block of any
+		// type — and the question is only whether he can read what he needs.
+		store := NewMemStore()
+		alice := mustBuilder(t, 1)
+		provider, err := alice.Private(testCiphertext("alice"), make([]byte, NonceSize))
+		if err != nil {
+			t.Fatalf("provider: %v", err)
+		}
+		providerPayload := Payload{TS: 1, Ops: []Operation{MustCreateBond(bondTemplate)}}
+
+		bob := mustBuilder(t, 2)
+		b, err := bob.Private(testCiphertext("bob"), make([]byte, NonceSize))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		payload := Payload{
+			Refs: []cid.Digest{provider.Digest()},
+			TS:   2,
+			Ops: []Operation{
+				MustCreateAtom(paris.Description()),
+				MustCreateAtom(france.Description()),
+				MustCreateMolecule(bond, fillers),
+			},
+		}
+		store.MustAdd(provider, b)
+
+		// Bob's own block is readable to him — Validate leaves rules 4, 5, 6 and
+		// 10 to the key holder, and this is the key holder's pass.
+		if report := mustValidate(t, b, store, nil); len(report.Unchecked) != 4 {
+			t.Errorf("Unchecked = %v, want rules 4, 5, 6 and 10", report.Unchecked)
+		}
+
+		_, err = ValidatePayload(b, payload, store, nil)
+		if !isRule(err, 4) || !IsUnvalidated(err) {
+			t.Fatalf("ValidatePayload = %v, want a rule 4 error the node has not decided", err)
+		}
+		if !errors.Is(err, ErrUndecryptable) {
+			t.Errorf("ValidatePayload = %v, want ErrUndecryptable: the block is held, and what is missing is a key", err)
+		}
+		if errors.Is(err, ErrNotFound) {
+			t.Errorf("ValidatePayload = %v, want the key cause and not the missing-block one: the source holds the block", err)
+		}
+		// The situation is surfaced, not swallowed: the caller is told which
+		// block it could not read, since obtaining that key is the fix.
+		if !strings.Contains(err.Error(), provider.Digest().String()) {
+			t.Errorf("ValidatePayload = %v, want the undecryptable block named in the error", err)
+		}
+		// The verdict is a function of what the node can read and nothing else.
+		if _, again := ValidatePayload(b, payload, store, nil); again.Error() != err.Error() {
+			t.Errorf("a second ValidatePayload over the same store = %v, want the same verdict as %v", again, err)
+		}
+
+		// Alice wraps her content key for Bob. Nothing about either block
+		// changes, and the block that was undecided is valid: the same question
+		// a node without the key could not answer.
+		opts := &Options{Decrypter: testDecrypter{provider.Digest(): providerPayload}}
+		if report, err := ValidatePayload(b, payload, store, opts); err != nil {
+			t.Errorf("ValidatePayload with the key = %v, want acceptance", err)
+		} else if report.Scanned != 1 {
+			t.Errorf("scanned %d foreign block(s), want 1", report.Scanned)
+		}
+	})
+
+	t.Run("a private ancestor of the author's own chain", func(t *testing.T) {
+		// A chain may mix block types. A node that holds the chain but not the
+		// key to one of its earlier blocks cannot read what that block defined,
+		// and the same undecided verdict follows — this time for a public block.
+		store := NewMemStore()
+		author := mustBuilder(t, 1)
+		genesis, err := author.Private(testCiphertext("genesis"), make([]byte, NonceSize))
+		if err != nil {
+			t.Fatalf("genesis: %v", err)
+		}
+		genesisPayload := Payload{TS: 1, Ops: []Operation{MustCreateBond(bondTemplate)}}
+		tip, err := author.Public(2, nil,
+			MustCreateAtom(paris.Description()),
+			MustCreateAtom(france.Description()),
+			MustCreateMolecule(bond, fillers))
+		if err != nil {
+			t.Fatalf("tip: %v", err)
+		}
+		store.MustAdd(genesis, tip)
+
+		_, err = Validate(tip, store, nil)
+		if !isRule(err, 4) || !errors.Is(err, ErrUndecryptable) || !IsUnvalidated(err) {
+			t.Fatalf("Validate = %v, want a rule 4 error wrapping ErrUndecryptable", err)
+		}
+		mustValidate(t, tip, store, &Options{Decrypter: testDecrypter{genesis.Digest(): genesisPayload}})
+	})
+
+	t.Run("an unreadable block no digest needs", func(t *testing.T) {
+		// Outcome 3 is reached only when the unreadable block could have
+		// mattered. Every digest here resolves inside the block, so the private
+		// entry is scanned, contributes nothing, and decides nothing.
+		store := NewMemStore()
+		alice := mustBuilder(t, 1)
+		provider, err := alice.Private(testCiphertext("alice"), make([]byte, NonceSize))
+		if err != nil {
+			t.Fatalf("provider: %v", err)
+		}
+		bob := mustBuilder(t, 2)
+		b, err := bob.Private(testCiphertext("bob"), make([]byte, NonceSize))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		payload := Payload{
+			Refs: []cid.Digest{provider.Digest()},
+			TS:   2,
+			Ops: []Operation{
+				MustCreateBond(bondTemplate),
+				MustCreateAtom(paris.Description()),
+				MustCreateAtom(france.Description()),
+				MustCreateMolecule(bond, fillers),
+			},
+		}
+		store.MustAdd(provider, b)
+		if _, err := ValidatePayload(b, payload, store, nil); err != nil {
+			t.Errorf("ValidatePayload = %v, want acceptance: no digest needed the unreadable block", err)
+		}
+	})
+}
+
 // plainSource hides a store's Siblings implementation.
 type plainSource struct{ inner Source }
 

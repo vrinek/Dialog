@@ -25,26 +25,42 @@ const DefaultScanLimit = 256
 // from a genuinely unresolvable reference.
 var ErrScanLimit = errors.New("block: the foreign block scan limit")
 
+// ErrUndecryptable reports that reference resolution needed the operations of a
+// private block the caller holds and supplied no key for. Like ErrNotFound it
+// means the node has not been able to decide, not that the block is wrong
+// (spec/05-processing-model.md, "Undecryptable reference handling"), so it
+// arrives wrapped in a rule 4 *RuleError and answers true to IsUnvalidated;
+// errors.Is separates the two causes for a caller that wants to fetch a block
+// in one case and seek a key in the other.
+var ErrUndecryptable = errors.New("block: no decryption key for a block resolution must read")
+
 // IsUnvalidated reports whether a validation error means the node has not been
 // able to decide, rather than that the block is wrong.
 //
 // Validation has three outcomes, not two (spec/02-block-format.md,
 // "Validation" rule 4; spec/05-processing-model.md, "Block reception"): a
 // block is valid, invalid, or *stored but unvalidated* — held, neither valid
-// nor invalid, because a block validating it requires has not arrived. The
-// third is what this reports, whichever rule reached it: rule 3's missing
-// predecessor and rule 4's unobtainable refs target are the same verdict.
+// nor invalid, because a block validating it requires is one the node cannot
+// read. The third is what this reports, whichever rule and whichever cause
+// reached it: rule 3's missing predecessor, rule 4's unobtainable refs target
+// (ErrNotFound), and rule 4's held-but-undecryptable one (ErrUndecryptable)
+// are one verdict.
 //
 // A caller MUST NOT record such a block as rejected. It may keep the bytes and
-// validate again when the missing block arrives, or discard them and ask
-// again; what it may not do is let a block it could not fetch decide that
-// another block is invalid, since a source that withholds one foreign block
-// would then be able to invalidate a block that is in fact valid.
+// validate again when the missing block or the missing key arrives, or discard
+// them and ask again; what it may not do is let a block it could not fetch, or
+// a key it was not given, decide that another author's block is invalid. A
+// source that withholds one foreign block would otherwise be able to
+// invalidate a block that is in fact valid, and a key the node has not *yet*
+// been made a recipient of would decide a question that is the same block's
+// whatever this node holds.
 //
 // The scan limit is the deliberate opposite (ErrScanLimit): a bound the node
-// chose, reached against blocks it holds, and therefore a definitive
+// chose, reached against blocks it holds and read, and therefore a definitive
 // rejection.
-func IsUnvalidated(err error) bool { return err != nil && errors.Is(err, ErrNotFound) }
+func IsUnvalidated(err error) bool {
+	return err != nil && (errors.Is(err, ErrNotFound) || errors.Is(err, ErrUndecryptable))
+}
 
 // Options tunes validation. A nil *Options means the defaults.
 type Options struct {
@@ -57,7 +73,8 @@ type Options struct {
 	// private blocks the caller holds keys for. Without it a private block
 	// resolution meets — an ancestor of the block being validated, or a block
 	// its refs name — contributes no definitions, since this package holds no
-	// keys.
+	// keys, and a digest that needed one of those definitions leaves the
+	// verdict undecided rather than invalid (ErrUndecryptable).
 	Decrypter Decrypter
 }
 
@@ -81,10 +98,11 @@ func (o *Options) decrypter() Decrypter {
 // define the entities its operations reference.
 //
 // It is the mechanism behind spec/05-processing-model.md, "Undecryptable
-// reference handling": a node that can decrypt a block but not one the block
-// depends on MUST surface the error and MUST NOT accept the block on partial
-// validation. Returning ok false for a block the caller has no key for is what
-// produces that error, once a digest actually needs the block.
+// reference handling": a node that can read a block but not one the block
+// depends on has not decided, MUST surface that undecided state and MUST NOT
+// accept the block on partial validation. Returning ok false for a block the
+// caller has no key for is what produces the ErrUndecryptable verdict, once a
+// digest actually needs that block's operations.
 type Decrypter interface {
 	// DecryptPayload returns the payload of a private block. ok is false when
 	// no key for the block is held, which is not an error; an error is a
@@ -232,15 +250,18 @@ func ruleErr(rule int, b *Block, format string, args ...any) error {
 //
 // Two rules can end that way, and they end that way for the same reason. Rule
 // 3 does when the predecessor is not held; rule 4 does when reference
-// resolution needs a block the source does not hold — a refs entry, a block
-// reached transitively through one, or an ancestor deeper in the author's own
-// chain — and a digest is left unresolved for want of it. Both mean the block
-// is *stored but unvalidated* (spec/05-processing-model.md, "Block
-// reception"): neither valid nor invalid, kept out of L2, and validatable
-// again once the missing block arrives. The absence of a block is not evidence
-// about the validity of the block that names it, so a caller MUST NOT record
-// such a block as rejected — which is what makes IsUnvalidated a question
-// worth asking before acting on any error this returns.
+// resolution needs a block it cannot read — a refs entry, a block reached
+// transitively through one, or an ancestor deeper in the author's own chain,
+// either absent from the source or held as ciphertext no Decrypter opens
+// (ErrUndecryptable, spec/05-processing-model.md, "Undecryptable reference
+// handling") — and a digest is left unresolved for want of it. All of them
+// mean the block is *stored but unvalidated* (spec/05-processing-model.md,
+// "Block reception"): neither valid nor invalid, kept out of L2, and
+// validatable again once the missing block, or the missing key, arrives.
+// Neither a block nor a key this node lacks is evidence about the validity of
+// the block that needs it, so a caller MUST NOT record such a block as
+// rejected — which is what makes IsUnvalidated a question worth asking before
+// acting on any error this returns.
 //
 // For a private block, rules 4, 5, 6 and 10 are listed in the report's
 // Unchecked field rather than evaluated: refs and ops are inside enc, which
@@ -488,6 +509,7 @@ type resolver struct {
 	nextAncestor  *cid.Digest
 	ancestorGap   *cid.Digest // the ancestor the source does not hold
 	refsGap       *cid.Digest // the first refs-graph block the source does not hold
+	keyGap        *cid.Digest // the first block held as ciphertext no key was supplied for
 	privateWarned bool
 
 	queue   []cid.Digest
@@ -522,16 +544,21 @@ func (r *resolver) resolve(d cid.Digest) (record, error) {
 	// Three-valued rule 4 (spec/02-block-format.md, "Validation" rule 4;
 	// spec/05-processing-model.md, "Resolution procedure"). Resolution has
 	// failed, and which failure it is depends on whether it ran out of
-	// definitions or ran out of blocks it could read. A gap in either direction
-	// — the author's own chain or the refs graph — means the node has not
-	// decided, so the error wraps ErrNotFound and the caller reads it as
+	// definitions or ran out of blocks it could read. A gap in any of the three
+	// directions — the author's own chain, the refs graph, or a block held as
+	// ciphertext with no key for it — means the node has not decided, so the
+	// error is one IsUnvalidated answers true to and the caller reads it as
 	// "stored but unvalidated" rather than "invalid". Only a resolution that
-	// completed against everything the source holds proves a digest absent.
+	// completed against everything the source holds *and could read* proves a
+	// digest absent.
 	if r.ancestorGap != nil {
 		return record{}, fmt.Errorf("entity %s could not be resolved: the author's chain is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.ancestorGap, ErrNotFound)
 	}
 	if r.refsGap != nil {
 		return record{}, fmt.Errorf("entity %s could not be resolved: the refs graph is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.refsGap, ErrNotFound)
+	}
+	if r.keyGap != nil {
+		return record{}, fmt.Errorf("entity %s could not be resolved: block %s is private and no decryption key for it was supplied, so its operations could not be read; the block is stored but unvalidated rather than invalid, and a key would settle it: %w", d, r.keyGap, ErrUndecryptable)
 	}
 	return record{}, fmt.Errorf("entity %s is not reachable from this block, from an ancestor in the author's chain, or from any block in the refs graph", d)
 }
@@ -560,9 +587,17 @@ func (r *resolver) extendAncestors() error {
 			// A key holder validating its own private chain resolves through
 			// its own earlier blocks, exactly as a public chain does.
 			ops = p.Ops
-		} else if !r.privateWarned {
-			r.report.warn(4, r.block.Digest(), "ancestor block %s is private and no decryption key for it was supplied, so the entities its operations define cannot satisfy a reference", d)
-			r.privateWarned = true
+		} else {
+			// The block is held and unreadable, which is the readability cause
+			// of "stored but unvalidated": if a digest then fails to resolve,
+			// the verdict is undecided rather than invalid (see resolve).
+			if r.keyGap == nil {
+				r.keyGap = &d
+			}
+			if !r.privateWarned {
+				r.report.warn(4, r.block.Digest(), "ancestor block %s is private and no decryption key for it was supplied, so the entities its operations define cannot satisfy a reference", d)
+				r.privateWarned = true
+			}
 		}
 	}
 	for _, op := range ops {
@@ -637,8 +672,15 @@ func (r *resolver) extendRefs() error {
 		if !ok {
 			// The operations are encrypted and no key for them was supplied, so
 			// the block contributes no definitions. spec/05-processing-model.md,
-			// "Undecryptable reference handling", makes that a validation error
-			// once a digest actually needs it, which is what resolve reports.
+			// "Undecryptable reference handling", makes that the undecided
+			// verdict once a digest actually needs it — the node holds the block
+			// but cannot read it, and a key holder decides the same question
+			// differently, so nothing here shows the referencing block wrong.
+			// Recording the gap is what turns it into "stored but unvalidated"
+			// (see resolve) rather than a rejection.
+			if r.keyGap == nil {
+				r.keyGap = &d
+			}
 			r.report.warn(4, r.block.Digest(), "referenced block %s is private and no decryption key for it was supplied; its operations are not visible", d)
 			return nil
 		}

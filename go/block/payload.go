@@ -175,12 +175,16 @@ func DecodePayload(b []byte) (Payload, error) {
 // must be reachable, and must resolve to an entity of the kind its position
 // names.
 //
-// A referenced block that is itself private contributes no definitions, since
-// this package holds no keys; if a digest needs it, rule 4 reports the digest
-// as unresolvable, which is what spec/05-processing-model.md, "Undecryptable
-// reference handling", requires of a node that can read one block but not the
-// one it depends on. A caller holding more than one chain key decrypts those
-// blocks first and validates them in turn.
+// A referenced block that is itself private contributes no definitions unless
+// the caller supplies a Decrypter for it, since this package holds no keys. If
+// a digest needs one of those definitions, rule 4's verdict is *not
+// determinable*: the error wraps ErrUndecryptable and answers true to
+// IsUnvalidated, so the block is stored but unvalidated and never invalid,
+// which is what spec/05-processing-model.md, "Undecryptable reference
+// handling", requires of a node that can read one block but not the one it
+// depends on. A key can be wrapped for a further recipient at any time, so the
+// question stays open; a caller holding the other chain's key passes it in
+// through Options.Decrypter and the same call decides.
 func ValidatePayload(b *Block, p Payload, src Source, opts *Options) (*Report, error) {
 	if b == nil {
 		return nil, fmt.Errorf("block: ValidatePayload called with a nil block")
