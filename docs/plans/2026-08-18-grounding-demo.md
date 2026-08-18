@@ -55,6 +55,24 @@ protocol findings, which get filed as todos like every other phase's.
 1. `demo/` module + content model + `genchains` + committed chains + loader,
    with tests (chains validate, graph/accept produce the expected states,
    regeneration byte-identical).
+   — **done:** `demo/` is its own module (`replace` onto `../go`, no
+   dependencies beyond the library). `internal/content` holds the dataset — ten
+   real European countries plus one documented-fictional one, keys from fixed
+   SHA-256 seeds, block timestamps from a fixed base — and encodes every
+   statement of it as an entity, so tests recompute a digest rather than being
+   told it. `internal/publish` signs the three chains (14 blocks, 92
+   operations), validating each block as it is signed; `internal/chainfile`
+   renders and reads the directory (`index.json` plus one `.block` file per
+   block, the raw canonical bytes); `cmd/genchains` writes it and `-check`s it.
+   `internal/replay` is the loading path a node takes —
+   `chainfile.Read` → `block.ValidateChain` → `graph.Ingest` → `accept.Build` —
+   with views built per subscription set. Tests cover replay and validation
+   from the committed bytes, L2 entity counts and authorship (91 entities, 92
+   authorship records, one entity with two authors), both conflicts of the
+   capital dispute, equivalence at all three levels, the supersession chain, the
+   same-author flip, the collapse of both when `gazetteer` is dropped, tampering
+   rejection, and byte-identical regeneration. Three findings filed as
+   `todos/063`, `064` and `065`.
 2. `dialog-mcp` server + tools + tests (tool-level, over the committed chains).
 3. Walkthrough README + CI (demo module build+test job) + plan closure.
 
@@ -63,7 +81,7 @@ protocol findings, which get filed as todos like every other phase's.
 Library modules (`go/`, `ts/`) are read-only for this track except where a
 genuine library gap blocks the demo — file a todo instead of patching around
 it, and surface the gap in the report. Spec is normative; protocol findings
-become todos (next free: 063). Checks: demo module `gofmt -l`, `go vet`,
+become todos (next free: 066). Checks: demo module `gofmt -l`, `go vet`,
 `go test` clean before every commit; the repo's full Go battery must stay
 green (the library is untouched, so this is a smoke check). Granular commits,
 required trailers, no pushes.
