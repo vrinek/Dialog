@@ -59,7 +59,66 @@ var ErrUndecryptable = errors.New("block: no decryption key for a block resoluti
 // chose, reached against blocks it holds and read, and therefore a definitive
 // rejection.
 func IsUnvalidated(err error) bool {
-	return err != nil && (errors.Is(err, ErrNotFound) || errors.Is(err, ErrUndecryptable))
+	return err != nil && (errors.Is(err, ErrNotFound) || errors.Is(err, ErrUnaccepted) || errors.Is(err, ErrUndecryptable))
+}
+
+// ErrUnaccepted reports that rule 3's predecessor is held but has not been
+// accepted as valid: the source carries verdicts (see Verdicts), and the one it
+// holds for that block is not VerdictValid. Rule 3 requires a predecessor the
+// node holds *and has accepted as valid* (spec/02-block-format.md, "Validation"
+// rule 3), and a stored but unvalidated block MUST NOT be treated as another
+// block's predecessor (spec/05-processing-model.md, "Block reception").
+//
+// Like ErrNotFound it means the node has not decided rather than that the block
+// is wrong, so IsUnvalidated answers true to it. What would settle it is that
+// block's own verdict rather than its arrival, which is why it is a separate
+// sentinel: a caller fetches in one case and waits in the other.
+//
+// A source that carries no verdicts cannot raise it. There, rule 3 is a lookup
+// among blocks the caller has undertaken to have validated, which is the
+// contract a bare MemStore is used under.
+var ErrUnaccepted = errors.New("block: the previous block has not been accepted as valid")
+
+// A PendingError names the one block that left a verdict undecided: the block
+// whose arrival, or whose decryption key, would let validation finish.
+//
+// It carries no message of its own — Error returns the wrapped error's, which
+// already names the block in words. The type exists so that a store can file a
+// stored-but-unvalidated block under what it is waiting for and re-validate it
+// when that arrives, without parsing a sentence. errors.As reaches it through
+// the *RuleError, and errors.Is still finds ErrNotFound or ErrUndecryptable
+// beneath it, so IsUnvalidated is unaffected.
+type PendingError struct {
+	// Block is the block validation could not read.
+	Block cid.Digest
+	// Key reports which of the two causes it is. False: the source does not
+	// hold Block, and holding it would settle the verdict. True: the source
+	// holds Block and could not read it — a private block no Decrypter opened —
+	// so no arrival will settle it and what is wanted is a key
+	// (spec/05-processing-model.md, "Undecryptable reference handling").
+	Key bool
+	// Err is the error this stands in for, wrapping ErrNotFound or
+	// ErrUndecryptable.
+	Err error
+}
+
+func (e *PendingError) Error() string { return e.Err.Error() }
+
+func (e *PendingError) Unwrap() error { return e.Err }
+
+// Awaiting returns the block whose arrival would settle an undecided verdict.
+//
+// ok is false for any other error, and for the undecided verdict that is
+// waiting on a decryption key rather than on a block: that block is already
+// held, so no arrival will re-open the question and a store has nothing to file
+// the waiting block under. Use errors.As with a *PendingError to see which
+// block a key is wanted for.
+func Awaiting(err error) (d cid.Digest, ok bool) {
+	var pe *PendingError
+	if !errors.As(err, &pe) || pe.Key {
+		return cid.Digest{}, false
+	}
+	return pe.Block, true
 }
 
 // Options tunes validation. A nil *Options means the defaults.
@@ -358,7 +417,32 @@ func validateLinkage(b *Block, src Source, report *Report) (*Block, error) {
 	}
 	prev, err := src.Block(prevDigest)
 	if err != nil {
-		return nil, &RuleError{Rule: 3, Block: b.Digest(), Err: fmt.Errorf("previous block %s: %w", prevDigest, err)}
+		inner := fmt.Errorf("previous block %s: %w", prevDigest, err)
+		if errors.Is(err, ErrNotFound) {
+			// The predecessor's arrival is what would settle this, and a
+			// verdict-carrying store files the block under it (see Awaiting).
+			inner = &PendingError{Block: prevDigest, Err: inner}
+		}
+		return nil, &RuleError{Rule: 3, Block: b.Digest(), Err: inner}
+	}
+	// Rule 3 wants a predecessor the node holds *and has accepted as valid*. A
+	// source that records verdicts can answer that; one that does not is being
+	// used under the contract that everything in it was validated when it
+	// arrived, which is the induction the specification describes and a bare
+	// MemStore leaves to its caller.
+	//
+	// This is the one place validation reads a verdict rather than a block, and
+	// it is the deliberate counterpart of rule 4, which reads blocks whatever
+	// their verdict (see the resolver's doc comment): rule 3 asks whether an
+	// author's chain is intact, rule 4 asks what a digest names.
+	if v, ok := src.(Verdicts); ok {
+		if verdict, _ := v.Verdict(prevDigest); verdict != VerdictValid {
+			return nil, &RuleError{Rule: 3, Block: b.Digest(), Err: &PendingError{
+				Block: prevDigest,
+				Err: fmt.Errorf("previous block %s is held but its verdict is %s, and a block that has not been accepted as valid must not be treated as another block's predecessor: %w",
+					prevDigest, verdict, ErrUnaccepted),
+			}}
+		}
 	}
 	if !prev.SameAuthor(b) {
 		return nil, ruleErr(3, b, "previous block %s is signed by %x, not by this block's author %x; within a single chain all blocks carry the same %q",
@@ -517,6 +601,38 @@ type record struct {
 // time and the refs graph is a breadth-first queue, and both keep their place
 // between lookups, so a block whose first operation resolves from its own
 // chain never fetches a foreign block at all.
+//
+// # It reads blocks, not verdicts
+//
+// A definition is taken from any block the Source hands over, whatever that
+// block's own validity: a block held while its ancestry is missing, a block
+// that forked its author's chain, a block that will turn out invalid when the
+// rest of its chain arrives. That is what spec/05-processing-model.md,
+// "Resolution procedure", "Resolution reads blocks, not verdicts", permits, and
+// it is sound here for two reasons that are properties of this package rather
+// than of any store.
+//
+// The first is that the block's self-contained checks have already run. A
+// *Block exists only through Decode, Sign or Assemble, and all three go through
+// Content.Validate and verify the Ed25519 signature against the block's own pub
+// field, Decode having first insisted on canonical dCBOR and the exact field set
+// of the block's type. There is no way to obtain a *Block whose bytes, structure
+// or signature are in doubt, so every block a Source can hand out is
+// structurally sound in the sense the rule requires.
+//
+// The second is that a definition is self-certifying. define below indexes an
+// operation under the digest op.Creates() computes — Atom.Digest, Bond.Digest
+// or Molecule.Digest, each of them SHA-256 over the entity's canonical dCBOR
+// (spec/01-data-model.md, "Content addressing") — so the digest a lookup
+// matches is one this package derived from the entity's own bytes. No block
+// asserts a digest and none is believed; the source block's chain standing
+// cannot change what those bytes hash to.
+//
+// What that permission does not touch: only a valid block's operations may
+// reach L2 (spec/05-processing-model.md, "Accumulation rules"), which is the
+// graph package's caller's business and not this one's; rules 6 and 10 are
+// checked against the referenced block exactly as written; and rule 3 still
+// requires a predecessor the caller has accepted as valid.
 type resolver struct {
 	block     *Block
 	src       Source
@@ -573,13 +689,13 @@ func (r *resolver) resolve(d cid.Digest) (record, error) {
 	// completed against everything the source holds *and could read* proves a
 	// digest absent.
 	if r.ancestorGap != nil {
-		return record{}, fmt.Errorf("entity %s could not be resolved: the author's chain is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.ancestorGap, ErrNotFound)
+		return record{}, &PendingError{Block: *r.ancestorGap, Err: fmt.Errorf("entity %s could not be resolved: the author's chain is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.ancestorGap, ErrNotFound)}
 	}
 	if r.refsGap != nil {
-		return record{}, fmt.Errorf("entity %s could not be resolved: the refs graph is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.refsGap, ErrNotFound)
+		return record{}, &PendingError{Block: *r.refsGap, Err: fmt.Errorf("entity %s could not be resolved: the refs graph is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.refsGap, ErrNotFound)}
 	}
 	if r.keyGap != nil {
-		return record{}, fmt.Errorf("entity %s could not be resolved: block %s is private and no decryption key for it was supplied, so its operations could not be read; the block is stored but unvalidated rather than invalid, and a key would settle it: %w", d, r.keyGap, ErrUndecryptable)
+		return record{}, &PendingError{Block: *r.keyGap, Key: true, Err: fmt.Errorf("entity %s could not be resolved: block %s is private and no decryption key for it was supplied, so its operations could not be read; the block is stored but unvalidated rather than invalid, and a key would settle it: %w", d, r.keyGap, ErrUndecryptable)}
 	}
 	return record{}, fmt.Errorf("entity %s is not reachable from this block, from an ancestor in the author's chain, or from any block in the refs graph", d)
 }
@@ -714,9 +830,14 @@ func (r *resolver) extendRefs() error {
 	return nil
 }
 
-// define records the entity an operation creates. The first definition wins;
-// re-creating the same entity is idempotent, since the digest determines the
-// content.
+// define records the entity an operation creates, under the digest
+// op.Creates() computes from the entity's canonical bytes. That recomputation
+// is what makes a definition self-certifying, and it is why a definition may be
+// read from a block whose own validity is undecided (see the resolver's doc
+// comment).
+//
+// The first definition wins; re-creating the same entity is idempotent, since
+// the digest determines the content.
 func (r *resolver) define(op Operation) {
 	d, kind, ok := op.Creates()
 	if !ok {

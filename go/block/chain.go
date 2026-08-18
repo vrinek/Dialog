@@ -78,6 +78,25 @@ func (c *Chain) String() string {
 // appear only as the tip; a block linked onto one is rejected by rule 3. The
 // successor key's chain is a separate Chain, tied to this one by
 // ValidateSuccession.
+//
+// # An accepted verdict is read, not recomputed
+//
+// A verdict moves in one direction (spec/02-block-format.md, "Validation", "A
+// verdict moves in one direction"), and this function is the natural way to ask
+// for a second validation of a block that already has a verdict — a node
+// re-checking its store on startup, say. Re-validating a block against a store
+// that has grown since cannot make it more valid, and it can make it less: an
+// entry the first validation left unchecked because the block was not held
+// might now resolve to a private block, and rules 6 and 10 would reject a block
+// the node has already accepted, contributed to L2 and served.
+//
+// So it does not re-validate one. When src carries verdicts (see Verdicts,
+// which ValidatingStore implements), a block the source has accepted is taken
+// as accepted and its recorded report is folded in unchanged. A source that
+// carries no verdicts cannot be asked, and there the obligation stays with the
+// caller: it MUST NOT downgrade a block it has accepted on a rule 6 or 10
+// finding for an entry the accepting validation reported in
+// Report.UncheckedRefs.
 func ValidateChain(tip cid.Digest, src Source, opts *Options) (*Chain, error) {
 	blocks, err := walk(tip, src)
 	if err != nil {
@@ -85,7 +104,7 @@ func ValidateChain(tip cid.Digest, src Source, opts *Options) (*Chain, error) {
 	}
 	chain := &Chain{Pub: blocks[0].PublicKey(), Blocks: blocks, Report: &Report{}}
 	for _, b := range blocks {
-		report, err := Validate(b, src, opts)
+		report, err := accepted(b, src, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -99,6 +118,24 @@ func ValidateChain(tip cid.Digest, src Source, opts *Options) (*Chain, error) {
 		}
 	}
 	return chain, nil
+}
+
+// accepted returns the verdict a source already holds for a block, and
+// validates the block only when there is none to read (see ValidateChain, "An
+// accepted verdict is read, not recomputed").
+//
+// A nil report from a source that keeps none is turned into an empty one, so
+// that a caller folding reports together never has to test for it.
+func accepted(b *Block, src Source, opts *Options) (*Report, error) {
+	if v, ok := src.(Verdicts); ok {
+		if verdict, report := v.Verdict(b.Digest()); verdict == VerdictValid {
+			if report == nil {
+				report = &Report{}
+			}
+			return report, nil
+		}
+	}
+	return Validate(b, src, opts)
 }
 
 // walk follows prev from tip to genesis and returns the blocks in publication
@@ -253,6 +290,9 @@ func Successors(rotation *Block, src Source) (successors []cid.Digest, fork *For
 // ValidateChain, and each junction with ValidateSuccession: every chain but
 // the last must end in a rotation block, and the next chain's genesis block
 // must be signed by the key that rotation names.
+//
+// Like ValidateChain, it reads an accepted verdict rather than recomputing it
+// when the source carries verdicts.
 func ValidateHistory(tips []cid.Digest, src Source, opts *Options) ([]*Chain, error) {
 	if len(tips) == 0 {
 		return nil, fmt.Errorf("block: ValidateHistory needs at least one chain tip")

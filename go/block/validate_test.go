@@ -1241,6 +1241,69 @@ func TestStoredButUnvalidated(t *testing.T) {
 	}
 }
 
+// TestDefinitionFromAnUndecidedBlockResolves pins the ratified reading of rule
+// 4's three branches: they name blocks the node holds and can read, never valid
+// blocks (spec/05-processing-model.md, "Resolution procedure", "Resolution
+// reads blocks, not verdicts"; spec/02-block-format.md, "Validation" rule 4).
+//
+// Alice's second block defines a bond. Its predecessor never arrives, so
+// Alice's block is stored but unvalidated and stays that way. Bob names it in
+// refs and resolves the bond through it, and Bob's block is valid: a definition
+// is self-certifying — the bond's digest is SHA-256 over the bond's own
+// canonical bytes, which this package recomputes — so Alice's chain standing
+// cannot change which entity the digest names.
+func TestDefinitionFromAnUndecidedBlockResolves(t *testing.T) {
+	bondTemplate := "_A_ is the capital of _B_"
+	bond := entity.MustBond(bondTemplate)
+	paris := entity.MustAtom("Paris, the capital of France")
+	france := entity.MustAtom("France")
+	fillers := []entity.Filler{entity.AtomFiller(paris.Digest()), entity.AtomFiller(france.Digest())}
+
+	alice := mustBuilder(t, 1)
+	undelivered, err := alice.Public(1, nil, MustCreateAtom("a block nobody sent"))
+	if err != nil {
+		t.Fatalf("undelivered: %v", err)
+	}
+	provider, err := alice.Public(2, nil, MustCreateBond(bondTemplate))
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	bob := mustBuilder(t, 2)
+	b, err := bob.Public(3, []cid.Digest{provider.Digest()},
+		MustCreateAtom(paris.Description()),
+		MustCreateAtom(france.Description()),
+		MustCreateMolecule(bond, fillers))
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	store := NewMemStore()
+	store.MustAdd(provider, b) // Alice's genesis block is not delivered
+
+	// Alice's block is undecided, and names the block whose arrival would
+	// settle it.
+	_, err = Validate(provider, store, nil)
+	if !isRule(err, 3) || !IsUnvalidated(err) {
+		t.Fatalf("Validate(provider) = %v, want an undecided rule 3 verdict", err)
+	}
+	if d, ok := Awaiting(err); !ok || d != undelivered.Digest() {
+		t.Errorf("Awaiting = %s, %v; want the undelivered predecessor %s", d, ok, undelivered.Digest())
+	}
+
+	// Bob's block is valid all the same, and the definition cost the one scan a
+	// held block costs.
+	report := mustValidate(t, b, store, nil)
+	if report.Scanned != 1 {
+		t.Errorf("scanned %d foreign block(s), want 1", report.Scanned)
+	}
+
+	// And it stays that way: the source block's verdict is still undecided, so
+	// nothing about Bob's block rested on Alice's chain being intact.
+	if _, err := Validate(provider, store, nil); !IsUnvalidated(err) {
+		t.Errorf("Validate(provider) after the fact = %v, want the same undecided verdict", err)
+	}
+}
+
 // TestValidateChainRejectsIncompleteChain checks that a chain missing a block
 // is an ErrNotFound rather than a silent truncation.
 func TestValidateChainRejectsIncompleteChain(t *testing.T) {
