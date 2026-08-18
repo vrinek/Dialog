@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "086"
 tags: [transport, specification-gap, http-binding]
@@ -102,9 +102,9 @@ meaning.
 
 ## Acceptance Criteria
 
-- [ ] The specification defines the tip of a store with a hole in it
-- [ ] The specification says whether a fork's branch choice must be stable
-- [ ] `go/transport`'s `tipOf` matches whatever it says
+- [x] The specification defines the tip of a store with a hole in it
+- [x] The specification says whether a fork's branch choice must be stable
+- [x] `go/transport`'s `tipOf` matches whatever it says
 
 ## Work Log
 
@@ -114,6 +114,43 @@ meaning.
 
 Found writing `tipOf`: the natural implementation (ask the store for its leaves)
 produces a server that fails server rule 1 on any store with a gap.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended, plus the stability sentence.
+
+- `spec/07-transport.md`, "tip": the tip is now defined **constructively** —
+  begin at the genesis position, walk forward through the source's own store
+  along the branch it serves, and the tip is the last block reached. Two
+  consequences are stated: a source holding no block at the genesis position
+  holds no tip whatever else it holds, and a source with a hole has as its tip
+  the last block before the hole and serves a range ending there.
+- Server rules 1 and 2 now say they are consequences of that definition rather
+  than obligations a server checks for itself; a server that computes its tip
+  some other way owes both separately. The rules themselves are unchanged, so
+  nothing that conformed stopped conforming.
+- The hole is stated informatively as the server's problem to fix — it fetches
+  the missing block and the walk goes further on its own — and the blocks past
+  it stay serveable by digest, where no claim about a chain is made. The
+  rejected reading (the tip is any leaf) is named with the reason: it is the
+  cheap one for a store's index and the one that breaks rule 1.
+- The fork choice MUST be **deterministic and stable per author**: for as long
+  as the source holds the same blocks, every `tip` and every `range` follows the
+  same branch, and the two MUST agree. The reference rule is informative — the
+  lowest digest bytewise, the order `siblings` already sorts in — chosen because
+  it is a function of the blocks alone and therefore stable across requests,
+  restarts and sources. `range`'s own fork sentence points at it.
+- `go/transport` already worked this way; `tipOf` and `branch` now cite the
+  rules. Tests: `TestNoGenesisIsNoTip` (a store holding blocks 2-4 only reports
+  404 from `tip`, serves an empty range, and still serves those blocks by
+  digest) and two additions to `TestServerServesOneBranchOfAFork` (repeated
+  requests to one server, and a second server holding the same blocks in the
+  opposite insertion order, report the same branch). `TestServerStopsBeforeAHole`
+  already covered the mid-chain hole.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

@@ -601,12 +601,14 @@ func (s *Server) at(pub ed25519.PublicKey, prev *cid.Digest) []*block.Block {
 // branch chooses which block to serve at a position this source holds more than
 // one block at — that is, at a fork.
 //
-// The choice is source policy, and this server's policy is the lowest digest
-// bytewise. What matters is not which branch it picks but that it picks the same
-// one everywhere: a server MUST answer range along one branch only, consistently
-// with what its tip reports, and MUST NOT interleave branches. A deterministic
-// function of the blocks themselves gives that for free, and gives two servers
-// holding the same blocks the same answer.
+// The choice MUST be deterministic and stable per author: for as long as a
+// source holds the same blocks of a chain, every tip and every range it answers
+// follows the same branch, and the two MUST agree (spec/07-transport.md, "tip";
+// "range"; todos/086). Which branch is source policy, and this server takes the
+// profile's reference rule — the lowest digest bytewise, the order siblings is
+// sorted in. Being a function of the blocks alone, it is stable across requests,
+// across restarts, and across two servers holding the same blocks, and it costs
+// no stored state.
 //
 // Untangling a fork is the siblings operation's job, and a client that cares
 // about forks does not learn about them from tip.
@@ -645,13 +647,15 @@ func (s *Server) walk(pub ed25519.PublicKey, after *cid.Digest, limit int) []*bl
 // tipOf returns the block at the end of the chain this server can serve for an
 // author: the last block of the forward walk from the genesis position.
 //
-// Defining the tip as the end of what range can serve is what keeps the two
-// operations honest about each other. A server that answers tip for an author
-// and cannot answer range from the genesis position for the same author is not
-// conforming (spec/07-transport.md, "Server rules", rule 1), so a store holding
-// blocks 3, 4 and 5 of a chain whose first three it never received reports no
-// tip at all and serves an empty range — those blocks are still served by digest,
-// where no chain claim is made about them.
+// This is the profile's own definition of a tip, which is constructive for this
+// reason: server rules 1 and 2 then hold by construction rather than as separate
+// obligations, because the walk that answers tip is the walk that answers range
+// and both stop at the same place (spec/07-transport.md, "tip"; "Server rules",
+// rules 1 and 2; todos/086). A store holding blocks 3, 4 and 5 of a chain whose
+// first three it never received therefore reports no tip at all and serves an
+// empty range — those blocks are still served by digest, where no chain claim is
+// made about them, and the hole is this server's problem to fix by fetching what
+// it is missing.
 func (s *Server) tipOf(pub ed25519.PublicKey) (*block.Block, bool) {
 	var tip *block.Block
 	pos := (*cid.Digest)(nil)

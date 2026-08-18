@@ -113,11 +113,20 @@ Common rules:
 
 #### tip
 
-*Request:* an author key. *Response:* one block — the block that occupies the tip position of that author's chain in the source's store — or "I do not have it" when the source holds no block from that author.
+*Request:* an author key. *Response:* one block — the **tip**, as defined below — or "I do not have it" when the source holds no tip for that author.
+
+The tip is defined **constructively**, as the end of a walk through the source's own store: begin at the genesis position, take the block the source holds there, then the block whose `prev` names that block, and continue. The tip is the last block the walk reaches. Where the source holds more than one block at a position, the walk follows the branch that source serves (below). Two consequences, which are the first two server rules of "What a conforming server serves" rather than separate obligations:
+
+- A source that holds no block at the genesis position holds **no tip** for that author, whatever else of that chain it holds, and answers "I do not have it".
+- A source whose store has a **hole** — a position it holds no block at, with blocks of that chain beyond it — has as its tip the last block the walk reaches before the hole, and serves a `range` that ends at the same block.
+
+*Informative.* A hole is the server's problem to fix rather than something this profile gives it a way to describe: it fetches the missing block, and the walk then goes further and the tip moves on its own. Until then a store holding blocks 3, 4 and 5 of a chain whose first three it never received reports no tip and serves an empty range, while still serving those three blocks by digest — `block` and `blocks` make no claim about a chain, and a store with a hole can answer them honestly. The alternative definition — the tip is any block the store holds that nothing else names as a predecessor — is the one a store's own index answers cheaply, and it is the one that makes a server report a tip it cannot serve a `range` to, which server rule 1 refuses.
 
 The response is the **block itself**, not a statement of its digest. A client computes the digest and the CID from the bytes it received, which means the source cannot misreport the tip's identity; it can only choose which tip to show, which is the freshness gap and is not fixable here (see "What a server does not guarantee").
 
-A source that holds a fork has more than one candidate for the tip position. It MUST answer `tip` with exactly one of them — the choice is source policy — and it MUST answer `siblings` honestly about the divergence. A client that cares about forks does not learn about them from `tip`.
+A source that holds a fork has more than one candidate at a position, so the walk above needs a branch. The source chooses, and the choice MUST be **deterministic and stable per author**: for as long as the source holds the same blocks of that chain, every `tip` and every `range` it answers MUST follow the same branch. A source choosing per request would satisfy each sentence of this profile read alone and be useless, because a client's repeated requests would then name no single chain. `tip` and `range` MUST agree on the branch, which they do by construction when the tip is the end of the walk `range` performs. The source MUST also answer `siblings` honestly about the divergence; a client that cares about forks does not learn about them from `tip`.
+
+*The reference rule, informative.* Take the block with the lowest digest, comparing bytewise — the same order `siblings` is sorted in. It is a function of the blocks alone, so it is stable across requests, across restarts and across two sources holding the same blocks, and it costs no stored state. A source MAY choose on any other ground; what is normative is determinism and stability, not this rule.
 
 #### range
 
@@ -127,7 +136,7 @@ The position is **exclusive**: the block naming it is not in the response, the b
 
 A source MUST NOT return more blocks than the requested maximum. It MAY return fewer, for any reason, including one of its own. If it holds at least one block at the requested position it MUST return at least one block. If it holds none, the response is an empty sequence — which is the answer both when the client is already at the tip and when the source's store stops there, and those two are distinguished by comparing against `tip`, not by the emptiness.
 
-If the source holds more than one block at the requested position — a fork — it MUST answer `range` along one branch only, consistently with what its `tip` reports, and MUST NOT interleave branches. Untangling a fork is `siblings`' job.
+If the source holds more than one block at the requested position — a fork — it MUST answer `range` along one branch only, consistently with what its `tip` reports and with the same deterministic, per-author-stable choice `tip` makes (see "tip"), and MUST NOT interleave branches. Untangling a fork is `siblings`' job.
 
 #### block
 
@@ -309,6 +318,8 @@ That is a hosting convention and not a protocol fact: an author who rotates a ke
 
 1. A server MUST serve, for every author chain it holds, **every block it holds of that chain, in chain order, from the genesis block to the tip it reports**, through `range`. Serving a chain means serving all of it; a server that answers `tip` for an author and cannot answer `range` from the genesis position for the same author is not conforming.
 2. A server MUST NOT skip a block within a range, MUST NOT reorder one, and MUST NOT serve across a hole in its own store. Where it holds a gap it MUST end the response before the gap, so that the client's `prev` walk terminates cleanly and the client can tell "the source stops here" from "the chain ends here" by asking `tip`.
+
+   Rules 1 and 2 are consequences of the constructive definition of a tip ("tip" above) rather than obligations a server has to check for itself: a server whose tip is the end of the forward walk its `range` performs cannot report a tip it is unable to serve a range to, and cannot serve across a hole, because the walk stops at the hole in both answers. A server that computes its tip some other way owes both rules separately.
 3. A server MUST retain and serve, as opaque bytes, every block of a chain it serves that it cannot read. A private block is opaque to a non-recipient by design ([02-block-format.md](02-block-format.md), "Private block"), and [05-processing-model.md](05-processing-model.md) permits a non-recipient node to *drop* private blocks it cannot decrypt — but that permission is about a node's own store. A server that drops them publishes a chain with a hole, and every block after the hole fails validation rule 3 at every client. Storage policy and serving policy are different policies; whether the specification proper should say so is open, see todo 071.
 4. A server MUST serve `siblings` honestly: every block it holds at the named position, with no winner chosen.
 5. A server MUST NOT require authentication or any client identifier for the five read operations. A deployment MAY put whatever it likes in front of these endpoints — a private server, an allowlist, a VPN — but a server that requires a client to identify itself makes that client's requests linkable into a durable identity, which is the opposite of what the subscription-privacy consideration asks for. See todo 073.
@@ -358,7 +369,6 @@ The questions above were left open on purpose. The ones below were not: they are
 
 | Todo | Question | Where it bites |
 |------|----------|----------------|
-| [086](../todos/086-pending-p2-which-tip-does-a-server-with-a-hole-report.md) | Which tip does a server with a hole report? | `tip`; "Server rules" 1 and 2; the stability of a fork's branch choice |
 | [087](../todos/087-pending-p3-no-status-code-for-an-operation-a-server-does-not-implement.md) | No status code for an OPTIONAL operation a server does not implement | "The six operations"; "Status codes"; the event stream |
 | [088](../todos/088-pending-p2-when-is-an-announce-receipts-disposition-decided.md) | When is an announce receipt's disposition decided? | `announce`; the receipt's three members |
 | [089](../todos/089-pending-p3-limit-has-one-spelling-or-several.md) | Does `limit` have one spelling, and what does a repeated query parameter mean? | "HTTP binding", the bullets under the method-and-path table |

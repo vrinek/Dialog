@@ -174,6 +174,34 @@ func TestServerStopsBeforeAHole(t *testing.T) {
 	}
 }
 
+// TestNoGenesisIsNoTip: the tip is the end of the forward walk from the genesis
+// position, so a source holding no block at that position holds no tip at all,
+// whatever else of the chain it holds. It still serves those blocks by digest,
+// where no claim about a chain is being made (spec/07-transport.md, "tip";
+// todos/086).
+func TestNoGenesisIsNoTip(t *testing.T) {
+	pub, blocks := testChain(t, 32, 5)
+	// Blocks 2, 3 and 4 of a chain whose first two this source never received.
+	client, ts := serve(t, ServerConfig{Store: memStore(t, blocks[2:]...)})
+
+	resp := get(t, ts, http.MethodGet, DefaultPrefix+"/chains/"+authorText(t, pub)+"/tip", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("tip = %d, want 404: the walk from the genesis position reaches nothing", resp.StatusCode)
+	}
+	result, err := client.Range(t.Context(), pub, nil, 0)
+	if err != nil {
+		t.Fatalf("Range: %v", err)
+	}
+	if len(result.Blocks) != 0 {
+		t.Errorf("the range is %d blocks, want an empty sequence", len(result.Blocks))
+	}
+	for _, b := range blocks[2:] {
+		if _, err := client.Block(t.Context(), b.Digest()); err != nil {
+			t.Errorf("a block of the unreachable run is not served by digest: %v", err)
+		}
+	}
+}
+
 // TestRangeLimit: a source MUST NOT return more blocks than the requested
 // maximum, and MAY return fewer. Continuation is the client asking again from
 // the last block it received — no cursor, no session, no server-side state.
@@ -602,6 +630,30 @@ func TestServerServesOneBranchOfAFork(t *testing.T) {
 	}
 	if len(result.Blocks) != 2 {
 		t.Errorf("the range is %d blocks, want the genesis block and one branch: branches must not be interleaved", len(result.Blocks))
+	}
+
+	// The branch choice MUST be deterministic and stable per author: for as long
+	// as a source holds the same blocks, every tip and every range follows the
+	// same branch. Here that is checked twice — repeated requests to one server,
+	// and a second server holding the same blocks in the opposite insertion order
+	// (spec/07-transport.md, "tip"; todos/086).
+	for range 3 {
+		again, err := forkClient.Tip(t.Context(), pub, "")
+		if err != nil {
+			t.Fatalf("Tip: %v", err)
+		}
+		if again.Block.Digest() != tip.Block.Digest() {
+			t.Fatalf("tip moved between requests: %s then %s", tip.Block.Digest(), again.Block.Digest())
+		}
+	}
+	reversed := memStore(t, append([]*block.Block{branches[1], branches[0]}, genesis)...)
+	otherClient, _ := serve(t, ServerConfig{Store: reversed})
+	other, err := otherClient.Tip(t.Context(), pub, "")
+	if err != nil {
+		t.Fatalf("Tip from the second server: %v", err)
+	}
+	if other.Block.Digest() != tip.Block.Digest() {
+		t.Errorf("two servers holding the same blocks report %s and %s", tip.Block.Digest(), other.Block.Digest())
 	}
 
 	// siblings shows both, in ascending digest order, with no winner chosen.
