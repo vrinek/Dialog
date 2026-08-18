@@ -160,6 +160,19 @@ type Report struct {
 	// decryption key"). A caller that holds the key decrypts the payload and
 	// passes it to ValidatePayload, which checks exactly these four.
 	Unchecked []int
+	// UncheckedRefs lists the refs entries the source did not hold, against
+	// which rules 6 and 10 could therefore not be evaluated
+	// (spec/02-block-format.md, "Validation" rule 6). It is informational and
+	// nothing else: it names what the verdict does not cover, so that a caller
+	// can ask for those blocks if it cares. The block is valid.
+	//
+	// It is not a reservation. An entry no validation of this block resolved is
+	// permanently outside the block's validity: a caller that later holds one
+	// of these blocks and finds it private, or of this author's own chain, MUST
+	// NOT re-open the verdict of a block it has accepted — a verdict moves in
+	// one direction, and nothing has to be undone in an append-only L2. What it
+	// MAY do is surface the finding.
+	UncheckedRefs []cid.Digest
 }
 
 func (r *Report) warn(rule int, d cid.Digest, format string, args ...any) {
@@ -414,10 +427,18 @@ func validateReferences(b *Block, refs []cid.Digest, ops []Operation, src Source
 	// A block fetched in this pass has not been scanned: its operations are
 	// read only if resolution reaches it below, which is where it counts
 	// against the scan limit (spec/05-processing-model.md, "Scan limit").
+	//
+	// An entry left unchecked here is outside this block's validity for good.
+	// The two rules bind for the entries a validation resolved, and a caller
+	// that later holds one of the others MUST NOT re-open a verdict it has
+	// accepted on the strength of it (spec/02-block-format.md, "Validation", "A
+	// verdict moves in one direction"; report.UncheckedRefs is what it needs to
+	// tell the two apart).
 	for _, ref := range refs {
 		target, err := r.fetch(ref)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
+				report.UncheckedRefs = append(report.UncheckedRefs, ref)
 				if b.content.Type == TypePublic {
 					report.warn(6, b.Digest(), "referenced block %s is not held by the source, so neither its type (rule 6) nor its author (rule 10) could be checked", ref)
 				} else {

@@ -729,6 +729,57 @@ func TestPublicBlockMustNotReferencePrivate(t *testing.T) {
 	}
 }
 
+// TestUncheckedRefsAreInformational is rules 6 and 10's binding scope
+// (spec/02-block-format.md, "Validation" rule 6, and "A verdict moves in one
+// direction"): an entry the source does not hold leaves both rules unchecked,
+// the block is valid, and the entry is outside that verdict for good.
+func TestUncheckedRefsAreInformational(t *testing.T) {
+	store := NewMemStore()
+	alice := mustBuilder(t, 1)
+	secret, err := alice.Private(testCiphertext("alice"), make([]byte, NonceSize))
+	if err != nil {
+		t.Fatalf("private: %v", err)
+	}
+	bob := mustBuilder(t, 2)
+	b, err := bob.Public(1, []cid.Digest{secret.Digest()}, MustCreateAtom("France"))
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	store.MustAdd(b) // Alice's block is not held yet
+
+	// The verdict is *valid*, not a reservation: an unchecked entry means the
+	// node has not found the block unsound, which is no reason to withhold it.
+	// Rule 4's third outcome is the asymmetric one — there the node cannot show
+	// the block sound — and it is why this block reaches L2 and that one
+	// does not.
+	report := mustValidate(t, b, store, nil)
+	if !slices.Equal(report.UncheckedRefs, []cid.Digest{secret.Digest()}) {
+		t.Errorf("UncheckedRefs = %v, want the entry the source does not hold", report.UncheckedRefs)
+	}
+	unchecked := false
+	for _, w := range report.Warnings {
+		if w.Rule == 6 && strings.Contains(w.Msg, secret.Digest().String()) {
+			unchecked = true
+		}
+	}
+	if !unchecked {
+		t.Errorf("warnings = %v, want one naming the entry rules 6 and 10 could not be checked against", report.Warnings)
+	}
+
+	// The node later obtains Alice's block — while validating something else,
+	// or because it subscribed to her chain — and it turns out to be private.
+	// The verdict Bob's block already has is not re-opened: rules 6 and 10 bind
+	// for the entries a validation resolved, and this entry was not among them,
+	// so the caller keeps what it accepted and nothing has to be undone in an
+	// append-only L2. This package validates against a source and records no
+	// verdicts, so honouring that is the caller's: what it needs is
+	// UncheckedRefs above, which names exactly what its verdict did not cover.
+	store.MustAdd(secret)
+	if _, err := Validate(b, store, nil); !isRule(err, 6) {
+		t.Errorf("Validate over the grown store = %v, want the rule 6 finding a node that resolves the entry now makes", err)
+	}
+}
+
 // TestRefsHygiene covers rule 10 in both halves: a refs list names each
 // dependency once, and never names a block of the author's own chain
 // (spec/02-block-format.md, "The refs list").
