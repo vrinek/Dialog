@@ -92,6 +92,33 @@ by the final cross-validation phase, never read.
 3. `block` — signing, digests, structural validation; every case in
    `vectors/blocks.json` (chain, forks, invalid cases; validation rules per
    spec/02 as far as the vectors exercise them, full rule engine per spec).
+   — **done:** `src/block.ts` — the three block types and four operations with
+   validating constructors, canonical encoding, the block digest and CID over
+   the complete encoding (signature included) and a strict decoder enforcing
+   the closed-map rule per type and per operation; Ed25519 signing and
+   verification per spec/04, over the `dialog-v1-block` domain separator and
+   the dCBOR of the block without `sig`, with `@noble/curves` as the one new
+   runtime dependency; and the ten numbered validation rules of spec/02 run in
+   order against a block source, including the demand-driven resolution
+   procedure of spec/05 (same block, then `prev` ancestors, then `refs`
+   transitively, under a scan limit), the data-model rule with its filler count
+   and digest-kind binding, the rotation and succession rules, and an in-memory
+   `BlockStore` that carries the induction — a block whose ancestry has not
+   arrived is held as stored but unvalidated and re-validated when it lands —
+   and surfaces forks and ambiguous successions rather than settling them.
+   All 30 cases of `vectors/blocks.json` pass: the five chain blocks and the
+   fork block rebuilt from the published value model, re-encoded byte for byte,
+   their signing bytes and signing input reproduced, their signatures verified
+   *and* re-signed from the seeds, their digests, CIDs and CID texts recomputed;
+   the chain replayed in order into a store and validated block by block; the
+   fork pair detected with the digests the `forks` case pins; and all 23 invalid
+   cases rejected by the class of rule their `rule` field names. Two gaps filed:
+   060 (spec/05's scan limit has no default and no stated counting unit, so one
+   number an implementation invents decides validity; this codec picked 1024
+   foreign blocks per validation, configurable) and 061 (`blocks.json` pins no
+   chain-relative rejection at all — rules 3, 4, 5, 6, the own-chain half of 10
+   and the succession rules have no invalid bytes, so the suite's tests for them
+   are hand-written from the prose).
 4. `privacy` — every case in `vectors/privacy.json` (AEAD, AAD, key wrap,
    X25519 conversion).
 5. CI workflow + docs (README implementations table, AGENTS.md) + this plan
@@ -103,6 +130,7 @@ by the final cross-validation phase, never read.
 - Clean-room rule above is absolute.
 - Spec is normative; vectors are ground truth; any gap between what the spec
   says and what a vector contains is a todo (never silently resolve; next free
-  number: 060 — phase 1 filed 056 and 057, phase 2 filed 058 and 059).
+  number: 062 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
+  filed 060 and 061).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
