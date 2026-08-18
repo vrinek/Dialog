@@ -60,19 +60,21 @@ protocol findings, which get filed as todos like every other phase's.
    real European countries plus one documented-fictional one, keys from fixed
    SHA-256 seeds, block timestamps from a fixed base — and encodes every
    statement of it as an entity, so tests recompute a digest rather than being
-   told it. `internal/publish` signs the three chains (14 blocks, 92
+   told it. `internal/publish` signs the three chains (14 blocks, 94
    operations), validating each block as it is signed; `internal/chainfile`
    renders and reads the directory (`index.json` plus one `.block` file per
    block, the raw canonical bytes); `cmd/genchains` writes it and `-check`s it.
    `internal/replay` is the loading path a node takes —
    `chainfile.Read` → `block.ValidateChain` → `graph.Ingest` → `accept.Build` —
    with views built per subscription set. Tests cover replay and validation
-   from the committed bytes, L2 entity counts and authorship (91 entities, 92
+   from the committed bytes, L2 entity counts and authorship (93 entities, 94
    authorship records, one entity with two authors), both conflicts of the
    capital dispute, equivalence at all three levels, the supersession chain, the
    same-author flip, the collapse of both when `gazetteer` is dropped, tampering
    rejection, and byte-identical regeneration. Three findings filed as
-   `todos/063`, `064` and `065`.
+   `todos/063`, `064` and `065`, all three since settled in the specification —
+   `064` changed L3 behaviour, so `errata` also publishes an equivalence it
+   withdraws a block later and the chains were regenerated for it.
 2. `dialog-mcp` server + tools + tests (tool-level, over the committed chains).
 3. Walkthrough README + CI (demo module build+test job) + plan closure.
 

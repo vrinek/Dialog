@@ -23,7 +23,7 @@ func TestBuildProducesTheDocumentedChains(t *testing.T) {
 	}{
 		{content.AuthorAtlas, []int{5, 22, 11, 11, 11, 2}},
 		{content.AuthorGazetteer, []int{10, 5, 3, 4}},
-		{content.AuthorErrata, []int{3, 2, 2, 1}},
+		{content.AuthorErrata, []int{3, 2, 3, 2}},
 	}
 	if len(chains) != len(want) {
 		t.Fatalf("Build returned %d chains, want %d", len(chains), len(want))

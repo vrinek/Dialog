@@ -164,10 +164,11 @@ func TestGraphHoldsTheDataset(t *testing.T) {
 	// assertion; gazetteer's four atom equivalences, one bond equivalence,
 	// two molecules in its own wording, one molecule equivalence, its rival
 	// claim and three meta-molecules; errata's two corrected figures with
-	// their two supersessions, and the claim it asserts and retracts.
+	// their two supersessions, the claim it asserts and retracts, and the
+	// equivalence it publishes and withdraws.
 	wantMolecules := 3*len(content.Countries) + 1 +
 		len(content.NameVariants) + 1 + 2 + 1 + 1 + 3 +
-		len(content.PolandRevisions)*2 + 3
+		len(content.PolandRevisions)*2 + 5
 
 	for _, c := range []struct {
 		kind block.EntityKind
@@ -196,7 +197,7 @@ func TestGraphHoldsTheDataset(t *testing.T) {
 	}{
 		{content.AuthorAtlas, 62},
 		{content.AuthorGazetteer, 22},
-		{content.AuthorErrata, 8},
+		{content.AuthorErrata, 10},
 	} {
 		pub, ok := n.PublicKey(a.author)
 		if !ok {
@@ -531,6 +532,59 @@ func TestSameAuthorFlipResolvesToRetracted(t *testing.T) {
 	}
 	if slices.Contains(v.Accepted(), flip) {
 		t.Error("the flipped claim is in Accepted(), but its author retracted it")
+	}
+}
+
+// TestWithdrawnEquivalenceDeclaresNothing is the worked case of
+// spec/06-meta-bonds.md, "Withdrawing meta-molecules" (todos/064): errata
+// declares its two corrected Poland figures the same statement, and retracts
+// that equivalence in its next block.
+//
+// The retraction is over a meta-molecule errata published itself, so it
+// withdraws the backing that made it apply. Had it stood, the two figures would
+// be one class and the supersession errata published between them would be a
+// class replacing itself — a supersession cycle with no current figure at the
+// end of it. Withdrawn, it declares nothing, and it is still an entity of the
+// view with the truth state that records what happened to it.
+func TestWithdrawnEquivalenceDeclaresNothing(t *testing.T) {
+	n := load(t)
+	v := view(t, n, content.Authors...)
+	_, first, second := polandFigures(t)
+	wrong := content.RetractedEquivalence().Digest()
+
+	if !v.Has(wrong) {
+		t.Fatal("errata's retracted equivalence is not in the view; withdrawing is not deleting")
+	}
+	if got := v.WithdrawnMetaMolecules(); !slices.Equal(got, []cid.Digest{wrong}) {
+		t.Errorf("WithdrawnMetaMolecules() = %v, want errata's equivalence [%s]", got, wrong)
+	}
+	if got := v.Truth(wrong); got != accept.Retracted {
+		t.Errorf("the withdrawn equivalence is %v, want %v", got, accept.Retracted)
+	}
+
+	// It unifies nothing: the two corrections are two classes with two truth
+	// states.
+	if v.Equivalent(first, second) {
+		t.Error("the withdrawn equivalence still unifies errata's two Poland figures")
+	}
+	for _, d := range []cid.Digest{first, second} {
+		if got := v.EquivalenceClass(d); !slices.Equal(got, []cid.Digest{d}) {
+			t.Errorf("the class of %s is %v, want just itself", d, got)
+		}
+	}
+	// And the supersession between them is a chain, not a cycle.
+	if got := v.ConflictsOfKind(accept.ConflictSupersessionCycle); len(got) != 0 {
+		t.Errorf("the view surfaces %v; the withdrawn equivalence should leave the correction chain alone", got)
+	}
+	if got := v.Current(first); !slices.Equal(got, []cid.Digest{second}) {
+		t.Errorf("Current(first correction) = %v, want the newest figure [%s]", got, second)
+	}
+
+	// One author withdrawing their own declaration is not a disagreement.
+	for _, c := range v.Conflicts() {
+		if slices.Contains(c.Molecules, wrong) {
+			t.Errorf("the withdrawn equivalence is in a %v conflict; its own author took it back", c.Kind)
+		}
 	}
 }
 

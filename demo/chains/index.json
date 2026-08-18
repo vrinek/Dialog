@@ -118,18 +118,18 @@
         {
           "index": 2,
           "file": "errata/002.block",
-          "digest": "4445b760db8a5cc029533c979ff5eab985afd442f44e4c1138acca8a3ed7c902",
-          "cid": "bafyreiceiw3wbw4kltacsuz4s6p7l2vzqwx5iqxujzgbcofmzkfd5v6jai",
-          "ops": 2,
-          "size": 642
+          "digest": "1af93c96a44916efd39910219a694e3bb990a4a7d460f423412bc9bf50e72b60",
+          "cid": "bafyreia27e6jnjcjc3x5hgiqegngstr3xgikjj6umd2cgqjlzg7vbzzlma",
+          "ops": 3,
+          "size": 804
         },
         {
           "index": 3,
           "file": "errata/003.block",
-          "digest": "1baacc44e4b8a513c5cee1f9a2d4e7c5a4e415eb4ec12b69bcf8a96f63868cf8",
-          "cid": "bafyreia3vlgejzfyuuj4ltxb7grnjz6futsbl22oyevwtphyvfxwhbum7a",
-          "ops": 1,
-          "size": 331
+          "digest": "bb043c03449400be419d43fb98a7dff48515607313df8b0f0943068d172dbf85",
+          "cid": "bafyreif3aq6agreuac7edhkd7omkpx7uqukwa4yt36fq6ckda2groln7qu",
+          "ops": 2,
+          "size": 446
         }
       ]
     }

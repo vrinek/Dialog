@@ -40,8 +40,10 @@
 //  0. the "_A_ supersedes _B_" bond, the first corrected population figure for
 //     Poland, and its supersession of atlas's figure
 //  1. the second corrected figure and its supersession of the first
-//  2. a population claim about Valdoria and errata's assertion that it is true
-//  3. errata's own retraction of that assertion, two blocks later
+//  2. a population claim about Valdoria with errata's assertion that it is
+//     true, and a wrong equivalence between its two Poland corrections
+//  3. errata's own retraction of that assertion, two blocks later, and the
+//     retraction that withdraws the wrong equivalence
 //
 // # Why the order matters
 //
@@ -393,27 +395,36 @@ func (w *world) errata(atlas, gazetteer Chain) (Chain, error) {
 		return Chain{}, err
 	}
 
-	// Block 2 — a claim errata will change its mind about. The truth
-	// meta-bonds are not re-published here: errata references gazetteer's
-	// genesis block, which defines them, and a reference to another author's
-	// block is exactly what refs is for.
+	// Block 2 — a claim errata will change its mind about, and an equivalence
+	// it gets wrong. The truth meta-bonds are not re-published here: errata
+	// references gazetteer's genesis block, which defines them — and the
+	// equivalence bond too — and a reference to another author's block is
+	// exactly what refs is for.
 	disputed, ok := content.CountryByName(content.DisputedCountry)
 	if !ok {
 		return Chain{}, fmt.Errorf("the disputed country %q is not in the dataset", content.DisputedCountry)
 	}
 	flipped := content.PopulationMolecule(disputed.Name, content.FlippedPopulation)
+	wrong := content.RetractedEquivalence()
 	if err := add([]cid.Digest{atlas.digest(0), atlas.digest(1), gazetteer.digest(0)},
 		createMolecule(flipped),
 		createMolecule(content.TruthAssertion(flipped.Digest())),
+		createMolecule(wrong),
 	); err != nil {
 		return Chain{}, err
 	}
 
-	// Block 3 — errata retracts it. Same author, later block, so block order
-	// settles it: the molecule is Retracted and nothing is in conflict
-	// (spec/06-meta-bonds.md, "Truth retraction").
+	// Block 3 — errata retracts both. Same author, later block, so block order
+	// settles the truth assertion: the flipped claim is Retracted and nothing
+	// is in conflict (spec/06-meta-bonds.md, "Truth retraction"). The second
+	// retraction is over a meta-molecule errata published itself, which
+	// withdraws the backing that made it apply: the equivalence stays in the
+	// view and declares nothing, so the two Poland corrections stay two classes
+	// and the supersession chain between them is a chain
+	// (spec/06-meta-bonds.md, "Withdrawing meta-molecules").
 	if err := add([]cid.Digest{gazetteer.digest(0)},
 		createMolecule(content.TruthRetraction(flipped.Digest())),
+		createMolecule(content.TruthRetraction(wrong.Digest())),
 	); err != nil {
 		return Chain{}, err
 	}

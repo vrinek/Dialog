@@ -35,7 +35,8 @@
 //     about Valdoria's capital, a retraction of atlas's claim,
 //     and an explicit contradiction between the two.
 //   - errata    publishes corrections: a supersession chain over Poland's
-//     population, and an assertion it later retracts itself.
+//     population, an assertion it later retracts itself, and an equivalence it
+//     gets wrong and withdraws.
 package content
 
 import (
@@ -244,6 +245,23 @@ const (
 //
 // and only the last of the three is current. The figures are invented.
 var PolandRevisions = []int64{36_620_000, 36_621_000}
+
+// RetractedEquivalence is the mistake errata makes and takes back: it declares
+// its two corrected Poland figures the same statement. They are not — they are
+// two revisions of one, and errata itself published the supersession that says
+// so — and it retracts the equivalence in its next block.
+//
+// The point of keeping it in the dataset is what the retraction does. While it
+// stood, the two figures would be one equivalence class, and the supersession
+// between them would be a class replacing itself: a supersession cycle, with no
+// current figure at the end of it. Withdrawn, it declares nothing, and the
+// correction chain reads as it should (spec/06-meta-bonds.md, "Withdrawing
+// meta-molecules").
+func RetractedEquivalence() entity.Molecule {
+	first := PopulationMolecule("Poland", PolandRevisions[0])
+	second := PopulationMolecule("Poland", PolandRevisions[1])
+	return MoleculeEquivalence(first.Digest(), second.Digest())
+}
 
 // FlippedPopulation is the Valdoria population figure errata asserts as true
 // and, two blocks later, retracts. Both meta-molecules are the same author's,
