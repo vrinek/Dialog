@@ -121,6 +121,33 @@ by the final cross-validation phase, never read.
    are hand-written from the prose).
 4. `privacy` — every case in `vectors/privacy.json` (AEAD, AAD, key wrap,
    X25519 conversion).
+   — **done:** `src/privacy.ts` — the private-block payload (`refs`/`ts`/`ops`
+   dCBOR, exactly as a public block encodes the same three fields) and its AAD
+   (the plaintext fields but `sig`/`enc`/`nonce`), XChaCha20-Poly1305 seal and
+   open over them via `@noble/ciphers` (the one new runtime dependency), the
+   Ed25519-to-X25519 conversion hand-rolled from spec/04's five public and four
+   private steps (field arithmetic mod 2^255−19, SHA-512 scalar expansion and
+   clamping) with its stated rejections — non-canonical *y*, *y* = 1, and the
+   all-zero agreement result of a small-order key, the last caught through
+   `@noble/curves`' own zero-output check — and the per-recipient wrap: X25519
+   agreement, HKDF-SHA-256 with the exact info string and an explicit
+   zero-length salt, and the pinned 72-byte `nonce || ciphertext` layout,
+   length-checked before any decryption is attempted. `build/seal` and
+   `open`/`unwrap` APIs sit alongside `./block.ts`'s unsigned-block builders and
+   `signBlock`, the same shape as the other three block types.
+   All 11 cases of `vectors/privacy.json` pass: the payload and both AAD cases
+   re-encode byte for byte, `enc` is reproduced by sealing under the pinned
+   content key and nonce, all three X25519 conversions and both key-wrap cases
+   (shared secret, wrapping key, 72-byte wrapped key) come out exactly as
+   pinned, and the `private_block` case rebuilds, its signature verifies and
+   re-derives, its digest/CID/CID text recompute, and it opens to the payload
+   section's bytes. Hand-written tests cover tamper (`enc`, `nonce`, each
+   AAD-covered field), wrong key, wrong recipient, strict-decode rejection of a
+   non-canonical decrypted plaintext and of a `rotate_key` op inside a private
+   payload, wrapped-key length violations, and — since no vector pins them —
+   the three Ed25519-to-X25519 rejection rules. One gap filed: 062
+   (`privacy.json` pins no invalid case at all, for any of the five rejection
+   rules spec/04 states in prose).
 5. CI workflow + docs (README implementations table, AGENTS.md) + this plan
    marked complete. Cross-validation note: both implementations green against
    the same committed vectors on the same commit.
@@ -130,7 +157,7 @@ by the final cross-validation phase, never read.
 - Clean-room rule above is absolute.
 - Spec is normative; vectors are ground truth; any gap between what the spec
   says and what a vector contains is a todo (never silently resolve; next free
-  number: 062 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
-  filed 060 and 061).
+  number: 063 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
+  filed 060 and 061, phase 4 filed 062).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
