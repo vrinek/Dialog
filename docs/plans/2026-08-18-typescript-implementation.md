@@ -65,6 +65,23 @@ by the final cross-validation phase, never read.
    over containers, and `dcbor.json` grew four cases pinning it, so the counts
    above now read 96 cases: 42 valid and 54 invalid.
 2. `entity` — every case in `vectors/entities.json`.
+   — **done:** `src/entity.ts` — validating constructors for atoms, bonds and
+   molecules, the template-variable grammar with its leftmost-longest match,
+   the five filler types bound to the one value shape each tag permits, the
+   canonical timestamp profile including the proleptic Gregorian calendar rule,
+   canonical encoding with digest/CID/CID text for every entity, strict
+   decoders enforcing the closed-map rule, and the five standard meta-bonds of
+   spec/06 with their templates, variables and digests. All 26 cases of
+   `vectors/entities.json` pass — each rebuilt from the published JSON value
+   model through the constructors, encoded byte-identically and decoded back,
+   with the three molecules also recomputed from their descriptions and
+   templates alone. The filler-count rule sits where the specification puts it,
+   at the layer that has resolved the bond (spec/02, "Validation" rule 5).
+   Two gaps filed: 058 (entities.json pins no invalid entity, so spec/01's
+   rejection rules — the timestamp profile above all — are untested by the
+   interop contract; the suite's rejection tests are hand-written from the
+   prose) and 059 (a meta-bond's `Fillers:` line is not a validation rule
+   anywhere, so this implementation applies no filler-type check to one).
 3. `block` — signing, digests, structural validation; every case in
    `vectors/blocks.json` (chain, forks, invalid cases; validation rules per
    spec/02 as far as the vectors exercise them, full rule engine per spec).
@@ -79,6 +96,6 @@ by the final cross-validation phase, never read.
 - Clean-room rule above is absolute.
 - Spec is normative; vectors are ground truth; any gap between what the spec
   says and what a vector contains is a todo (never silently resolve; next free
-  number: 058 — phase 1 filed 056 and 057).
+  number: 060 — phase 1 filed 056 and 057, phase 2 filed 058 and 059).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
