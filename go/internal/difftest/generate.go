@@ -241,7 +241,7 @@ var keyPieces = []string{
 	"", "a", "b", "z", "A", "Z", "0", "9", "-", "_",
 	"aa", "ab", "ba", "bb", "aaa", "aab",
 	"type", "value", "description", "prev", "refs", "ops", "v", "ts",
-	"", "߿", "é", "日", "𝄞",
+	"\u0080", "\u07ff", "é", "日", "𝄞",
 	strings.Repeat("k", 22), strings.Repeat("k", 23), strings.Repeat("k", 24),
 	strings.Repeat("k", 255), strings.Repeat("k", 256),
 }

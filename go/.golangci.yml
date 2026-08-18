@@ -48,7 +48,13 @@ linters:
                 Dialog's dCBOR profile is a restricted subset with its own
                 canonicality rules; a general-purpose CBOR library does not
                 implement it and MUST NOT be substituted for the dcbor package
-                (spec/03-encoding.md).
+                (spec/03-encoding.md). There is exactly one place in this
+                repository that imports it, go/internal/difftest, where it is
+                the oracle a differential fuzzer compares dcbor against and is
+                never allowed to produce a byte Dialog ships. That module has
+                its own go.mod for precisely this reason, so it is outside this
+                configuration's reach and the rule below keeps holding for
+                everything this one governs.
 
     exhaustive:
       # A switch that ends in `default:` has said what it does about the cases
