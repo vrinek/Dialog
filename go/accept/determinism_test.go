@@ -45,7 +45,7 @@ func fingerprint(v *View) string {
 		fmt.Fprintf(&b, "conflict %s molecules=%s blocks=%s meta=%s\n",
 			c.Kind, digests(c.Molecules), digests(c.Blocks), digests(c.Meta))
 		for _, s := range c.Sides {
-			fmt.Fprintf(&b, "  side %s %s\n", s.Stance, s.Molecule)
+			fmt.Fprintf(&b, "  side %s %s\n", s.Stance, digests(s.Molecules))
 			for _, a := range s.Authors {
 				fmt.Fprintf(&b, "    %x\n", a)
 			}

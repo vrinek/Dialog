@@ -42,7 +42,12 @@
 // Filtering is per entity and not transitive: a molecule whose author is
 // subscribed is in the view even if the bond it names is not, because the bond's
 // only author is somebody else. The view reports what it holds and does not
-// prune around the gaps; see todo 053.
+// prune around the gaps: "A view can therefore hold a molecule whose bond only
+// an unsubscribed author ever published [...] This is expected and is not an
+// error" (spec/05-processing-model.md, "Filtering rules"). L1 validation
+// guarantees L2 holds the referenced entity, so an L3 implementation that has to
+// render such a molecule reads the missing bond or filler from L2 on the
+// application's behalf, which supplies the words and not the truth.
 //
 // # Meta-molecule application
 //
@@ -54,6 +59,15 @@
 //	_A_ is untrue            truth, and the later assertion by block order wins
 //	_A_ contradicts _B_      surfaced when both molecules are in the view
 //	_A_ supersedes _B_       B is marked; see IsSuperseded and Current
+//
+// The equivalence closure comes first because the other four are read through
+// it: "Implementations SHOULD treat equivalent entities as interchangeable when
+// querying L3" (spec/06-meta-bonds.md, "Equivalence"), and this implementation
+// takes that at its word — a truth assertion, a retraction, a contradiction or a
+// supersession naming any member of a class is a statement about the class. So a
+// class is what carries a truth state, what a supersession marks, and what a
+// contradiction is surfaced between. Other strategies are conformant and the
+// specification says so; this one is recorded there as the reference reading.
 //
 // A meta-molecule is itself an ordinary entity of the view: it is filtered like
 // any other molecule and Lookup answers for it. What L3 adds is the reading. A
@@ -118,15 +132,18 @@ type View struct {
 	class        map[cid.Digest]cid.Digest
 	classMembers map[cid.Digest][]cid.Digest
 
-	// truth and assertions are keyed by class identity, not by molecule: an
-	// assertion applies across an equivalence class.
+	// Every reading below is keyed by class identity rather than by digest:
+	// equivalent entities are interchangeable, so a meta-molecule naming one
+	// member of a class is read as a statement about the class
+	// (spec/06-meta-bonds.md, "Equivalence"). A class of one — the common
+	// case — makes that the same thing as keying by digest.
 	truth      map[cid.Digest]TruthState
 	assertions map[cid.Digest][]Assertion
 
-	supersedes        map[cid.Digest][]cid.Digest // A -> the molecules A replaces
-	supersededBy      map[cid.Digest][]cid.Digest // B -> the molecules that replace B
-	supersessionEdges []edge
-	contradicts       map[cid.Digest][]cid.Digest
+	supersedes        map[cid.Digest][]cid.Digest // class -> the classes it replaces
+	supersededBy      map[cid.Digest][]cid.Digest // class -> the classes that replace it
+	supersessionEdges []edge                      // between classes
+	contradicts       map[cid.Digest][]cid.Digest // class -> the classes declared to contradict it
 
 	malformed []cid.Digest
 	conflicts []Conflict
@@ -255,16 +272,20 @@ func (v *View) subscribedProvenance(e graph.Entry) []graph.Authorship {
 	return out
 }
 
-// authorsOf returns the subscribed authors of an in-view entity, ascending.
-func (v *View) authorsOf(d cid.Digest) []ed25519.PublicKey {
-	e, ok := v.entries[d]
-	if !ok {
-		return nil
-	}
+// authorsOfAll returns the subscribed authors of a set of in-view entities,
+// ascending and without repetition — the authors behind one side of a conflict,
+// which is a whole equivalence class and not a single molecule.
+func (v *View) authorsOfAll(digests []cid.Digest) []ed25519.PublicKey {
 	var keys keySet
-	for _, a := range v.subscribedProvenance(e) {
-		if k, ok := keyOf(a.Author); ok {
-			keys.add(k)
+	for _, d := range digests {
+		e, ok := v.entries[d]
+		if !ok {
+			continue
+		}
+		for _, a := range v.subscribedProvenance(e) {
+			if k, ok := keyOf(a.Author); ok {
+				keys.add(k)
+			}
 		}
 	}
 	return keys.public()
@@ -388,22 +409,38 @@ func (v *View) Equivalent(a, b cid.Digest) bool {
 
 // Supersedes returns the in-view molecules d replaces, ascending — the direct
 // edges only. Follow them with Supersedes again for a chain.
-func (v *View) Supersedes(d cid.Digest) []cid.Digest { return slices.Clone(v.supersedes[d]) }
+//
+// Equivalence widens both ends of the relation: a supersession declared over any
+// member of d's class replaces every member of the class it names.
+func (v *View) Supersedes(d cid.Digest) []cid.Digest {
+	if !v.Has(d) {
+		return nil
+	}
+	return v.membersOf(v.supersedes[v.class[d]])
+}
 
 // SupersededBy returns the in-view molecules that replace d, ascending — the
 // direct edges only.
-func (v *View) SupersededBy(d cid.Digest) []cid.Digest { return slices.Clone(v.supersededBy[d]) }
+func (v *View) SupersededBy(d cid.Digest) []cid.Digest {
+	if !v.Has(d) {
+		return nil
+	}
+	return v.membersOf(v.supersededBy[v.class[d]])
+}
 
-// IsSuperseded reports whether any in-view molecule replaces d. A superseded
-// molecule stays in the view — "present A and hide or deprecate B"
-// (spec/06-meta-bonds.md, "Supersession") — and this is the mark an application
-// hides or deprecates it by.
-func (v *View) IsSuperseded(d cid.Digest) bool { return len(v.supersededBy[d]) > 0 }
+// IsSuperseded reports whether any in-view molecule replaces d, or anything
+// equivalent to d. A superseded molecule stays in the view — "present A and hide
+// or deprecate B" (spec/06-meta-bonds.md, "Supersession") — and this is the mark
+// an application hides or deprecates it by.
+func (v *View) IsSuperseded(d cid.Digest) bool {
+	return v.Has(d) && len(v.supersededBy[v.class[d]]) > 0
+}
 
 // Current follows the supersession chain forward from d and returns the
 // molecules at the end of it: those that replace d, directly or transitively,
 // and are themselves replaced by nothing. A molecule nothing supersedes is its
-// own current version, so Current returns d itself.
+// own current version, so Current returns d itself — with everything equivalent
+// to it, the class being what a supersession lands on.
 //
 // Two molecules can supersede the same one, which is why this returns a slice:
 // the protocol does not say two corrections of one statement are a conflict, and
@@ -418,30 +455,54 @@ func (v *View) Current(d cid.Digest) []cid.Digest {
 	var (
 		out     digestSet
 		visited = map[cid.Digest]bool{}
-		walk    func(cur cid.Digest)
+		walk    func(class cid.Digest)
 	)
-	walk = func(cur cid.Digest) {
-		if visited[cur] {
+	walk = func(class cid.Digest) {
+		if visited[class] {
 			return
 		}
-		visited[cur] = true
-		next := v.supersededBy[cur]
+		visited[class] = true
+		next := v.supersededBy[class]
 		if len(next) == 0 {
-			out.add(cur)
+			for _, m := range v.classMembers[class] {
+				out.add(m)
+			}
 			return
 		}
 		for _, n := range next {
 			walk(n)
 		}
 	}
-	walk(d)
+	walk(v.class[d])
 	return out.list()
 }
 
 // Contradictions returns the in-view molecules a subscribed author declared to
-// contradict d, ascending. The declaration is symmetric, so each of the two
-// molecules names the other.
-func (v *View) Contradictions(d cid.Digest) []cid.Digest { return slices.Clone(v.contradicts[d]) }
+// contradict d, ascending — those declared to contradict anything equivalent to
+// d among them. The declaration is symmetric, so each of the two molecules names
+// the other.
+func (v *View) Contradictions(d cid.Digest) []cid.Digest {
+	if !v.Has(d) {
+		return nil
+	}
+	return v.membersOf(v.contradicts[v.class[d]])
+}
+
+// membersOf expands class identities into the in-view entities they stand for,
+// ascending. It is how every class-keyed reading is answered in the digests a
+// caller knows.
+func (v *View) membersOf(classes []cid.Digest) []cid.Digest {
+	if len(classes) == 0 {
+		return nil
+	}
+	var out digestSet
+	for _, c := range classes {
+		for _, d := range v.classMembers[c] {
+			out.add(d)
+		}
+	}
+	return out.list()
+}
 
 // Conflicts returns every disagreement the view found, in a deterministic
 // order: by kind, then by the molecules, blocks and meta-molecules involved.

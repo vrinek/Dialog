@@ -216,8 +216,10 @@ func TestContradictionIsSurfaced(t *testing.T) {
 		t.Fatalf("%d side(s), want one per molecule", len(conflicts[0].Sides))
 	}
 	for i, side := range conflicts[0].Sides {
-		if side.Molecule != want[i] {
-			t.Errorf("side %d is about %s, want %s", i, side.Molecule, want[i])
+		// Nothing is equivalent to anything here, so every side is a class
+		// of one: the molecule the meta-molecule named.
+		if len(side.Molecules) != 1 || side.Molecules[0] != want[i] {
+			t.Errorf("side %d is about %s, want %s", i, digests(side.Molecules), want[i])
 		}
 		if len(side.Authors) != 1 {
 			t.Errorf("side %d names %d author(s), want Alice alone", i, len(side.Authors))
@@ -372,7 +374,7 @@ func TestSupersessionCycleIsSurfaced(t *testing.T) {
 
 // TestSupersessionOfOutOfViewMoleculesIsIgnored is the other half of "If both A
 // and B are in L3": a supersession naming a molecule filtering left out has
-// nothing to hide. See todo 054.
+// nothing to hide (spec/05-processing-model.md, "Meta-molecule application").
 func TestSupersessionOfOutOfViewMoleculesIsIgnored(t *testing.T) {
 	w := newWorld(t)
 	carol, bob := w.builder(4), w.builder(2)
@@ -407,5 +409,195 @@ func TestSupersessionOfOutOfViewMoleculesIsIgnored(t *testing.T) {
 	}
 	if got := both.Current(old.Molecule().Digest()); len(got) != 1 || got[0] != fresh.Molecule().Digest() {
 		t.Errorf("Current = %s, want %s", digests(got), fresh.Molecule().Digest())
+	}
+}
+
+// TestSupersessionCrossesTheEquivalenceClass is the reference reading of
+// "interchangeable" applied to supersession: "a truth assertion, a truth
+// retraction, a contradiction or a supersession naming any member of an
+// equivalence class is read as a statement about the whole class"
+// (spec/06-meta-bonds.md, "Equivalence").
+//
+// Two statements of an old figure are equivalent, two statements of a new one
+// are equivalent, and Alice declares that one of the new pair supersedes one of
+// the old pair. Both ends widen: every member of the old class is replaced, and
+// every member of the new class replaces it.
+func TestSupersessionCrossesTheEquivalenceClass(t *testing.T) {
+	w := newWorld(t)
+	alice := w.builder(1)
+
+	bond := block.MustCreateBond("_A_ has population _B_")
+	oldOne, oldOneOps := statement(bond, "Paris", "2,150,000 (2010)")
+	oldTwo, oldTwoOps := statement(bond, "Paris, France", "2,150,000 in 2010")
+	newOne, newOneOps := statement(bond, "Paris", "2,102,650 (2023)")
+	newTwo, newTwoOps := statement(bond, "Paris, France", "2,102,650 in 2023")
+
+	olds := []cid.Digest{oldOne.Molecule().Digest(), oldTwo.Molecule().Digest()}
+	news := []cid.Digest{newOne.Molecule().Digest(), newTwo.Molecule().Digest()}
+
+	ops := []block.Operation{bond}
+	ops = append(ops, oldOneOps...)
+	ops = append(ops, oldTwoOps...)
+	ops = append(ops, newOneOps...)
+	ops = append(ops, newTwoOps...)
+	ops = append(ops,
+		metaBondOp(entity.TemplateEquivalence),
+		sameAs(entity.FillerMolecule, olds[0], olds[1]),
+		sameAs(entity.FillerMolecule, news[0], news[1]),
+		metaBondOp(entity.TemplateSupersession),
+		supersedes(news[0], olds[0]),
+	)
+	w.publish(alice, ops...)
+	slices.SortFunc(olds, compareDigests)
+	slices.SortFunc(news, compareDigests)
+
+	v := w.view(alice.PublicKey())
+	for _, d := range olds {
+		if !v.IsSuperseded(d) {
+			t.Errorf("%s is equivalent to a superseded molecule and is therefore superseded", d)
+		}
+		if got := v.SupersededBy(d); !slices.Equal(got, news) {
+			t.Errorf("SupersededBy(%s) = %s, want the whole replacing class %s", d, digests(got), digests(news))
+		}
+		if got := v.Current(d); !slices.Equal(got, news) {
+			t.Errorf("Current(%s) = %s, want %s", d, digests(got), digests(news))
+		}
+	}
+	for _, d := range news {
+		if v.IsSuperseded(d) {
+			t.Errorf("%s replaces the old class and is replaced by nothing", d)
+		}
+		if got := v.Supersedes(d); !slices.Equal(got, olds) {
+			t.Errorf("Supersedes(%s) = %s, want the whole replaced class %s", d, digests(got), digests(olds))
+		}
+	}
+	// Widening a supersession is not a disagreement, and nothing is dropped.
+	if got := v.Conflicts(); len(got) != 0 {
+		t.Errorf("a supersession across two classes is not a conflict: %v", got)
+	}
+	accepted := v.Accepted()
+	for _, d := range olds {
+		if !v.Has(d) {
+			t.Errorf("superseded molecule %s was dropped from the view", d)
+		}
+		if slices.Contains(accepted, d) {
+			t.Errorf("Accepted = %s, want the whole superseded class left out", digests(accepted))
+		}
+	}
+	for _, d := range news {
+		if !slices.Contains(accepted, d) {
+			t.Errorf("Accepted = %s, want the current class %s in it", digests(accepted), digests(news))
+		}
+	}
+}
+
+// TestSupersessionWithinAnEquivalenceClassIsACycle is the edge the class reading
+// creates: "A supersedes B" where A and B are declared the same is a class that
+// replaces itself, so no member of it can be the current version of anything.
+// That is exactly what a supersession cycle is, and it is surfaced as one.
+func TestSupersessionWithinAnEquivalenceClassIsACycle(t *testing.T) {
+	w := newWorld(t)
+	alice := w.builder(1)
+
+	bond := block.MustCreateBond("_A_ has population _B_")
+	first, firstOps := statement(bond, "Paris", "2,102,650 (2023)")
+	second, secondOps := statement(bond, "Paris, France", "2,102,650 in 2023")
+	a, b := first.Molecule().Digest(), second.Molecule().Digest()
+
+	ops := []block.Operation{bond}
+	ops = append(ops, firstOps...)
+	ops = append(ops, secondOps...)
+	ops = append(ops,
+		metaBondOp(entity.TemplateEquivalence), sameAs(entity.FillerMolecule, a, b),
+		metaBondOp(entity.TemplateSupersession), supersedes(a, b),
+	)
+	w.publish(alice, ops...)
+
+	v := w.view(alice.PublicKey())
+	cycles := v.ConflictsOfKind(ConflictSupersessionCycle)
+	if len(cycles) != 1 {
+		t.Fatalf("%d supersession cycle(s), want 1: %v", len(cycles), v.Conflicts())
+	}
+	want := []cid.Digest{a, b}
+	slices.SortFunc(want, compareDigests)
+	if !slices.Equal(cycles[0].Molecules, want) {
+		t.Errorf("the cycle is %s, want the whole class %s", digests(cycles[0].Molecules), digests(want))
+	}
+	for _, d := range want {
+		if got := v.Current(d); got != nil {
+			t.Errorf("Current(%s) = %s; a class that replaces itself has no current version", d, digests(got))
+		}
+		if !v.IsSuperseded(d) {
+			t.Errorf("%s is in a class that replaces itself and is therefore superseded", d)
+		}
+	}
+}
+
+// TestContradictionCrossesTheEquivalenceClass is the same reading applied to
+// contradiction: what contradicts a molecule contradicts everything
+// interchangeable with it. The MUST of spec/06-meta-bonds.md, "Contradiction",
+// is satisfied over the widened pair, and neither class is thereby untrue.
+func TestContradictionCrossesTheEquivalenceClass(t *testing.T) {
+	w := newWorld(t)
+	alice := w.builder(1)
+
+	capital := block.MustCreateBond("_A_ is the capital of _B_")
+	claimOne, claimOneOps := statement(capital, "Paris", "France")
+	claimTwo, claimTwoOps := statement(capital, "Paris, France", "The French Republic")
+	rival, rivalOps := statement(capital, "Lyon", "France")
+	class := []cid.Digest{claimOne.Molecule().Digest(), claimTwo.Molecule().Digest()}
+	other := rival.Molecule().Digest()
+
+	ops := []block.Operation{capital}
+	ops = append(ops, claimOneOps...)
+	ops = append(ops, claimTwoOps...)
+	ops = append(ops, rivalOps...)
+	ops = append(ops,
+		metaBondOp(entity.TemplateEquivalence), sameAs(entity.FillerMolecule, class[0], class[1]),
+		metaBondOp(entity.TemplateContradiction), contradicts(class[0], other),
+	)
+	w.publish(alice, ops...)
+	slices.SortFunc(class, compareDigests)
+
+	v := w.view(alice.PublicKey())
+	// The molecule the meta-molecule never named contradicts the rival too.
+	for _, d := range class {
+		if got := v.Contradictions(d); len(got) != 1 || got[0] != other {
+			t.Errorf("Contradictions(%s) = %s, want %s", d, digests(got), other)
+		}
+	}
+	if got := v.Contradictions(other); !slices.Equal(got, class) {
+		t.Errorf("Contradictions(%s) = %s, want the whole class %s", other, digests(got), digests(class))
+	}
+
+	conflicts := v.ConflictsOfKind(ConflictContradiction)
+	if len(conflicts) != 1 {
+		t.Fatalf("%d contradiction(s), want 1: %v", len(conflicts), v.Conflicts())
+	}
+	want := append(slices.Clone(class), other)
+	slices.SortFunc(want, compareDigests)
+	if !slices.Equal(conflicts[0].Molecules, want) {
+		t.Errorf("the conflict is about %s, want both classes %s", digests(conflicts[0].Molecules), digests(want))
+	}
+	if len(conflicts[0].Sides) != 2 {
+		t.Fatalf("%d side(s), want one per class", len(conflicts[0].Sides))
+	}
+	var wide, lone Side
+	for _, side := range conflicts[0].Sides {
+		if len(side.Molecules) == 1 {
+			lone = side
+			continue
+		}
+		wide = side
+	}
+	if !slices.Equal(wide.Molecules, class) {
+		t.Errorf("one side is %s, want the equivalence class %s", digests(wide.Molecules), digests(class))
+	}
+	if len(lone.Molecules) != 1 || lone.Molecules[0] != other {
+		t.Errorf("the other side is %s, want %s alone", digests(lone.Molecules), other)
+	}
+	// Surfaced, and no more than that.
+	for _, d := range want {
+		assertTruth(t, v, d, Unasserted)
 	}
 }

@@ -69,20 +69,24 @@ const (
 // authors hold it.
 type Side struct {
 	// Stance is StanceTrue or StanceUntrue for a truth disagreement, and the
-	// empty string for a conflict whose sides are identified by Molecule.
+	// empty string for a conflict whose sides are identified by Molecules.
 	Stance string
-	// Molecule is the molecule this side is about — one of the two molecules
-	// of a contradiction. It is the zero digest when the side is a stance
-	// rather than a molecule.
-	Molecule cid.Digest
-	// Authors are the subscribed authors on this side, ascending by key.
+	// Molecules are the in-view molecules this side is about, ascending: one
+	// of the two equivalence classes of a contradiction. It is a class rather
+	// than a single molecule because equivalent entities are interchangeable
+	// (spec/06-meta-bonds.md, "Equivalence"), and a class of one is the
+	// ordinary case. It is empty when the side is a stance rather than a set
+	// of molecules.
+	Molecules []cid.Digest
+	// Authors are the subscribed authors on this side, ascending by key —
+	// every author of every molecule in Molecules.
 	Authors []ed25519.PublicKey
 }
 
 func (s Side) String() string {
 	what := s.Stance
 	if what == "" {
-		what = s.Molecule.String()
+		what = fmt.Sprintf("%d molecule(s)", len(s.Molecules))
 	}
 	return fmt.Sprintf("%s: %d author(s)", what, len(s.Authors))
 }
@@ -97,16 +101,17 @@ func (s Side) String() string {
 type Conflict struct {
 	// Kind says what kind of disagreement this is.
 	Kind ConflictKind
-	// Molecules are the molecules the conflict is about, ascending. For a
-	// truth disagreement they are the members of the subject's equivalence
-	// class that are in the view; for a contradiction, the two molecules
+	// Molecules are the molecules the conflict is about, ascending. Every
+	// kind reports whole equivalence classes, a class of one being the
+	// ordinary case: for a truth disagreement, the in-view members of the
+	// subject's class; for a contradiction, the members of the two classes
 	// declared contradictory; for a supersession cycle, the members of the
-	// cycle. An ambiguous succession is about blocks, not molecules, and
-	// leaves this empty.
+	// classes in the cycle. An ambiguous succession is about blocks, not
+	// molecules, and leaves this empty.
 	Molecules []cid.Digest
 	// Sides are the parties, in a deterministic order: for a truth
 	// disagreement, the "is true" side first and the "is untrue" side second;
-	// for a contradiction, one side per molecule in ascending digest order.
+	// for a contradiction, one side per equivalence class, ordered by class.
 	// A supersession cycle and an ambiguous succession have no sides.
 	Sides []Side
 	// Meta are the meta-molecules that declared the conflict, ascending.
@@ -144,7 +149,11 @@ func (c Conflict) clone() Conflict {
 	if c.Sides != nil {
 		out.Sides = make([]Side, len(c.Sides))
 		for i, s := range c.Sides {
-			out.Sides[i] = Side{Stance: s.Stance, Molecule: s.Molecule, Authors: clonePublicKeys(s.Authors)}
+			out.Sides[i] = Side{
+				Stance:    s.Stance,
+				Molecules: slices.Clone(s.Molecules),
+				Authors:   clonePublicKeys(s.Authors),
+			}
 		}
 	}
 	return out

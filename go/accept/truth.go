@@ -129,14 +129,17 @@ func compareTruthRecords(a, b truthRecord) int {
 //
 //  1. Only subscribed authors' assertions count, and only about molecules the
 //     view holds. An assertion about a molecule that filtering left out of the
-//     view has no effect — the filtering rule is per entity, and a molecule
-//     nobody subscribed published is not in L3 to be true or untrue (see todo
-//     054).
+//     view has no effect while the molecule is absent, and takes effect on a
+//     later rebuild that finds it present: "a subscribed author's meta-molecule
+//     about a subject the view does not hold has no L3 effect while the subject
+//     is absent" (spec/05-processing-model.md, "Meta-molecule application"). It
+//     never admits its own subject, which is the subscription's business alone.
 //
 //  2. An assertion applies across the equivalence class of the molecule it
 //     names: if A is the same as B, "A is true" is a statement about B as well.
-//     The class, not the molecule, is what carries a truth state (see todo
-//     052).
+//     The class, not the molecule, is what carries a truth state — the
+//     reference reading of "interchangeable" (spec/06-meta-bonds.md,
+//     "Equivalence").
 //
 //  3. Within one logical author, the later assertion wins: "If the same author
 //     previously asserted the molecule as true, the later assertion (by block
@@ -207,8 +210,10 @@ func truthRecords(v *View, c claims, order *blockOrder) ([]truthRecord, error) {
 // markLatest flags the records that sit at the highest position of their
 // lineage within their class — one author's last word about that class.
 //
-// Re-publishing an assertion re-states it, so an author's position is the one
-// their *latest* carrying block holds. See todo 055.
+// "Re-publishing a meta-molecule re-states it, and an author's position on a
+// molecule is the one their latest block naming it holds"
+// (spec/05-processing-model.md, "Assertion order"). An author who asserts,
+// retracts and asserts again therefore holds the assertion.
 func markLatest(records []truthRecord) {
 	for start := 0; start < len(records); {
 		end := start

@@ -330,7 +330,9 @@ func TestAmbiguousSuccessionIsSurfaced(t *testing.T) {
 // TestAssertionsAboutOutOfViewMoleculesHaveNoEffect is filtering applied to the
 // subject of an assertion. Bob asserts that a molecule only Carol published is
 // true; Carol is not subscribed, so the molecule is not in L3, and there is
-// nothing for the assertion to be about. See todo 054.
+// nothing for the assertion to be about — and the assertion takes effect on the
+// rebuild that finds the molecule present (spec/05-processing-model.md,
+// "Meta-molecule application").
 func TestAssertionsAboutOutOfViewMoleculesHaveNoEffect(t *testing.T) {
 	w := newWorld(t)
 	s := newSubject()

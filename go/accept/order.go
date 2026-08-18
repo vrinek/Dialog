@@ -43,9 +43,14 @@ type position struct {
 // (spec/05-processing-model.md, "Chain succession"). This is the choice this
 // implementation makes, and it is deliberately narrow:
 //
-//   - It affects ORDER ONLY. Filtering stays strictly per key: a successor
-//     chain's entities reach a view when the successor key is subscribed, and
-//     not because the key before it was (see todo 055).
+//   - It affects ORDER ONLY. "Continuing the order across a rotation is an
+//     ordering rule and not an identity rule" (spec/05-processing-model.md,
+//     "Assertion order"): filtering stays strictly per key, so a successor
+//     chain's entities reach a view when the successor key is subscribed and
+//     not because the key before it was. What carries a subscription across a
+//     rotation is the L1 SHOULD to auto-subscribe to the successor chain
+//     (spec/05-processing-model.md, "Chain succession (key rotation)", step 3);
+//     a node that follows it calls Subscriptions.Subscribe with the new key.
 //   - It rests on the same evidence L1 validates a succession with — a public
 //     genesis block whose refs name a rotation block that appoints its key
 //     (spec/02-block-format.md, "Verifiable succession") — and on nothing else.

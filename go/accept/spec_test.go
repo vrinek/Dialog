@@ -80,7 +80,8 @@ func TestSpecFullDataFlow(t *testing.T) {
 // Any, not all: an entity two authors published is in the view when either of
 // them is subscribed. And per entity, not per dependency: Bob's molecule is in
 // the view whether or not the bond it names is. The view reports what it holds
-// and does not prune around the gaps; see todo 053.
+// and does not prune around the gaps, which spec/05-processing-model.md,
+// "Filtering rules", states is expected and not an error.
 func TestFilteringIsPerEntity(t *testing.T) {
 	w := newWorld(t)
 	alice, bob, carol := w.builder(1), w.builder(2), w.builder(4)

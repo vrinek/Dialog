@@ -6,7 +6,10 @@ import (
 	"github.com/vrinek/Dialog/go/cid"
 )
 
-// an edge is one declared relation between two molecules of the view.
+// an edge is one declared relation between two equivalence classes of the view,
+// named by their class identities. Where nothing is equivalent to anything —
+// the ordinary case — a class is one molecule and an edge is the relation
+// between the two molecules a meta-molecule names.
 type edge struct{ a, b cid.Digest }
 
 // applySupersession builds the supersession graph of the view and surfaces its
@@ -18,14 +21,19 @@ type edge struct{ a, b cid.Digest }
 //
 // Both halves of that condition are load-bearing here. An edge is recorded only
 // when both molecules are in the view: a supersession naming a molecule
-// filtering left out has nothing to hide (see todo 054). And B is marked rather
-// than removed — the view still holds it, Lookup still answers for it, and
-// IsSuperseded and Current are how an application acts on the mark. Nothing is
-// dropped, because L3 hides what it is told to hide and forgets nothing.
+// filtering left out has nothing to hide, and takes effect on a later rebuild
+// that finds the molecule present (spec/05-processing-model.md, "Meta-molecule
+// application"). And B is marked rather than removed — the view still holds it,
+// Lookup still answers for it, and IsSuperseded and Current are how an
+// application acts on the mark. Nothing is dropped, because L3 hides what it is
+// told to hide and forgets nothing.
 //
-// The edges are recorded between the molecules the meta-molecule names, and are
-// not rewritten onto their equivalence classes; EquivalenceClass is exposed so
-// that an application that wants the wider reading can take it (see todo 052).
+// The edges run between equivalence classes rather than between the two
+// molecules named: equivalent entities are interchangeable, so replacing one
+// member of a class replaces the class (spec/06-meta-bonds.md, "Equivalence").
+// A class declared to supersede itself — "A supersedes B" where A and B are
+// equivalent — is a cycle of one, and is surfaced as such, because no member of
+// it can be the current version of anything.
 func applySupersession(v *View, c claims) {
 	var (
 		nodes digestSet
@@ -36,7 +44,7 @@ func applySupersession(v *View, c claims) {
 		if !v.Has(cl.a) || !v.Has(cl.b) {
 			continue
 		}
-		e := edge{a: cl.a, b: cl.b}
+		e := edge{a: v.class[cl.a], b: v.class[cl.b]}
 		nodes.add(e.a)
 		nodes.add(e.b)
 		if _, ok := metas[e]; !ok {
@@ -54,13 +62,13 @@ func applySupersession(v *View, c claims) {
 	}
 	slices.SortFunc(v.supersessionEdges, compareEdges)
 
-	for _, members := range cycles(nodes.list(), v.supersedes) {
+	for _, classes := range cycles(nodes.list(), v.supersedes) {
 		var (
 			meta      digestSet
 			declarers keySet
 			inCycle   digestSet
 		)
-		for _, d := range members {
+		for _, d := range classes {
 			inCycle.add(d)
 		}
 		for _, e := range v.supersessionEdges {
@@ -76,7 +84,7 @@ func applySupersession(v *View, c claims) {
 		}
 		v.conflicts = append(v.conflicts, Conflict{
 			Kind:      ConflictSupersessionCycle,
-			Molecules: members,
+			Molecules: v.membersOf(classes),
 			Meta:      meta.list(),
 			Declarers: declarers.public(),
 		})
@@ -95,9 +103,16 @@ func applySupersession(v *View, c claims) {
 // Presence is read as the filtering rule reads it — an entity is in L3 when a
 // subscribed author published it — rather than as requiring a truth assertion
 // on top; surfacing is a MUST, and the narrower reading would suppress
-// contradictions the application is entitled to see (see todo 054). Which of
-// the two molecules is true, if either, stays with the application: this
-// package surfaces and stops.
+// contradictions the application is entitled to see
+// (spec/05-processing-model.md, "Meta-molecule application"). Which of the two
+// molecules is true, if either, stays with the application: this package
+// surfaces and stops.
+//
+// Like supersession, a contradiction is recorded between equivalence classes:
+// what contradicts a molecule contradicts everything interchangeable with it
+// (spec/06-meta-bonds.md, "Equivalence"). Two members of one class declared
+// contradictory is a class that contradicts itself, which is surfaced as a
+// contradiction with a single side.
 func applyContradictions(v *View, c claims) {
 	var (
 		pairs []edge
@@ -110,7 +125,7 @@ func applyContradictions(v *View, c claims) {
 		}
 		// A contradiction is symmetric — neither molecule is the subject —
 		// so the pair is stored in one canonical direction.
-		e := edge{a: cl.a, b: cl.b}
+		e := edge{a: v.class[cl.a], b: v.class[cl.b]}
 		if compareDigests(e.b, e.a) < 0 {
 			e.a, e.b = e.b, e.a
 		}
@@ -121,9 +136,10 @@ func applyContradictions(v *View, c claims) {
 				v.contradicts[e.a] = insertDigest(v.contradicts[e.a], e.b)
 				v.contradicts[e.b] = insertDigest(v.contradicts[e.b], e.a)
 			} else {
-				// A molecule declared to contradict itself. It cannot be
-				// true, and the application is told so rather than told
-				// nothing.
+				// A class declared to contradict itself, from a molecule
+				// contradicting itself or two equivalent molecules
+				// contradicting each other. It cannot be true, and the
+				// application is told so rather than told nothing.
 				v.contradicts[e.a] = insertDigest(v.contradicts[e.a], e.a)
 			}
 		}
@@ -136,15 +152,18 @@ func applyContradictions(v *View, c claims) {
 	}
 	slices.SortFunc(pairs, compareEdges)
 	for _, e := range pairs {
-		molecules := []cid.Digest{e.a}
-		sides := []Side{{Molecule: e.a, Authors: v.authorsOf(e.a)}}
+		classes := []cid.Digest{e.a}
 		if e.a != e.b {
-			molecules = append(molecules, e.b)
-			sides = append(sides, Side{Molecule: e.b, Authors: v.authorsOf(e.b)})
+			classes = append(classes, e.b)
+		}
+		sides := make([]Side, 0, len(classes))
+		for _, class := range classes {
+			members := v.classMembers[class]
+			sides = append(sides, Side{Molecules: slices.Clone(members), Authors: v.authorsOfAll(members)})
 		}
 		v.conflicts = append(v.conflicts, Conflict{
 			Kind:      ConflictContradiction,
-			Molecules: molecules,
+			Molecules: v.membersOf(classes),
 			Sides:     sides,
 			Meta:      metas[e].list(),
 			Declarers: by[e].public(),
@@ -152,10 +171,11 @@ func applyContradictions(v *View, c claims) {
 	}
 }
 
-// cycles returns the sets of molecules that supersede each other in a loop, in
-// ascending order of their smallest member. A molecule in one of them can never
-// be the current version of anything, itself included, which is a disagreement
-// among the authors who wrote the edges and not a state an ordering can settle.
+// cycles returns the sets of equivalence classes that supersede each other in a
+// loop, in ascending order of their smallest member. A molecule in one of them
+// can never be the current version of anything, itself included, which is a
+// disagreement among the authors who wrote the edges and not a state an ordering
+// can settle.
 //
 // It is Tarjan's strongly-connected-components algorithm over the supersession
 // graph: a component of more than one molecule is a cycle, and a component of
