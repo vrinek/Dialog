@@ -15,6 +15,8 @@ spec/           # Protocol specification documents (Markdown)
   06-meta-bonds.md       # Standard meta-bond library
 go/                      # Go reference implementation (module github.com/vrinek/Dialog/go)
   dcbor/ cid/ entity/ block/ privacy/   # the protocol, one package per layer
+  graph/                 # L2: the accumulated ontology graph
+  accept/                # L3: the subscribed, meta-bond-applied view of L2
   cmd/genvectors/        # writes the conformance vectors to vectors/
   internal/              # the vector generator and its JSON schema
   conformance_test.go    # checks the implementation against committed vectors/

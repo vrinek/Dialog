@@ -24,7 +24,7 @@ The full protocol specification is in [`spec/`](spec/00-overview.md).
 
 ## Reference implementation
 
-A Go implementation of Layer 1 lives in [`go/`](go/). It is not the protocol —
+A Go implementation of the whole L1 → L2 → L3 pipeline lives in [`go/`](go/). It is not the protocol —
 the specification is — and it exists for two reasons: to prove the
 specification is implementable, and to produce the conformance vectors that
 every other implementation can be checked against.
@@ -36,6 +36,8 @@ every other implementation can be checked against.
 | [`entity`](go/entity) | Atoms, bonds, molecules and the five filler types, with the standard meta-bond library |
 | [`block`](go/block) | Blocks, the four operations, the signing input, chain and reachability validation, key rotation and fork detection |
 | [`privacy`](go/privacy) | Private-block encryption (XChaCha20-Poly1305 with AAD) and per-recipient key wrapping (X25519 + HKDF-SHA-256) |
+| [`graph`](go/graph) | Layer 2: the append-only ontology graph, accumulating validated blocks' entities with their authorship tags and answering provenance queries |
+| [`accept`](go/accept) | Layer 3: one user's view of L2 — filtered by subscription, with the five standard meta-bonds applied and every conflict surfaced and none resolved |
 
 One third-party dependency, `golang.org/x/crypto`. (`go.mod` names a second,
 the ruleguard DSL; no build ever compiles it — it exists so the static-analysis
@@ -77,13 +79,13 @@ See [Releases](#releases) for why the tag needs the `go/` prefix.
 ## Architecture
 
 ### Layer 1 — "What we heard"
-Raw blockchain data. Each author has their own chain of signed, append-only blocks. Users subscribe to authors, determining which chains the node fetches and stores. The `prev` field links each block to its predecessor (ordering only); the `refs` field optionally references specific CID-providing blocks in other chains, forming a DAG.
+Raw blockchain data. Each author has their own chain of signed, append-only blocks. Users subscribe to authors, determining which chains the node fetches and stores. The `prev` field links each block to its predecessor (ordering only); the `refs` field optionally references specific CID-providing blocks in other chains, forming a DAG. *Implemented by [`block`](go/block).*
 
 ### Layer 2 — "What we know"
-Accumulated ontology graph. Operations are extracted from all stored blocks and added to a single graph, tagged with authorship. Foreign-referenced blocks are demand-pulled for validation context. No interpretation occurs — meta-molecules are stored as regular molecules.
+Accumulated ontology graph. Operations are extracted from all stored blocks and added to a single graph, tagged with authorship. Foreign-referenced blocks are demand-pulled for validation context. No interpretation occurs — meta-molecules are stored as regular molecules. *Implemented by [`graph`](go/graph).*
 
 ### Layer 3 — "What we accept"
-L2 distilled by filtering to subscribed authors, applying meta-molecule semantics, and surfacing conflicts. Subscriptions are a cross-cutting concern: at L1 they determine which chains to fetch; at L3 they determine which authors' data to accept. This is the application's source of truth.
+L2 distilled by filtering to subscribed authors, applying meta-molecule semantics, and surfacing conflicts. Subscriptions are a cross-cutting concern: at L1 they determine which chains to fetch; at L3 they determine which authors' data to accept. This is the application's source of truth. *Implemented by [`accept`](go/accept).*
 
 ## Ontology model
 

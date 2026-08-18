@@ -1,6 +1,6 @@
 # L2/L3 processing layers — design and plan
 
-**Status:** in-progress
+**Status:** complete
 **Date:** 2026-08-15
 
 ## Purpose
@@ -72,6 +72,31 @@ L1 → L2 → L3 pipeline. L1 (block storage/validation) already exists in `go/b
    `055`.
 3. Docs: README architecture section gains implementation pointers; AGENTS.md
    package list; this plan marked complete.
+   — **done:** todos 052 to 055 ratified into spec/05 and spec/06 first, since
+   phase 2 had left four readings recorded only in doc comments; each of the
+   three layer descriptions in the README now names its package, the package
+   table gains `graph` and `accept`, and AGENTS.md's tree lists both.
+
+## Outcome
+
+The L1 → L2 → L3 pipeline is implemented and the specification records every
+reading the implementation had to pick. `go/graph` accumulates validated blocks
+into the append-only ontology graph with authorship tags; `go/accept` builds one
+user's view of it, filtered by subscription, with the five standard meta-bonds
+applied — equivalence closure first, because the other four are read through it —
+and four kinds of conflict surfaced and none resolved. Both packages answer every
+query in digest order and are covered by the determinism guard.
+
+Seven ambiguities were found and closed along the way: 049 to 051 during L2, 052
+to 055 during L3. All seven landed as specification text before the code was
+declared done, and only one of them changed behaviour — 052, which made
+supersession and contradiction read through the equivalence class as truth
+already did.
+
+Deliberately not done, and unchanged as decisions: no persistence (a storage-
+engine choice, not protocol), no incremental L3 (a view is a snapshot; rebuild
+it), and no conformance vectors for L2/L3 (vectors pin wire bytes; scenario tests
+pin node behaviour).
 
 ## Rules for implementing agents
 
