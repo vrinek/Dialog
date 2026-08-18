@@ -112,6 +112,15 @@ See [`docs/plans/2026-08-18-typescript-implementation.md`](docs/plans/2026-08-18
 for the plan and the phase-by-phase account of every gap the clean-room
 process found in `spec/` and `vectors/` along the way.
 
+## Demo
+
+[`demo/`](demo/README.md) is the founding use case wired up: three fictional
+authors publish a small knowledge domain — European countries and their
+capitals, with deliberate disagreements — as real Dialog chains, and an MCP
+server exposes the L3 view of them to an AI assistant. The assistant answers
+from content-addressed, author-attributed facts, cites the digest and author of
+every claim, and reports a dispute as a dispute rather than picking a side.
+
 ## Architecture
 
 ### Layer 1 — "What we heard"
