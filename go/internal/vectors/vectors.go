@@ -31,19 +31,20 @@ const Format = vectorfile.Format
 
 // The file schema, aliased so that the builders below read as one package.
 type (
-	Document    = vectorfile.Document
-	Section     = vectorfile.Section
-	File        = vectorfile.File
-	Value       = vectorfile.Value
-	Entry       = vectorfile.Entry
-	DCBORCase   = vectorfile.DCBORCase
-	InvalidCase = vectorfile.InvalidCase
-	EntityCase  = vectorfile.EntityCase
-	FillerCase  = vectorfile.FillerCase
-	KeyCase     = vectorfile.KeyCase
-	BlockInputs = vectorfile.BlockInputs
-	BlockCase   = vectorfile.BlockCase
-	ForkCase    = vectorfile.ForkCase
+	Document           = vectorfile.Document
+	Section            = vectorfile.Section
+	File               = vectorfile.File
+	Value              = vectorfile.Value
+	Entry              = vectorfile.Entry
+	DCBORCase          = vectorfile.DCBORCase
+	InvalidCase        = vectorfile.InvalidCase
+	InvalidInChainCase = vectorfile.InvalidInChainCase
+	EntityCase         = vectorfile.EntityCase
+	FillerCase         = vectorfile.FillerCase
+	KeyCase            = vectorfile.KeyCase
+	BlockInputs        = vectorfile.BlockInputs
+	BlockCase          = vectorfile.BlockCase
+	ForkCase           = vectorfile.ForkCase
 
 	PrivacyInputs = vectorfile.PrivacyInputs
 	PrivacyCase   = vectorfile.PrivacyCase

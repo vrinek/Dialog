@@ -201,6 +201,31 @@ type InvalidCase struct {
 	Bytes  string `json:"bytes"`
 }
 
+// An InvalidInChainCase is a block that is well-formed on its own and MUST be
+// rejected once a node holds the blocks around it: the half of
+// spec/02-block-format.md, "Validation", that is a relation between a block and
+// a store — rules 3, 4, 5, 6, the own-chain half of rule 10 and the scan limit
+// of spec/05-processing-model.md.
+//
+// A consumer replays Setup into a fresh store, in order, accepting every block,
+// and then offers Bytes, which MUST be rejected under Rule. Setup may be empty
+// for a block that is wrong about itself and needs no store at all.
+type InvalidInChainCase struct {
+	Name   string `json:"name"`
+	Rule   string `json:"rule"`
+	Reason string `json:"reason"`
+	// Setup is the blocks to replay first, in order. Every one of them is
+	// valid.
+	Setup []string `json:"setup"`
+	// Bytes is the block that MUST then be rejected.
+	Bytes string `json:"bytes"`
+	// ScanLimit is the limit the case must be validated with, for a case whose
+	// rejection is the scan limit of spec/05-processing-model.md and nothing
+	// else. It is absent when the case does not depend on the limit, and a
+	// case that carries it is valid under the default limit.
+	ScanLimit int `json:"scan_limit,omitempty"`
+}
+
 // An EntityCase is one content-addressed entity: what it says, the bytes it
 // encodes to, and the identifiers those bytes produce.
 type EntityCase struct {

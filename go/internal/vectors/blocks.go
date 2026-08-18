@@ -82,12 +82,16 @@ func blocksDocument() (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
+	inChain, err := invalidInChainCases()
+	if err != nil {
+		return Document{}, err
+	}
 	return Document{
 		Vectors: Format,
 		Area:    "blocks",
-		Description: "A complete, deterministic chain scenario — genesis, an appended block, a foreign-reference block by a second author, and a rotation with its successor genesis — plus a fork and the blocks a conforming implementation MUST reject. " +
+		Description: "A complete, deterministic chain scenario — genesis, an appended block, a foreign-reference block by a second author, and a rotation with its successor genesis — plus a fork, the blocks a conforming implementation MUST reject on their bytes, and the blocks it MUST reject only once it holds the chains around them. " +
 			"Ed25519 signing is deterministic, so every signature here is reproducible from the seeds in inputs.",
-		Spec:   []string{"spec/02-block-format.md", "spec/03-encoding.md", "spec/04-cryptography.md"},
+		Spec:   []string{"spec/02-block-format.md", "spec/03-encoding.md", "spec/04-cryptography.md", "spec/05-processing-model.md"},
 		Inputs: blockInputs(),
 		Sections: []Section{
 			{
@@ -110,6 +114,12 @@ func blocksDocument() (Document, error) {
 				Description: "Blocks a conforming implementation MUST reject, each naming the rule it violates. Every one of them is canonical dCBOR and — except where the case is about the signature — correctly signed, so the rejection can only come from the named rule.",
 				Cases:       invalid,
 			},
+			{
+				Name: "invalid_in_chain",
+				Description: "Blocks that decode, verify and are wrong only in relation to what a node holds: rules 3, 4, 5, 6, the own-chain half of rule 10, and the scan limit. " +
+					"Replay each case's setup blocks into a fresh store, in order, accepting every one of them, then offer bytes: it MUST be rejected under the named rule. A case carrying scan_limit MUST be validated with that limit configured, and is valid under the default.",
+				Cases: inChain,
+			},
 		},
 	}, nil
 }
@@ -121,6 +131,8 @@ func blockInputs() BlockInputs {
 			keyCase("alice", seedAlice),
 			keyCase("bob", seedBob),
 			keyCase("alice_successor", seedSuccessor),
+			keyCase("carol", seedCarol),
+			keyCase("dave", seedDave),
 		},
 	}
 }

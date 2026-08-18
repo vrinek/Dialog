@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/vrinek/Dialog/go/block"
@@ -333,6 +334,75 @@ func TestBlockVectors(t *testing.T) {
 			}
 		})
 	}
+
+	for _, tc := range cases[vectorfile.InvalidInChainCase](t, doc, "invalid_in_chain") {
+		t.Run("invalid_in_chain/"+tc.Name, func(t *testing.T) {
+			checkChainRejection(t, tc)
+		})
+	}
+}
+
+// checkChainRejection replays one invalid_in_chain case: its setup blocks into
+// a fresh store, each of them valid, and then the block the case says MUST be
+// rejected under the rule it names. These are the rejections a decoder cannot
+// make — rules 3, 4, 5, 6, the own-chain half of 10, and the scan limit.
+func checkChainRejection(t *testing.T, tc vectorfile.InvalidInChainCase) {
+	t.Helper()
+	store := block.NewMemStore()
+	opts := &block.Options{ScanLimit: tc.ScanLimit}
+	for i, encoded := range tc.Setup {
+		b, err := block.Decode(mustHex(t, tc.Name, encoded))
+		if err != nil {
+			t.Fatalf("setup[%d]: Decode: %v", i, err)
+		}
+		if err := store.Add(b); err != nil {
+			t.Fatalf("setup[%d]: Add: %v", i, err)
+		}
+		if _, err := block.Validate(b, store, opts); err != nil {
+			t.Fatalf("setup[%d] (%s) must be valid: %v", i, b, err)
+		}
+	}
+
+	bad, err := block.Decode(mustHex(t, tc.Name, tc.Bytes))
+	if err != nil {
+		t.Fatalf("the rejected block must decode — the case is a rejection by the store, not by the decoder: %v", err)
+	}
+	if tc.ScanLimit != 0 {
+		// A case that names a limit is valid under the default one: what it
+		// pins is the limit, not the block.
+		if _, err := block.Validate(bad, store, nil); err != nil {
+			t.Errorf("under the default scan limit the block must be valid: %v", err)
+		}
+	}
+	_, err = block.Validate(bad, store, opts)
+	var ruleErr *block.RuleError
+	if !errors.As(err, &ruleErr) {
+		t.Fatalf("Validate = %v, want a rejection under %s: %s", err, tc.Rule, tc.Reason)
+	}
+	if want := ruleNumber(t, tc.Rule); ruleErr.Rule != want {
+		t.Errorf("rejected under rule %d, the case names rule %d (%s)", ruleErr.Rule, want, tc.Rule)
+	}
+}
+
+// ruleNumber reads the numbered rule out of a case's rule label, every one of
+// which names one: "... Validation rule 4 (operation validity)".
+func ruleNumber(t *testing.T, label string) int {
+	t.Helper()
+	const marker = "Validation rule "
+	i := strings.Index(label, marker)
+	if i < 0 {
+		t.Fatalf("the rule label %q names no numbered validation rule", label)
+	}
+	rest := label[i+len(marker):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	n, err := strconv.Atoi(rest[:end])
+	if err != nil {
+		t.Fatalf("the rule label %q does not carry a rule number: %v", label, err)
+	}
+	return n
 }
 
 // checkBlockCase decodes one block vector and checks every identifier it pins.

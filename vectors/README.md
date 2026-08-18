@@ -17,7 +17,7 @@ specification is ambiguous where it looked clear, which is worth reporting.
 |------|------|---------------|------------------|
 | [`dcbor.json`](dcbor.json) | Deterministic CBOR profile | [03-encoding.md](../spec/03-encoding.md) | `encoding_reference` (10), `canonical` (26), `decimal_fractions` (6), `invalid` (54) |
 | [`entities.json`](entities.json) | Atoms, bonds, molecules, fillers | [01-data-model.md](../spec/01-data-model.md), [06-meta-bonds.md](../spec/06-meta-bonds.md) | `atoms` (5), `bonds` (2), `meta_bonds` (5), `molecules` (4), `fillers` (12), `invalid` (38) |
-| [`blocks.json`](blocks.json) | Blocks, chains, signatures | [02-block-format.md](../spec/02-block-format.md), [04-cryptography.md](../spec/04-cryptography.md) | `chain` (5), `forks` (1), `fork_block` (1), `invalid` (23) |
+| [`blocks.json`](blocks.json) | Blocks, chains, signatures | [02-block-format.md](../spec/02-block-format.md), [04-cryptography.md](../spec/04-cryptography.md), [05-processing-model.md](../spec/05-processing-model.md) | `chain` (5), `forks` (1), `fork_block` (1), `invalid` (23), `invalid_in_chain` (12) |
 | [`privacy.json`](privacy.json) | Private blocks, key wrapping | [04-cryptography.md](../spec/04-cryptography.md) | `payload` (1), `aead` (4), `x25519` (3), `key_wrap` (2), `private_block` (1) |
 
 ## How they are produced
@@ -106,6 +106,17 @@ it finds produces canonical bytes without sorting anything.
   rejection by *its* decoder. Those bytes are well-formed dCBOR that the *data
   model* refuses, so they exercise a layer above `dcbor.json`'s; the one
   exception says so in its `reason`.
+- **Chain-relative rejections** (`invalid_in_chain` in `blocks.json`): a block
+  that decodes, verifies, and is wrong only in relation to what a node holds.
+  Each case carries `setup` — block hexes to replay into a **fresh** store, in
+  order, every one of which MUST be accepted — and then `bytes`, the block that
+  MUST be rejected, with the `rule` it violates and a `reason`. `setup` is empty
+  for a block that is wrong about itself and needs no store. A case carrying
+  `scan_limit` MUST be validated with that limit configured; the same block
+  against the same store is valid under the default limit of 256, so the case
+  pins the limit and nothing else. This is the half of validation no decoder can
+  perform — rules 3, 4, 5, 6 and the own-chain half of rule 10 — and the half
+  two implementations are most likely to disagree about.
 - **Privacy** (`privacy.json`): named `hex` byte strings for the plaintext
   payload, the AAD and the ciphertext; the Ed25519-to-X25519 conversions; and
   the per-recipient wrap, with its shared secret, wrapping key and 72-byte
@@ -133,7 +144,11 @@ A reasonable order to work through, each step depending on the last:
    in the signing procedure, not the encoding. Then replay the `chain` section
    in order into a store and validate each block; the `forks` section is the
    one condition [02-block-format.md](../spec/02-block-format.md) rule 9
-   requires you to detect.
+   requires you to detect. Leave `invalid_in_chain` for when the store works:
+   its cases are the rules that relate a block to what a node holds, each one
+   replayed into a store of its own, and they are where an implementation that
+   passes everything above still turns out to accept blocks another node
+   refuses.
 4. **`privacy.json`** — the AAD binds a ciphertext to its block, so check it
    before the ciphertext. The X25519 private half is derived by hashing the
    Ed25519 seed with SHA-512, not from the seed directly; that is the single
