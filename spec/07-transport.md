@@ -167,6 +167,10 @@ A response with one member is not a statement that the chain does not fork. It i
 
 The source MUST validate every block per [02-block-format.md](02-block-format.md) before storing it, exactly as it would a block from any other origin, and MUST NOT store as valid a block whose predecessor it does not hold and has not validated — such a block is *stored but unvalidated* or discarded, per [05-processing-model.md](05-processing-model.md), "Block reception". A source MAY refuse an announce entirely, for reasons that are its own policy: quota, rate, acquaintance, disk.
 
+**A disposition is decided after the whole sequence.** A source MUST determine each block's disposition once it has processed the entire announce, and not as each block is offered. A block settled by a later block of the same sequence — a definition the announce also carries, a predecessor announced after the block that names it in another author's interleaving — is therefore reported by its final state, `accepted` rather than `held`.
+
+Two things follow, and they are why the choice is normative. The receipt then describes the state the announcer's next request will meet, rather than one the source has already moved past; and announcing the same sequence twice produces the same receipt, which a block-by-block reading does not guarantee. The case is not a corner one, because a held block is settled by the *arrival* of what it was waiting for ([05-processing-model.md](05-processing-model.md), "Block reception", "Revalidation on arrival"), which may happen while the source is still reading the same request. A source that cannot answer either way in time answers 202 instead, whose receipt is incomplete or absent by definition.
+
 `announce` carries no authority in either direction. The announcer is not asserting anything a block does not already say, and the source is not endorsing anything by accepting one. It is the same bytes moving the other way.
 
 ### HTTP binding
@@ -236,7 +240,7 @@ An `announce` receipt is one JSON object mapping each submitted block's CID to w
 {"accepted": ["bafyrei…"], "held": ["bafyrei…"], "rejected": {"bafyrei…": "signature check failed"}}
 ```
 
-`accepted` are blocks the server validated and stored; `held` are blocks it is keeping as *stored but unvalidated* pending their ancestry; `rejected` names each block it refused and why, in prose meant for a person. Every submitted block MUST appear in exactly one of the three, and a server that already held a block reports it as `accepted`.
+`accepted` are blocks the server validated and stored; `held` are blocks it is keeping as *stored but unvalidated* pending their ancestry; `rejected` names each block it refused and why, in prose meant for a person. Every submitted block MUST appear in exactly one of the three, and a server that already held a block reports it as `accepted`. All three describe the source's state after the whole sequence has been processed, not as each block was offered (see "announce").
 
 #### Status codes
 
@@ -381,7 +385,6 @@ The questions above were left open on purpose. The ones below were not: they are
 
 | Todo | Question | Where it bites |
 |------|----------|----------------|
-| [088](../todos/088-pending-p2-when-is-an-announce-receipts-disposition-decided.md) | When is an announce receipt's disposition decided? | `announce`; the receipt's three members |
 | [089](../todos/089-pending-p3-limit-has-one-spelling-or-several.md) | Does `limit` have one spelling, and what does a repeated query parameter mean? | "HTTP binding", the bullets under the method-and-path table |
 
 ## Security Considerations

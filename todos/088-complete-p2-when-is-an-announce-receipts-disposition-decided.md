@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "088"
 tags: [transport, specification-gap, processing-model]
@@ -90,8 +90,8 @@ blocks stand with me", which is the only reading an announcer can use.
 
 ## Acceptance Criteria
 
-- [ ] The specification says when a disposition is decided
-- [ ] `go/transport`'s `StoreAnnouncer` matches it
+- [x] The specification says when a disposition is decided
+- [x] `go/transport`'s `StoreAnnouncer` matches it
 
 ## Work Log
 
@@ -102,6 +102,33 @@ blocks stand with me", which is the only reading an announcer can use.
 Found writing the announce handler: a sequence carrying a definition and the
 block that uses it settles the second during the first's admission, and the
 obvious block-by-block receipt would report it held.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended, in one normative paragraph under "announce".
+
+- `spec/07-transport.md`, "announce": **A disposition is decided after the whole
+  sequence.** A source MUST determine each block's disposition once it has
+  processed the entire announce, so a block settled by a later block of the same
+  sequence is reported by its final state — `accepted`, not `held`.
+- The two reasons are stated with it: the receipt then describes the state the
+  announcer's next request will meet rather than one the source has moved past,
+  and announcing the same sequence twice gives the same receipt. `todos/084`'s
+  revalidation-on-arrival rule is cited as what makes the case ordinary rather
+  than a corner, and 202 is named as the escape for a source that cannot answer
+  in time.
+- The receipt paragraph under "Bodies and content types" now says the three
+  members describe the state after the whole sequence.
+- `go/transport`'s `StoreAnnouncer` already made two passes; its doc comment now
+  says the profile requires them. `client_test.go`,
+  `TestAnnounceDispositionsAreDecidedAfterTheSequence` announces the using block
+  before the chain that defines what it names — a legal interleaving, each
+  author's blocks in chain order — and pins that all three come back accepted,
+  and that a re-announce of the same sequence gives the same receipt.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

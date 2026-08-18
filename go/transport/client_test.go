@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -273,6 +274,42 @@ func TestAnnounceRoundTrip(t *testing.T) {
 	}
 	if !store.Accepted(bob[2].Digest()) {
 		t.Error("the block held earlier was not settled by its ancestry arriving")
+	}
+}
+
+// TestAnnounceDispositionsAreDecidedAfterTheSequence: a block settled by a later
+// block of the same announce is reported by its final state. The announcer's
+// interleaving is legal — each author's own blocks are in chain order — and a
+// receipt built block by block would report the first block as held, a verdict
+// the source had already moved past when it wrote the response
+// (spec/07-transport.md, "announce"; todos/088).
+func TestAnnounceDispositionsAreDecidedAfterTheSequence(t *testing.T) {
+	_, definition, _, use := definitionAndUse(t, 35, 36)
+	store := block.NewValidatingStore(nil)
+	client, _ := serve(t, ServerConfig{Store: store, Announce: StoreAnnouncer(store)})
+
+	// The using block first, then the chain that defines what it names: it is
+	// undecidable when offered and accepted by the time the sequence is done.
+	sequence := []*block.Block{use, definition[0], definition[1]}
+	receipt, err := client.Announce(t.Context(), sequence)
+	if err != nil {
+		t.Fatalf("Announce: %v", err)
+	}
+	if len(receipt.Accepted) != 3 || len(receipt.Held) != 0 || len(receipt.Rejected) != 0 {
+		t.Fatalf("receipt = %+v, want all three accepted", receipt)
+	}
+	if receipt.Accepted[0] != use.Digest() {
+		t.Errorf("the receipt names %s first, want the using block %s", receipt.Accepted[0], use.Digest())
+	}
+
+	// And the same sequence announced again gives the same receipt, which is the
+	// other half of what deciding after the sequence buys.
+	again, err := client.Announce(t.Context(), sequence)
+	if err != nil {
+		t.Fatalf("Announce: %v", err)
+	}
+	if !slices.Equal(again.Accepted, receipt.Accepted) || len(again.Held) != 0 || len(again.Rejected) != 0 {
+		t.Errorf("re-announcing the same sequence = %+v, want the first receipt %+v", again, receipt)
 	}
 }
 

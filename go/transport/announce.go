@@ -145,12 +145,15 @@ type Announcer interface {
 // endpoint: every block is offered to the store, which validates it on arrival
 // and records the verdict, and the receipt is that verdict read back.
 //
-// The two passes are deliberate. Blocks are offered first, in the order they
-// arrived, and the dispositions are read afterwards — because a block held as
-// undecided is settled by the arrival of the block it was waiting for, which may
-// be later in the same sequence. A receipt built block by block would report a
-// block as held that the store went on to accept before the response was even
-// written.
+// The two passes are what the profile requires. A source MUST determine each
+// block's disposition after it has processed the entire announce, so blocks are
+// offered first, in the order they arrived, and the dispositions are read
+// afterwards — because a block held as undecided is settled by the arrival of
+// the block it was waiting for, which may be later in the same sequence. A
+// receipt built block by block would report a block as held that the store went
+// on to accept before the response was even written, and would answer the same
+// sequence differently on a re-announce (spec/07-transport.md, "announce"; "A
+// disposition is decided after the whole sequence"; todos/088).
 func StoreAnnouncer(store *block.ValidatingStore) Announcer { return &storeAnnouncer{store: store} }
 
 type storeAnnouncer struct{ store *block.ValidatingStore }
