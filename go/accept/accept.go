@@ -60,8 +60,17 @@
 //	_A_ contradicts _B_      surfaced when both molecules are in the view
 //	_A_ supersedes _B_       B is marked; see IsSuperseded and Current
 //
-// The equivalence closure comes first because the other four are read through
-// it: "Implementations SHOULD treat equivalent entities as interchangeable when
+// A meta-molecule applies while it stands. Publication is backing, an explicit
+// "«M» is true" from a publishing author is backing too, and that author's later
+// "«M» is untrue" withdraws theirs, by the same block order that settles any
+// other molecule; an equivalence, contradiction or supersession every one of its
+// subscribed authors has retracted declares nothing, while another author's
+// retraction withdraws nothing and is surfaced as the disagreement it is
+// (spec/06-meta-bonds.md, "Withdrawing meta-molecules"). The truth meta-bonds
+// are exempt, which is what stops the regress. See WithdrawnMetaMolecules.
+//
+// The equivalence closure comes first among the readings because the other four
+// are read through it: "Implementations SHOULD treat equivalent entities as interchangeable when
 // querying L3" (spec/06-meta-bonds.md, "Equivalence"), and this implementation
 // takes that at its word — a truth assertion, a retraction, a contradiction or a
 // supersession naming any member of a class is a statement about the class. So a
@@ -146,6 +155,7 @@ type View struct {
 	contradicts       map[cid.Digest][]cid.Digest // class -> the classes declared to contradict it
 
 	malformed []cid.Digest
+	withdrawn []cid.Digest
 	conflicts []Conflict
 }
 
@@ -163,8 +173,10 @@ var ErrNoSource = errors.New("accept: Build needs the L1 block source the graph 
 //
 // g is the L2 graph. src is the L1 store the graph's blocks came from; Build
 // reads it to place assertions in their author's block order, and needs every
-// block the graph names as the provenance of a subscribed author's truth
-// meta-molecule, together with that block's ancestors. A block L2 holds is by
+// block the graph names as the provenance of a subscribed author's
+// meta-molecule — the truth assertions, and the equivalences, contradictions
+// and supersessions whose standing is read from the same order — together with
+// those blocks' ancestors. A block L2 holds is by
 // definition one L1 validated and holds, so a block missing from src is an
 // inconsistency between the two layers and is reported as an error wrapping
 // block.ErrNotFound. subs may be nil or empty, which yields an empty view: an
@@ -209,21 +221,29 @@ func Build(g *graph.Graph, src block.Source, subs *Subscriptions) (*View, error)
 	c := read(v)
 	v.malformed = c.malformed
 
-	// 3. The equivalence closure, first, because every other reading lands on
-	// a class rather than on a bare digest.
+	// 3. Which of them still stand. A meta-molecule its own authors have all
+	// retracted is not applied, and deciding that comes before applying
+	// anything — the equivalence closure of step 4 is one of the things it
+	// decides (spec/06-meta-bonds.md, "Withdrawing meta-molecules").
+	order := newBlockOrder(src)
+	if err := applyStanding(v, &c, order); err != nil {
+		return nil, err
+	}
+
+	// 4. The equivalence closure, first among the readings, because every
+	// other one lands on a class rather than on a bare digest.
 	v.closeEquivalences(c)
 
-	// 4. Truth, which is the only reading that needs block order.
-	order := newBlockOrder(src)
+	// 5. Truth, which is the only reading that needs block order.
 	if err := applyTruth(v, c, order); err != nil {
 		return nil, err
 	}
 
-	// 5. Supersession and contradiction, neither of which needs an order.
+	// 6. Supersession and contradiction, neither of which needs an order.
 	applySupersession(v, c)
 	applyContradictions(v, c)
 
-	// 6. The conflicts found while placing blocks in their order: an
+	// 7. The conflicts found while placing blocks in their order: an
 	// ambiguous succession is an ambiguous order.
 	v.conflicts = append(v.conflicts, order.conflicts...)
 	slices.SortFunc(v.conflicts, compareConflicts)
@@ -561,6 +581,20 @@ func (v *View) ConflictsOfKind(k ConflictKind) []Conflict {
 // not to be applied and asks that such molecules be surfaced rather than
 // dropped: L3 declines to guess what was meant, and lists them here.
 func (v *View) MalformedMetaMolecules() []cid.Digest { return slices.Clone(v.malformed) }
+
+// WithdrawnMetaMolecules returns the in-view equivalences, contradictions and
+// supersessions that are not applied because every subscribed author who
+// published one has retracted it, ascending.
+//
+// "Implementations MUST NOT apply them once every subscribed author who
+// published it has withdrawn their backing [...] A meta-molecule that no longer
+// applies is not removed" (spec/06-meta-bonds.md, "Withdrawing meta-molecules").
+// So these molecules are in the view, Lookup answers for them, their truth state
+// records the retraction that withdrew them — and they declare nothing. The
+// truth meta-molecules are never here: they are not gated this way, because a
+// retraction of a retraction is one author restating a position block order
+// already settles.
+func (v *View) WithdrawnMetaMolecules() []cid.Digest { return slices.Clone(v.withdrawn) }
 
 // Accepted returns the molecules of the view that survive the meta-bonds:
 // in the view, not Retracted, and not superseded by anything. Ascending.

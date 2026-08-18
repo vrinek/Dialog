@@ -56,6 +56,7 @@ func fingerprint(v *View) string {
 	}
 	fmt.Fprintf(&b, "accepted=%s\n", digests(v.Accepted()))
 	fmt.Fprintf(&b, "malformed=%s\n", digests(v.MalformedMetaMolecules()))
+	fmt.Fprintf(&b, "withdrawn=%s\n", digests(v.WithdrawnMetaMolecules()))
 	return b.String()
 }
 

@@ -23,7 +23,8 @@ import (
 //     order").
 //   - Bob publishes a population figure, a correction of it, and the
 //     supersession joining them, plus a second statement he declares equivalent
-//     to Alice's.
+//     to Alice's — and a wrong equivalence between his two figures, which he
+//     retracts a block later, so it declares nothing.
 //   - Dave disagrees with Bob about the correction, asserting one true and
 //     Erin asserting it untrue: a conflict, surfaced.
 //   - Mallory, whom nobody subscribes to, retracts everything in sight.
@@ -37,6 +38,7 @@ type scenario struct {
 	capital, population         block.CreateBond
 	parisCapital, parisSameFact cid.Digest
 	oldFigure, newFigure        cid.Digest
+	wrongEquivalence            cid.Digest
 	privateNote                 cid.Digest
 	claimA, claimB              cid.Digest
 }
@@ -97,6 +99,17 @@ func buildScenario(t testing.TB) *scenario {
 		metaBondOp(entity.TemplateEquivalence), sameAs(entity.FillerMolecule, s.parisCapital, s.parisSameFact),
 	)
 	bobBlock := w.publishRefs(s.bob, []cid.Digest{aliceBlock.Digest()}, bobOps...)
+
+	// Bob also declares his two population figures the same — a mistake, since
+	// they are two censuses — and takes it back in his next block. A withdrawn
+	// equivalence unifies nothing (spec/06-meta-bonds.md, "Withdrawing
+	// meta-molecules"), so the supersession between the two figures is a chain
+	// and not the cycle it would be inside one class.
+	wrong := sameAs(entity.FillerMolecule, s.oldFigure, s.newFigure)
+	s.wrongEquivalence = wrong.Molecule().Digest()
+	w.publishRefs(s.bob, []cid.Digest{aliceBlock.Digest()}, wrong)
+	w.publishRefs(s.bob, []cid.Digest{aliceBlock.Digest()},
+		metaBondOp(entity.TemplateTruthRetraction), isUntrue(s.wrongEquivalence))
 
 	// Dave and Erin disagree about the corrected figure.
 	w.publishRefs(s.dave, []cid.Digest{bobBlock.Digest(), aliceBlock.Digest()}, isTrue(s.newFigure))
@@ -160,6 +173,20 @@ func TestScenario(t *testing.T) {
 	}
 	if got := v.Current(s.oldFigure); len(got) != 1 || got[0] != s.newFigure {
 		t.Errorf("Current(old figure) = %s, want %s", digests(got), s.newFigure)
+	}
+
+	// Bob's retracted equivalence declares nothing: the two figures are two
+	// classes, so the supersession between them is a chain rather than a class
+	// replacing itself. The meta-molecule itself is still in the view.
+	if v.Equivalent(s.oldFigure, s.newFigure) {
+		t.Error("Bob's retracted equivalence still unifies his two figures")
+	}
+	if got := v.WithdrawnMetaMolecules(); !slices.Equal(got, []cid.Digest{s.wrongEquivalence}) {
+		t.Errorf("WithdrawnMetaMolecules = %s, want Bob's retracted equivalence [%s]",
+			digests(got), s.wrongEquivalence)
+	}
+	if !v.Has(s.wrongEquivalence) {
+		t.Error("the withdrawn equivalence left the view; withdrawing is not deleting")
 	}
 
 	// Dave and Erin disagree about the correction: Conflicted, not resolved.
