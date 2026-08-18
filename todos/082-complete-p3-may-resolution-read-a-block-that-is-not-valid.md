@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "082"
 tags: [block-format, processing-model, validation, specification-gap]
@@ -95,10 +95,13 @@ the block that carried it, and the two need not travel together.
 
 ## Acceptance Criteria
 
-- [ ] The specification says whether reference resolution may read a block the
-      node has not accepted as valid
-- [ ] Whatever it says, `ts/`'s `StoredBlock.valid` and `go/block`'s
-      verdict-free `Source` agree with it
+- [x] The specification says whether reference resolution may read a block the
+      node has not accepted as valid (it may, and MUST NOT be required to check
+      the block's validity — spec/05, "Resolution reads blocks, not verdicts")
+- [x] Whatever it says, `ts/`'s `StoredBlock.valid` and `go/block`'s
+      verdict-free `Source` agree with it (both already did; the doc comments
+      now say so, and `go/block`'s new `ValidatingStore` hands over unvalidated
+      blocks deliberately)
 
 ## Work Log
 
@@ -111,6 +114,54 @@ consults the store's `valid` flag nowhere, and the specification never asks it
 to. `todos/078` made held-but-unvalidated blocks common enough for the question
 to matter.
 
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. Resolution MAY read entity definitions
+from any held block that passes the block's self-contained checks — canonical
+bytes, structure, signature: the checks a store performs on admission —
+regardless of that block's chain validity (rules 3 and 9) or undecided status.
+Content addressing makes a definition self-certifying: an operation defines the
+digest D only if the entity's canonical bytes hash to D, which the reader
+verifies or recomputes itself, and the source block's chain standing cannot
+change what the bytes hash to. Requiring a valid source block would force the
+transitive full validation of every foreign chain and destroy the demand-driven
+cost model.
+
+**Changes:**
+
+- `spec/05-processing-model.md`, "Resolution procedure": the new rule
+  ("Resolution reads blocks, not verdicts"), its rationale, and its boundaries —
+  L2 accumulation unchanged, rules 6 and 10 unchanged on the source block, rule
+  3 unchanged, and a verdict still moving in one direction if the source block
+  later falls.
+- `spec/02-block-format.md`, rule 4: the branches name blocks and not verdicts,
+  with the contrast to rule 3 and a cross-reference.
+- `go/block/validate.go`: behaviour already matched. The `resolver` doc comment
+  states why it is sound *here* — a `*Block` exists only through `Decode`,
+  `Sign` or `Assemble`, all of which enforce canonical bytes, structure and the
+  signature, so every block a `Source` can hand out is structurally sound — and
+  `define` documents that it indexes under the digest `op.Creates()` computes
+  from the entity's own canonical bytes (`Atom.Digest` / `Bond.Digest` /
+  `Molecule.Digest`, SHA-256 over the entity's dCBOR). Nothing duplicates that
+  work.
+- `go/block/validate_test.go`: `TestDefinitionFromAnUndecidedBlockResolves` — a
+  bond read from a block whose predecessor never arrives; the referencing block
+  is valid and the source block stays undecided.
+- `ts/src/block.ts`: the `Resolver` ignoring `StoredBlock.valid` is *correct*
+  and is now documented as the rule, with the same two reasons —
+  `BlockStore.add` runs the self-contained checks before storing anything, and
+  `indexBlock` keys entities under `entityDigest` of the entity it
+  reconstructs. `StoredBlock.valid` gained the list of who reads it (rule 3, L2)
+  and who does not (resolution).
+- `ts/test/block.test.ts`: the same scenario, ending with the source block still
+  `valid: false` and the referencing block `valid: true`.
+
+**Vectors: no byte moved.**
+
 ## Notes
 
-Source: applying `todos/079` and `todos/080`.
+Source: applying `todos/079` and `todos/080`. `todos/081`'s `ValidatingStore`
+was built to this decision: it records verdicts and still hands undecided blocks
+to resolution.
