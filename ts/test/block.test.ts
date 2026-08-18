@@ -490,6 +490,24 @@ function publicBlock(
   );
 }
 
+/** A signed private block. Its `enc` is opaque to everyone here — this
+ * implementation holds no keys — which is exactly the case spec/05,
+ * "Undecryptable reference handling", is about. */
+function privateBlock(
+  seed: Uint8Array,
+  fields: { prev?: Uint8Array | null; enc?: Uint8Array; nonce?: Uint8Array } = {},
+): Block {
+  return signBlock(
+    unsignedPrivateBlock({
+      pub: publicKeyFromSeed(seed),
+      prev: fields.prev ?? null,
+      enc: fields.enc ?? new Uint8Array(48).fill(7),
+      nonce: fields.nonce ?? new Uint8Array(24).fill(9),
+    }),
+    seed,
+  );
+}
+
 const CAPITAL_OF = createBond("_A_ is the capital of _B_");
 const PARIS = createAtom("Paris");
 const FRANCE = createAtom("France");
@@ -650,6 +668,78 @@ test("rule 4: a refs entry resolution never needed does not make the block undec
   assert.deepEqual(result.report?.uncheckedRefs.map(bytesToHex), [
     bytesToHex(blockDigest(unrelated)),
   ]);
+});
+
+test("rule 4: a block held as ciphertext leaves the verdict undecided, not invalid", () => {
+  // The readability cause of *stored but unvalidated* (spec/05, "Undecryptable
+  // reference handling"). A chain may mix block types, so a public block's own
+  // ancestry can hold what this node cannot read. Validity is a property of
+  // the blocks: a node holding the chain's key decides the same question, so a
+  // key this one was not given is not evidence that the block is wrong.
+  const genesis = privateBlock(ALICE);
+  const tip = publicBlock(ALICE, {
+    prev: blockDigest(genesis),
+    ops: [PARIS, FRANCE, createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+
+  const store = new BlockStore();
+  assert.equal(store.add(genesis).status, "accepted");
+  const held = store.add(tip);
+  assert.equal(held.status, "unvalidated");
+  assert.equal(held.pending?.code, "unvalidated");
+  // What is surfaced is the block a key is wanted for, and nothing is filed as
+  // awaiting an arrival: the block is already here.
+  assert.deepEqual(held.pending?.undecryptable, blockDigest(genesis));
+  assert.equal(held.pending?.awaiting, undefined);
+  assert.equal(store.get(blockDigest(tip))?.valid, false, "held, never rejected");
+
+  // The verdict is a function of what the node can read and nothing else: the
+  // same offer answers the same until a key changes it.
+  assert.equal(store.add(tip).status, "unvalidated");
+});
+
+test("rule 4: an unreadable block reached through the refs graph is the same verdict", () => {
+  // Carol's block is private. Alice's public block named it before this node
+  // held it — which rule 6 leaves unchecked — and Bob's block resolves through
+  // Alice's into Carol's, where the bond would be if it could be read.
+  const CAROL = seedOfKey("carol");
+  const secret = privateBlock(CAROL);
+  const alice = publicBlock(ALICE, { refs: [blockDigest(secret)], ops: [PARIS, FRANCE] });
+  const bob = publicBlock(BOB, {
+    refs: [blockDigest(alice)],
+    ops: [createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+
+  const store = new BlockStore();
+  assert.equal(store.add(alice).status, "accepted", "the private entry was not held yet");
+  assert.equal(store.add(secret).status, "accepted");
+
+  const held = store.add(bob);
+  assert.equal(held.status, "unvalidated");
+  assert.deepEqual(held.pending?.undecryptable, blockDigest(secret));
+  assert.equal(store.get(blockDigest(bob))?.valid, false);
+});
+
+test("rule 4: an unreadable block no digest needs decides nothing", () => {
+  // Outcome 3 is reached only when the block that could not be read could have
+  // mattered. Here every digest resolves inside the block itself.
+  const genesis = privateBlock(ALICE);
+  const tip = publicBlock(ALICE, {
+    prev: blockDigest(genesis),
+    ops: [CAPITAL_OF, PARIS, FRANCE, createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+  const store = new BlockStore();
+  store.add(genesis);
+  assert.equal(store.add(tip).status, "accepted");
 });
 
 test("a non-monotonic ts is warned about, never rejected", () => {

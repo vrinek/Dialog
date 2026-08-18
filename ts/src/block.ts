@@ -128,11 +128,13 @@ export type BlockErrorCode =
   /** rule 3: chain integrity — a `pub` that differs from the chain's, a block
    * appended after the chain's rotation block. */
   | "chain"
-  /** neither valid nor invalid: a block validating this one requires is not
-   * held — its predecessor (rule 3), or a block reference resolution must read
-   * to decide rule 4 (spec/05, "Block reception"). The block may be kept as
-   * **stored but unvalidated** and re-checked when the missing block arrives.
-   * The absence of a block is never evidence that the block naming it is
+  /** neither valid nor invalid: a block validating this one requires is one
+   * this node cannot read — its predecessor (rule 3), or a block reference
+   * resolution must read to decide rule 4, whether it is not held or is held as
+   * ciphertext with no key for it (spec/05, "Block reception", "Undecryptable
+   * reference handling"). The block may be kept as **stored but unvalidated**
+   * and re-checked when the missing block, or the missing key, arrives. Neither
+   * a block nor a key this node lacks is evidence that the block needing it is
    * invalid. */
   | "unvalidated"
   /** rule 4: an entity digest an operation carries is not reachable. */
@@ -151,13 +153,18 @@ export type BlockErrorCode =
    * that is not public, or an ambiguous succession. */
   | "succession";
 
-/** Options for a {@link BlockError}: the standard `cause`, plus the digest an
- * `unvalidated` verdict is waiting for. */
+/** Options for a {@link BlockError}: the standard `cause`, plus what an
+ * `unvalidated` verdict is waiting for — a block, or a key. */
 export interface BlockErrorOptions extends ErrorOptions {
   /** The block whose absence left the verdict undecided. Only an `unvalidated`
    * error carries one, and it is what a store keys its held blocks by so that
    * they can be re-validated when it arrives. */
   readonly awaiting?: Uint8Array;
+  /** The block resolution needed, held, and could not read: what is wanted is
+   * a decryption key rather than a block, so no arrival will settle the verdict
+   * and a store has nothing to file the held block under (spec/05,
+   * "Undecryptable reference handling"). */
+  readonly undecryptable?: Uint8Array;
 }
 
 /** A rejection by a block constructor, decoder or validator. */
@@ -166,12 +173,18 @@ export class BlockError extends Error {
   /** For an `unvalidated` verdict, the digest of the block that has not
    * arrived; `undefined` for every other code. */
   readonly awaiting?: Uint8Array;
+  /** For an `unvalidated` verdict reached because a block resolution needed is
+   * held as ciphertext this node has no key for, that block's digest. The
+   * situation is the application's to act on — the fix is to obtain the key —
+   * which is why it is surfaced rather than folded into the message. */
+  readonly undecryptable?: Uint8Array;
 
   constructor(code: BlockErrorCode, message: string, options?: BlockErrorOptions) {
     super(message, options);
     this.name = "BlockError";
     this.code = code;
     if (options?.awaiting !== undefined) this.awaiting = options.awaiting;
+    if (options?.undecryptable !== undefined) this.undecryptable = options.undecryptable;
   }
 }
 
@@ -1259,6 +1272,7 @@ class Resolver {
   private readonly queued = new Set<string>();
   private scanned = 0;
   private gap: Uint8Array | undefined;
+  private unreadable: Uint8Array | undefined;
 
   constructor(block: PlaintextBlock, source: BlockSource, limit: number) {
     this.block = block;
@@ -1293,6 +1307,23 @@ class Resolver {
    */
   get missingBlock(): Uint8Array | undefined {
     return this.gap;
+  }
+
+  /**
+   * The first block resolution needed, *held*, and could not read: a private
+   * block whose operations are inside its `enc`. This package does no
+   * decryption, so every private block resolution meets is one of these.
+   *
+   * It is the third cause of *stored but unvalidated* (spec/05, "Block
+   * reception"; "Undecryptable reference handling"): an unresolved digest with
+   * this recorded means the node has not decided, exactly as a missing block
+   * would, because the same block is decidable for a node that holds the key
+   * and a key this one was not given is not evidence about the block that needs
+   * it. What settles it is a key, not an arrival, which is why it is reported
+   * separately from {@link missingBlock}.
+   */
+  get unreadableBlock(): Uint8Array | undefined {
+    return this.unreadable;
   }
 
   /** Record an entity created by an earlier operation of the same block. */
@@ -1337,6 +1368,7 @@ class Resolver {
         this.gap ??= prev;
         return;
       }
+      if (!isPlaintextBlock(held.block)) this.unreadable ??= held.digest;
       this.indexBlock(held.block);
       prev = held.block.prev;
     }
@@ -1362,9 +1394,15 @@ class Resolver {
         `reference resolution scanned more than ${this.limit} foreign blocks without resolving every digest; the block is treated as invalid for unresolvable references`,
       );
     }
-    this.indexBlock(held.block);
     if (isPlaintextBlock(held.block)) {
+      this.indexBlock(held.block);
       for (const ref of held.block.refs) this.enqueue(ref);
+    } else {
+      // Held and unreadable: its operations, and the `refs` that would carry
+      // resolution further, are inside `enc`. Nothing is learned, and if a
+      // digest goes unresolved the verdict is undecided rather than a
+      // rejection (spec/05, "Undecryptable reference handling").
+      this.unreadable ??= held.digest;
     }
   }
 
@@ -1457,13 +1495,15 @@ export interface ValidateOptions {
  * "Validation", in the order the specification numbers them.
  *
  * Throws {@link BlockError} on an invalid block. The one code that does not
- * mean "invalid" is `unvalidated`: a block validating this one requires has not
- * arrived, so the node has not been able to decide, and the block may be kept
- * as **stored but unvalidated** (spec/05, "Block reception"). Two rules reach
- * that verdict — rule 3, when the predecessor is missing or is itself
+ * mean "invalid" is `unvalidated`: a block validating this one requires is one
+ * the node cannot read, so it has not been able to decide, and the block may be
+ * kept as **stored but unvalidated** (spec/05, "Block reception"). Two rules
+ * reach that verdict — rule 3, when the predecessor is missing or is itself
  * unvalidated, and rule 4, when reference resolution needs a block the source
- * does not hold — and the error's `awaiting` names the block whose arrival
- * would settle it. Nothing a source withholds can make a block invalid.
+ * does not hold, or one it holds and cannot read. The error's `awaiting` names
+ * the block whose arrival would settle it; its `undecryptable` names the block
+ * a decryption key is wanted for, this package having none. Neither a block a
+ * source withholds nor a key this node was not given can make a block invalid.
  *
  * A fork (rule 9) and a chain succession are *surfaced*, not rejected: the
  * specification requires detection and leaves the handling to the
@@ -1554,6 +1594,18 @@ export function validateBlock(
               "unvalidated",
               `ops[${index}]: ${reference.what} names ${bytesToHex(reference.digest)}, which did not resolve because the block ${bytesToHex(missing)} is not held: the block is neither valid nor invalid, and is stored but unvalidated until that block arrives`,
               { awaiting: missing },
+            );
+          }
+          // The same verdict for the same reason when the block resolution
+          // needed is held and unreadable: what is missing is a key, and a
+          // capability this node lacks is not evidence about another author's
+          // block (spec/05, "Undecryptable reference handling").
+          const unreadable = resolver.unreadableBlock;
+          if (unreadable !== undefined) {
+            throw new BlockError(
+              "unvalidated",
+              `ops[${index}]: ${reference.what} names ${bytesToHex(reference.digest)}, which did not resolve because the private block ${bytesToHex(unreadable)} could not be read: the block is neither valid nor invalid, and is stored but unvalidated until a decryption key for it is held`,
+              { undecryptable: unreadable },
             );
           }
           throw new BlockError(
@@ -1729,8 +1781,11 @@ export interface AcceptResult {
   readonly digest: Uint8Array;
   /** Present when the block was validated. */
   readonly report?: ValidationReport;
-  /** Present when the block was held unvalidated; its `awaiting` names the
-   * block whose arrival would settle the verdict. */
+  /** Present when the block was held unvalidated: its `awaiting` names the
+   * block whose arrival would settle the verdict, or its `undecryptable` the
+   * block a decryption key is wanted for — a block already held, which is why
+   * no arrival will re-validate it and the caller re-offers the block once it
+   * has the key. */
   readonly pending?: BlockError;
 }
 
@@ -1757,11 +1812,14 @@ export interface BlockStoreOptions {
  * The store carries the induction of spec/02, "Validation": a block is
  * validated when it is offered, and its `valid` flag is what rule 3 reads when
  * the next block arrives. A block the store could not decide about — because
- * its predecessor has not arrived, or because reference resolution needed a
- * block the store does not hold — is kept as **stored but unvalidated** and
- * re-validated when that block arrives. Neither cause is ever recorded as a
- * rejection: a block the store does not have says nothing about the validity
- * of one that names it.
+ * its predecessor has not arrived, because reference resolution needed a block
+ * the store does not hold, or because it needed one the store holds and cannot
+ * read — is kept as **stored but unvalidated**, and re-validated when the
+ * missing block arrives. The third cause has no arrival to wait for: what it
+ * wants is a decryption key, so the block is simply held and the caller offers
+ * it again once it has one. No cause is ever recorded as a rejection: neither a
+ * block the store does not have nor a key it was not given says anything about
+ * the validity of the block that needs it.
  */
 export class BlockStore implements BlockSource {
   private readonly blocks = new Map<string, StoredBlock>();
@@ -1859,9 +1917,10 @@ export class BlockStore implements BlockSource {
    * Offer a block to the store: validate it and, if it is valid, keep it.
    *
    * Invalid blocks throw. A block the store cannot decide about — its ancestry
-   * has not arrived, or reference resolution needs a block it does not hold —
-   * is kept as stored but unvalidated and re-validated when the missing block
-   * is added.
+   * has not arrived, or reference resolution needs a block it does not hold or
+   * cannot read — is kept as stored but unvalidated, and re-validated when the
+   * block it is waiting for is added. A verdict waiting on a key instead waits
+   * for the caller to offer the block again.
    */
   add(input: Uint8Array | Block): AcceptResult {
     const block = input instanceof Uint8Array ? decodeBlock(input) : input;
@@ -1919,9 +1978,15 @@ export class BlockStore implements BlockSource {
   /**
    * Hold a block the store could not decide about, filed under the block it is
    * waiting for: its predecessor when rule 3 could not be evaluated, or the
-   * block reference resolution could not read when rule 4 could not. Both are
+   * block reference resolution could not obtain when rule 4 could not. Both are
    * the same **stored but unvalidated** state, so both are held the same way
    * and re-validated by the same arrival.
+   *
+   * A verdict left undecided by an *unreadable* block — held, and encrypted to
+   * keys this node has none of — is the same state with nothing to file it
+   * under: the block it needs is already here, and only a key will settle it.
+   * It is held, kept out of L2 and never recorded as invalid, and the caller
+   * that obtains the key offers the block again.
    */
   private hold(
     selfDigest: Uint8Array,
