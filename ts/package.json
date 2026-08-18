@@ -1,0 +1,22 @@
+{
+  "name": "dialog-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript implementation of the Dialog protocol wire format",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
