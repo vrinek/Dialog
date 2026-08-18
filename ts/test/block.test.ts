@@ -631,6 +631,45 @@ test("rule 4: a block reached transitively through refs is the same undecided ve
   assert.equal(store.get(blockDigest(bob))?.valid, true);
 });
 
+test("rule 4: a definition resolves from a block the store has not accepted", () => {
+  // spec/05, "Resolution procedure", "Resolution reads blocks, not verdicts":
+  // the three branches name blocks the node holds and can read, never valid
+  // blocks. Alice's second block defines the bond and its predecessor never
+  // arrives, so it stays stored but unvalidated; Bob names it in refs and is
+  // valid on the strength of a definition it carries. The definition is
+  // self-certifying — the bond's digest is SHA-256 over the bond's own
+  // canonical bytes — so Alice's chain standing cannot change which entity the
+  // digest names.
+  const undelivered = publicBlock(ALICE, { ops: [createAtom("a block nobody sent")] });
+  const provider = publicBlock(ALICE, {
+    prev: blockDigest(undelivered),
+    ops: [CAPITAL_OF],
+  });
+  const dependent = publicBlock(BOB, {
+    refs: [blockDigest(provider)],
+    ops: [PARIS, FRANCE, createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+
+  const store = new BlockStore();
+  const held = store.add(provider);
+  assert.equal(held.status, "unvalidated");
+  assert.deepEqual(held.pending?.awaiting, blockDigest(undelivered));
+  assert.equal(store.get(blockDigest(provider))?.valid, false);
+
+  const accepted = store.add(dependent);
+  assert.equal(accepted.status, "accepted", "the definition resolved through an undecided block");
+  assert.equal(accepted.report?.scanned, 1);
+
+  // The block that carried the definition is still undecided: nothing about
+  // Bob's verdict rested on Alice's chain being intact, and nothing about
+  // Bob's block settled Alice's.
+  assert.equal(store.get(blockDigest(provider))?.valid, false);
+  assert.equal(store.get(blockDigest(dependent))?.valid, true);
+});
+
 test("rule 4: a digest nothing defines stays invalid when nothing was missing", () => {
   // The other failing outcome: resolution read every block it asked for — the
   // block itself, which has neither ancestors nor refs — so the digest is

@@ -1168,8 +1168,18 @@ export interface StoredBlock {
   readonly digest: Uint8Array;
   readonly bytes: Uint8Array;
   readonly block: Block;
-  /** False for a **stored but unvalidated** block: one whose ancestry has not
-   * arrived, and which MUST NOT be treated as another block's predecessor. */
+  /**
+   * False for a **stored but unvalidated** block: one a block validating it
+   * requires is one the node cannot read, so the node has not decided.
+   *
+   * Two things read it, and one deliberately does not. Rule 3 reads it: such a
+   * block MUST NOT be treated as another block's predecessor. A node's L2 reads
+   * it: only a valid block's operations enter the ontology graph (spec/05,
+   * "Accumulation rules"). Reference resolution does not — a definition is read
+   * from any block the store holds and can read, whatever its verdict (spec/05,
+   * "Resolution procedure", "Resolution reads blocks, not verdicts", and
+   * {@link Resolver}).
+   */
   readonly valid: boolean;
 }
 
@@ -1261,6 +1271,33 @@ export function operationReferences(op: Operation): readonly Reference[] {
  * transitively, the blocks *their* `refs` name — each stage entered only when
  * the one before it left a digest unresolved, and the last one bounded by the
  * scan limit.
+ *
+ * ## It reads blocks, not verdicts
+ *
+ * {@link StoredBlock.valid} is consulted nowhere here, and that is the rule
+ * rather than an omission: rule 4's three branches name blocks the node holds
+ * and can read, never valid blocks (spec/05, "Resolution procedure",
+ * "Resolution reads blocks, not verdicts"). A definition may be taken from a
+ * block held as stored but unvalidated, from one that forked its author's
+ * chain, from one that will turn out invalid when the rest of that chain
+ * arrives.
+ *
+ * Two things make that sound, and both hold here. Every block a
+ * {@link BlockStore} hands over has passed the checks its own bytes support —
+ * canonical dCBOR, the field set its `type` declares, and a signature that
+ * verifies against its `pub` — because {@link BlockStore.add} runs them before
+ * it stores anything, and a block that fails them throws rather than being
+ * held. And a definition is self-certifying: {@link Resolver.indexBlock} keys
+ * every entity under {@link entityDigest} of the entity it reconstructs from
+ * the operation, which is SHA-256 over the entity's own canonical dCBOR
+ * (spec/01, "Content addressing"). No block asserts a digest and none is
+ * believed, so the source block's chain standing cannot change which entity a
+ * digest names.
+ *
+ * What the permission does not touch: only a valid block's operations reach L2,
+ * rules 6 and 10 are checked against the referenced block as written, and rule
+ * 3 still requires a predecessor the node accepted as valid — which is why
+ * {@link checkChainIntegrity} reads `valid` and this class does not.
  */
 class Resolver {
   private readonly index = new Map<string, Entity>();
@@ -1413,8 +1450,12 @@ class Resolver {
     this.queue.push(digest);
   }
 
-  /** Index every entity a block's operations create. A private block whose
-   * `enc` this node cannot read contributes nothing. */
+  /** Index every entity a block's operations create, under the digest
+   * {@link entityDigest} computes from the entity's own canonical bytes. That
+   * recomputation is what makes a definition self-certifying, and it is why one
+   * may be read from a block whose validity nobody has established (see this
+   * class's doc comment). A private block whose `enc` this node cannot read
+   * contributes nothing. */
   private indexBlock(block: Block): void {
     if (!isPlaintextBlock(block)) return;
     for (const op of block.ops) {
