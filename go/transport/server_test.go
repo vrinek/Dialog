@@ -479,11 +479,65 @@ func TestNotHeldIsFourOhFour(t *testing.T) {
 			continue
 		}
 		p := assertProblem(t, resp, http.StatusNotFound)
-		if !strings.Contains(p.Title, "not held") && !strings.Contains(p.Title, "no resource") {
+		if !strings.Contains(p.Title, "not held") && !strings.Contains(p.Title, "no resource") && !strings.Contains(p.Title, "not offered") {
 			t.Errorf("%s: title = %q; 404 is a fact about the source", c.name, p.Title)
 		}
 	}
 	_ = pub
+}
+
+// TestOperationNotOffered: an OPTIONAL operation a server does not offer answers
+// 404, and the problem type distinguishes it from a resource this source does
+// not hold — the two are different facts and a client's next move differs
+// between them (spec/07-transport.md, "The six operations"; "Status codes";
+// todos/087).
+func TestOperationNotOffered(t *testing.T) {
+	pub, blocks := testChain(t, 33, 2)
+	unknownPub, unknownBlocks := testChain(t, 34, 1)
+	// A read-only mirror: no Announcer, which the profile makes conforming.
+	_, ts := serve(t, ServerConfig{Store: memStore(t, blocks...)})
+	_ = pub
+
+	notOffered := []struct{ name, method, path string }{
+		{"announce on a read-only mirror", http.MethodPost, DefaultPrefix + "/announce"},
+		{"announce asked with the wrong method", http.MethodGet, DefaultPrefix + "/announce"},
+		{"the event stream this server does not implement", http.MethodGet, DefaultPrefix + "/events"},
+	}
+	for _, c := range notOffered {
+		resp := get(t, ts, c.method, c.path, nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", c.name, resp.StatusCode)
+			continue
+		}
+		p := assertProblem(t, resp, http.StatusNotFound)
+		if p.Type != ProblemOperationNotOffered {
+			t.Errorf("%s: problem type = %q, want %q", c.name, p.Type, ProblemOperationNotOffered)
+		}
+	}
+
+	notHeld := []struct{ name, path string }{
+		{"a tip this source has no chain for", DefaultPrefix + "/chains/" + authorText(t, unknownPub) + "/tip"},
+		{"a block this source does not hold", DefaultPrefix + "/blocks/" + unknownBlocks[0].CID().String()},
+	}
+	for _, c := range notHeld {
+		resp := get(t, ts, http.MethodGet, c.path, nil)
+		p := assertProblem(t, resp, http.StatusNotFound)
+		if p.Type != ProblemNotHeld {
+			t.Errorf("%s: problem type = %q, want %q", c.name, p.Type, ProblemNotHeld)
+		}
+	}
+
+	// A server built with an Announcer serves the path, so the type never
+	// appears there.
+	store := block.NewValidatingStore(nil)
+	if err := store.AddAll(blocks...); err != nil {
+		t.Fatalf("seeding the store: %v", err)
+	}
+	_, writable := serve(t, ServerConfig{Store: store, Announce: StoreAnnouncer(store)})
+	resp := post(t, writable, DefaultPrefix+"/announce", MediaTypeBlocks, nil)
+	if resp.StatusCode == http.StatusNotFound {
+		t.Error("a server with an Announcer answered 404 for the announce path")
+	}
 }
 
 // TestContentNegotiation: 406 when the client's Accept excludes the only type
@@ -703,8 +757,8 @@ func assertProblem(t *testing.T, resp *http.Response, status int) Problem {
 	if p.Status != status {
 		t.Errorf("problem status member = %d, want %d", p.Status, status)
 	}
-	if p.Type != "about:blank" {
-		t.Errorf("problem type = %q, want about:blank", p.Type)
+	if p.Type != ProblemTypeBlank && p.Type != ProblemNotHeld && p.Type != ProblemOperationNotOffered {
+		t.Errorf("problem type = %q, want about:blank or one of the two the profile defines", p.Type)
 	}
 	if p.Title == "" {
 		t.Error("the problem has no title")

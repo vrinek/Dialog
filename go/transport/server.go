@@ -150,7 +150,18 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	s.mux.HandleFunc(prefix+"/blocks/{cid}", s.handleBlock)
 	if s.announce != nil {
 		s.mux.HandleFunc(prefix+"/announce", s.handleAnnounce)
+	} else {
+		// An OPTIONAL operation this server does not offer answers 404 with the
+		// problem type that says so, rather than falling through to the generic
+		// "no resource here": this profile has no discovery document, so the
+		// status code and its type are the only way a client learns that an
+		// optional operation is absent (spec/07-transport.md, "The six
+		// operations"; "Status codes"; todos/087).
+		s.mux.HandleFunc(prefix+"/announce", notOffered("announce"))
 	}
+	// The event stream is the other OPTIONAL thing with a path of its own, and
+	// this server implements none.
+	s.mux.HandleFunc(prefix+"/events", notOffered("the tip event stream"))
 	s.mux.HandleFunc("/", s.handleUnknown)
 	return s, nil
 }
@@ -172,12 +183,27 @@ func pick64(v, dflt int64) int64 {
 // ServeHTTP implements [http.Handler].
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
 
-// handleUnknown answers a path this server does not define. It is a 404 in the
-// profile's sense — this source does not have it — and it is also where a
-// request for the announce path of a read-only mirror lands: the operation is
-// OPTIONAL, and a server that does not implement it serves no such resource.
+// handleUnknown answers a path this server does not define at all. It is a 404
+// in the profile's sense — this source does not have it — under the blank
+// problem type, because nothing more specific is true of a path this profile
+// never defined.
 func (s *Server) handleUnknown(w http.ResponseWriter, r *http.Request) {
 	writeProblem(w, r, http.StatusNotFound, fmt.Sprintf("this server serves no resource at %s", r.URL.Path))
+}
+
+// notOffered answers the path of an OPTIONAL operation this server does not
+// implement, for every method: the resource is not here at all, so there is no
+// method that would be right and no Allow header to send.
+//
+// The distinction it draws is the one a client acts on. A "not held" 404 may be
+// answered by another source or by this one later; an operation this server does
+// not offer will not appear by asking again (spec/07-transport.md, "Status
+// codes"; todos/087).
+func notOffered(operation string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeTypedProblem(w, r, http.StatusNotFound, ProblemOperationNotOffered,
+			"this server does not offer "+operation+", which the profile makes optional")
+	}
 }
 
 // readMethod admits GET and HEAD and refuses everything else with the Allow
@@ -285,7 +311,7 @@ func (s *Server) handleTip(w http.ResponseWriter, r *http.Request) {
 	}
 	tip, ok := s.tipOf(pub)
 	if !ok {
-		writeProblem(w, r, http.StatusNotFound, "this source holds no block from that author")
+		writeTypedProblem(w, r, http.StatusNotFound, ProblemNotHeld, "this source holds no tip for that author")
 		return
 	}
 
@@ -418,7 +444,7 @@ func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
 	b, err := s.store.Block(c.Digest())
 	if err != nil {
 		if errors.Is(err, block.ErrNotFound) {
-			writeProblem(w, r, http.StatusNotFound, "this source does not hold that block")
+			writeTypedProblem(w, r, http.StatusNotFound, ProblemNotHeld, "this source does not hold that block")
 			return
 		}
 		writeProblem(w, r, http.StatusServiceUnavailable, "the store could not be read")

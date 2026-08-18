@@ -13,9 +13,10 @@ import (
 // status code and MUST NOT parse detail: the status code is the interface, and
 // the prose is a diagnostic somebody reads at three in the morning.
 type Problem struct {
-	// Type is a URI identifying the problem type. This profile defines none, so
-	// it is always "about:blank", which RFC 9457 makes the status code's own
-	// meaning.
+	// Type is a URI identifying the problem type. It is one of the two the
+	// profile defines — [ProblemNotHeld] and [ProblemOperationNotOffered], both
+	// 404s — or "about:blank", which RFC 9457 makes the status code's own
+	// meaning and which every other error here uses.
 	Type string `json:"type"`
 	// Title is a short, human-readable summary.
 	Title string `json:"title"`
@@ -25,6 +26,27 @@ type Problem struct {
 	// Detail is a human-readable explanation of this occurrence.
 	Detail string `json:"detail,omitempty"`
 }
+
+// The two problem types the profile defines, both of them 404s, because 404
+// carries two different facts and a client's next move differs between them
+// (spec/07-transport.md, "Status codes"; todos/087).
+//
+// They are URNs rather than URLs because they are identifiers and not links:
+// nothing is published at them, a client MUST NOT dereference them, and a URL
+// would tie a protocol identifier to a hostname somebody has to keep answering.
+const (
+	// ProblemTypeBlank is RFC 9457's "the status code and nothing more", which
+	// every error outside the two below uses.
+	ProblemTypeBlank = "about:blank"
+	// ProblemNotHeld says this source does not hold what was asked for: the
+	// block, or a tip for that author. Another source may hold it, and this one
+	// may hold it later.
+	ProblemNotHeld = "urn:dialog:problem:not-held"
+	// ProblemOperationNotOffered says this server does not implement the
+	// OPTIONAL operation at that path. Asking again, or with other arguments,
+	// will not change the answer; another server may offer it.
+	ProblemOperationNotOffered = "urn:dialog:problem:operation-not-offered"
+)
 
 // problemTitles gives each status code of the profile's table the title the
 // profile's own prose gives it, so that two servers built on this package
@@ -55,11 +77,31 @@ func problemTitle(status int) string {
 	}
 }
 
-// writeProblem sends an RFC 9457 error body. It is the only way this package's
-// server writes an error, so that no path can answer with a bare status and an
-// empty body.
+// titleFor gives a typed problem the title its type deserves, and falls back to
+// the status code's own.
+func titleFor(status int, problemType string) string {
+	switch problemType {
+	case ProblemNotHeld:
+		return problemTitle(http.StatusNotFound)
+	case ProblemOperationNotOffered:
+		return "operation not offered by this server"
+	default:
+		return problemTitle(status)
+	}
+}
+
+// writeProblem sends an RFC 9457 error body under the blank type, which is the
+// status code and nothing more. It is how every error outside the profile's two
+// defined types is written.
 func writeProblem(w http.ResponseWriter, r *http.Request, status int, detail string) {
-	p := Problem{Type: "about:blank", Title: problemTitle(status), Status: status, Detail: detail}
+	writeTypedProblem(w, r, status, ProblemTypeBlank, detail)
+}
+
+// writeTypedProblem sends an RFC 9457 error body naming a problem type. It and
+// writeProblem are the only ways this package's server writes an error, so that
+// no path can answer with a bare status and an empty body.
+func writeTypedProblem(w http.ResponseWriter, r *http.Request, status int, problemType, detail string) {
+	p := Problem{Type: problemType, Title: titleFor(status, problemType), Status: status, Detail: detail}
 	body, err := json.Marshal(p)
 	if err != nil {
 		// Problem has no field that can fail to marshal; the branch exists so

@@ -110,6 +110,7 @@ Common rules:
 - **Every operation is independent.** No operation establishes state that a later one depends on, no operation requires an identifier for the client, and the same request repeated returns the same answer or a later one. `announce` is the only operation that changes a source.
 - **Every operation is safe to answer for anyone.** This profile defines no authorization; see "Server rules" for what a deployment may put in front of it.
 - A **conforming server** MUST implement `tip`, `range`, `block`, `blocks` and `siblings`. `announce` is OPTIONAL: a read-only mirror is conforming.
+- **An OPTIONAL operation a server does not offer answers 404.** That covers `announce` on a read-only mirror and the event stream of "Subscription mapping", which is the other optional thing with a path of its own. A client reads such a 404 the way it reads every other one in this profile — a fact about this source, and never a statement that the operation does not exist. This profile has no discovery document by design ("What this profile leaves out"), so the status code is the only way a client learns that an optional operation is absent; servers SHOULD therefore distinguish the two kinds of 404 by problem type (see "Status codes").
 
 #### tip
 
@@ -245,7 +246,7 @@ An `announce` receipt is one JSON object mapping each submitted block's CID to w
 | 202 | The announce was taken for later processing; the receipt is incomplete or absent. |
 | 304 | The `tip` is unchanged from the `If-None-Match` the client sent. |
 | 400 | The request was malformed: a bad author key, a bad CID, a non-canonical spelling of either, a bad `limit`. |
-| 404 | **I do not have it.** Never "it does not exist." A `tip` for an author this source holds no tip for; a `block` it does not hold. |
+| 404 | **I do not have it.** Never "it does not exist." A `tip` for an author this source holds no tip for; a `block` it does not hold; the path of an OPTIONAL operation this server does not offer. |
 | 405 | Wrong method for a defined path. |
 | 406 | The client's `Accept` excludes the only type this server can send. |
 | 413 | The announce or fetch body is larger than this server accepts. |
@@ -256,6 +257,17 @@ An `announce` receipt is one JSON object mapping each submitted block's CID to w
 404 carries the whole weight of the completeness gap, and its natural HTTP reading is the wrong one, so it is written down: a source's absence of a block is a fact about the source. It says nothing about whether the block exists, whether the author published it, or whether some other source has it.
 
 Error bodies are RFC 9457 problem details. The `title` and `detail` members are for people; a client MUST branch on the status code and MUST NOT parse `detail`.
+
+This profile defines two problem types, both of them 404s, because 404 carries two different facts and a client's next move differs between them:
+
+| `type` | What it says |
+|--------|--------------|
+| `urn:dialog:problem:not-held` | This source does not hold what was asked for: the block, or a tip for that author. Another source may hold it, and this one may hold it later. |
+| `urn:dialog:problem:operation-not-offered` | This server does not implement the OPTIONAL operation at that path. Asking again, or asking with other arguments, will not change the answer; another server may offer it. |
+
+A server SHOULD send the applicable type on a 404 and MAY send `about:blank`, which [RFC 9457](https://datatracker.ietf.org/doc/html/rfc9457) defines as the status code and nothing more; a client MUST still branch on the status code, and MUST work against a server that sends neither type. Every other error in this profile uses `about:blank`: the status code already says the whole of it.
+
+The two are URNs rather than URLs because they are identifiers and not links. This profile publishes no document at them, a client MUST NOT dereference them, and a URL would tie a protocol identifier to a hostname somebody has to keep answering.
 
 #### Caching
 
@@ -269,7 +281,7 @@ An L1 blockchain subscription (see [05-processing-model.md](05-processing-model.
 
 1. **Polling `tip` with `If-None-Match`.** A 304 is a few dozen bytes. Every conforming client and server supports this, and it needs no server feature beyond a correct `ETag`. It is the baseline.
 2. **Long-polling: `GET .../tip?wait={seconds}`.** The server holds the request open until the tip differs from the client's `If-None-Match` or `wait` seconds elapse, then answers 200 or 304. A server MAY cap `wait` and MUST answer within its own cap. OPTIONAL; a server that does not implement it MUST ignore the parameter and answer immediately, which degrades to polling.
-3. **A tip event stream: `GET /dialog/v1/events?author={author}&author={author}`**, as server-sent events, emitting one event per chain movement whose data is a JSON object `{"author": "b5ua…", "tip": "bafyrei…"}`. One connection covers many chains. OPTIONAL.
+3. **A tip event stream: `GET /dialog/v1/events?author={author}&author={author}`**, as server-sent events, emitting one event per chain movement whose data is a JSON object `{"author": "b5ua…", "tip": "bafyrei…"}`. One connection covers many chains. OPTIONAL; a server that does not implement it answers 404 for the path, like any other operation it does not offer (see "The six operations").
 
 The event stream is the only part of this profile that hands one server a client's whole subscription set in a single, durable, correlated act, which is precisely the leak [05-processing-model.md](05-processing-model.md)'s Security Considerations warn about. It is specified as a convenience with a stated cost, and it is not the recommended mode.
 
@@ -369,7 +381,6 @@ The questions above were left open on purpose. The ones below were not: they are
 
 | Todo | Question | Where it bites |
 |------|----------|----------------|
-| [087](../todos/087-pending-p3-no-status-code-for-an-operation-a-server-does-not-implement.md) | No status code for an OPTIONAL operation a server does not implement | "The six operations"; "Status codes"; the event stream |
 | [088](../todos/088-pending-p2-when-is-an-announce-receipts-disposition-decided.md) | When is an announce receipt's disposition decided? | `announce`; the receipt's three members |
 | [089](../todos/089-pending-p3-limit-has-one-spelling-or-several.md) | Does `limit` have one spelling, and what does a repeated query parameter mean? | "HTTP binding", the bullets under the method-and-path table |
 

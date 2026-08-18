@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "087"
 tags: [transport, specification-gap, http-binding]
@@ -78,9 +78,9 @@ path should be covered by the same sentence.
 
 ## Acceptance Criteria
 
-- [ ] The specification says what a server answers for an OPTIONAL operation it
+- [x] The specification says what a server answers for an OPTIONAL operation it
       does not implement
-- [ ] `go/transport`'s read-only construction matches it
+- [x] `go/transport`'s read-only construction matches it
 
 ## Work Log
 
@@ -90,6 +90,43 @@ path should be covered by the same sentence.
 
 Found building the read-only server the profile calls conforming: there is no
 row in the status table for the path it does not serve.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, with the precision Option 2 wanted taken from a problem type
+rather than from a new status code.
+
+- `spec/07-transport.md`, "The six operations": a new common rule — an OPTIONAL
+  operation a server does not offer answers **404**, which covers `announce` on
+  a read-only mirror and the event stream, the other optional thing with a path
+  of its own. A client reads it as it reads every other 404 here: a fact about
+  this source. Why it has to be pinned is in the same bullet — this profile has
+  no discovery document, so the status code is the only way a client learns that
+  an optional operation is absent.
+- "Status codes": the 404 row names the case, and the section now defines the
+  profile's two problem types, both 404s — `urn:dialog:problem:not-held`
+  (another source may hold it, and this one may later) and
+  `urn:dialog:problem:operation-not-offered` (asking again will not change the
+  answer). A server SHOULD send the applicable one and MAY send `about:blank`;
+  a client MUST still branch on the status code. They are URNs because they are
+  identifiers and not links: nothing is published at them, and a URL would tie a
+  protocol identifier to a hostname somebody has to keep answering.
+- "Subscription mapping": the event stream's OPTIONAL now says what its absence
+  answers.
+- `go/transport`: `problem.go` grows the three type constants and
+  `writeTypedProblem`; the read-only server registers an explicit handler for
+  `/announce` — and one for `/events`, which it never offers — answering 404 with
+  `operation-not-offered` for every method, rather than falling through to the
+  mux's generic "no resource here"; the two "not held" 404s, `tip` and `block`,
+  now carry `not-held`. A path this profile never defined at all keeps
+  `about:blank`.
+- Tests: `server_test.go`, `TestOperationNotOffered` covers the three
+  not-offered paths, the two not-held ones, and a server built with an
+  `Announcer` still serving the path. `assertProblem` admits the two new types.
+
+**Vectors: no byte moved.**
 
 ## Notes
 
