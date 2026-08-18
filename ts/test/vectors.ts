@@ -49,6 +49,9 @@ export interface VectorCase {
   signature?: string;
   block?: string;
   blocks?: string[];
+  // Chain-relative rejections (`blocks.json`, `invalid_in_chain`).
+  setup?: string[];
+  scan_limit?: number;
 }
 
 export interface VectorSection {

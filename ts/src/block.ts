@@ -77,17 +77,20 @@ const DOMAIN_SEPARATOR_BYTES = new TextEncoder().encode(SIGNING_DOMAIN_SEPARATOR
 
 /**
  * The default bound on the number of foreign blocks a single validation scans
- * while resolving references (spec/05-processing-model.md, "Scan limit").
+ * while resolving references: the value spec/05-processing-model.md, "Scan
+ * limit", asks every implementation to default to, so that the same block gets
+ * the same verdict from every default-configured node.
  *
- * The specification requires a limit with "a safe default" and fixes no number,
- * so this one is local policy: it is high enough that no honest block reaches
- * it — Dialog's own vectors scan one block — and low enough that a hostile refs
- * graph fails as a rejection rather than as an unbounded traversal. It is
- * configurable per validation ({@link ValidateOptions.scanLimit}). See
- * `todos/060-pending-scan-limit-default.md`: two implementations with different
- * defaults disagree about the validity of a deep refs graph.
+ * One unit is one *distinct foreign block scanned* — fetched through the refs
+ * graph and read for the definitions its operations carry. A block the graph
+ * names twice costs one unit; an ancestor reached through `prev` costs none;
+ * a `refs` entry the store does not hold, or one fetched only to check rules 6
+ * and 10 against it, costs none either. The limit is configurable per
+ * validation ({@link ValidateOptions.scanLimit}) and per store
+ * ({@link BlockStoreOptions.scanLimit}); a lower one accepts a subset of what
+ * this one accepts.
  */
-export const DEFAULT_SCAN_LIMIT = 1024;
+export const DEFAULT_SCAN_LIMIT = 256;
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -1247,7 +1250,13 @@ class Resolver {
     for (const ref of block.refs) this.enqueue(ref);
   }
 
-  /** How many foreign blocks the resolution has scanned so far. */
+  /**
+   * How many distinct foreign blocks the resolution has scanned so far — the
+   * unit spec/05-processing-model.md, "Scan limit", counts. A digest is
+   * enqueued at most once, so a block the graph names repeatedly is scanned,
+   * and counted, once; a block the store does not hold is never scanned at
+   * all.
+   */
   get scanCount(): number {
     return this.scanned;
   }
@@ -1371,7 +1380,8 @@ export interface ValidationReport {
   /** `refs` entries the node does not hold, for which rules 6 and 10 are
    * reported as unchecked (spec/05, "Public/private reference rules"). */
   readonly uncheckedRefs: readonly Uint8Array[];
-  /** How many foreign blocks reference resolution scanned. */
+  /** How many distinct foreign blocks reference resolution scanned — the unit
+   * of spec/05, "Scan limit". */
   readonly scanned: number;
   /**
    * Present when this block's `ts` is earlier than its predecessor's. The
@@ -1390,7 +1400,7 @@ export interface ValidationReport {
 
 /** Options for {@link validateBlock}. */
 export interface ValidateOptions {
-  /** The bound on foreign blocks scanned during recursive resolution
+  /** The bound on the distinct foreign blocks resolution may scan
    * (spec/05, "Scan limit"). Defaults to {@link DEFAULT_SCAN_LIMIT}. */
   readonly scanLimit?: number;
 }
@@ -1451,7 +1461,9 @@ export function validateBlock(
     // Rules 6 and 10, evaluated on each referenced block the node holds. An
     // entry it does not hold leaves both unchecked: resolution is
     // demand-driven, and a node is not obliged to fetch a block for the sole
-    // purpose of reading its type.
+    // purpose of reading its type. Reading a block's type here is not scanning
+    // it: no operation is read, so it costs no unit of the scan limit until
+    // resolution reaches it below.
     for (const ref of block.refs) {
       const held = source.get(ref);
       if (held === undefined) {

@@ -14,12 +14,14 @@
  * The `forks` section is the one condition rule 9 requires a node to detect,
  * and the `invalid` section is the half that decides which blocks exist at all:
  * every case must be rejected, and rejected by the rule class its `rule` field
- * names, not by accident.
+ * names, not by accident. The `invalid_in_chain` section is the other half of
+ * that: blocks that decode and verify and are wrong only against a store, each
+ * case replayed into a store of its own — rules 3, 4, 5, 6, the own-chain half
+ * of rule 10, and the scan limit at the limit its case names.
  *
- * The hand-written tests at the bottom cover the rules the vectors do not
- * exercise — reachability, the digest-kind binding, the public/private and
- * own-chain reference rules, the scan limit, appending after a rotation, an
- * ambiguous succession — each built from this implementation's own signed
+ * The hand-written tests at the bottom cover what the vectors still leave
+ * unpinned — an ambiguous succession, a non-monotonic timestamp, the counting
+ * unit of the scan limit — each built from this implementation's own signed
  * blocks.
  */
 
@@ -69,6 +71,7 @@ const EXPECTED_CASE_COUNTS: Record<string, number> = {
   forks: 1,
   fork_block: 1,
   invalid: 23,
+  invalid_in_chain: 12,
 };
 
 test("the vector file is the one vectors/README.md describes", () => {
@@ -100,7 +103,7 @@ function publicKeyOf(name: string): Uint8Array {
 
 test("every test key is the one its seed derives", () => {
   const keys = blocks.inputs?.keys ?? [];
-  assert.equal(keys.length, 3);
+  assert.equal(keys.length, 5);
   for (const key of keys) {
     assert.equal(
       bytesToHex(publicKeyFromSeed(hexToBytes(key.seed))),
@@ -375,6 +378,73 @@ test("no invalid block reaches a store", () => {
   }
   assert.equal(store.size, 5, "the store is unchanged");
 });
+
+// ---------------------------------------------------------------------------
+// The invalid_in_chain section: the rejections that need a store
+// ---------------------------------------------------------------------------
+
+/**
+ * The rule class each chain-relative case names. "Scan limit" comes first: its
+ * label also names rule 4, which is the rule the rejection falls under, but
+ * this implementation reports the limit itself.
+ */
+const CHAIN_RULE_CLASSES: Array<{ names: string; code: BlockErrorCode }> = [
+  { names: "Scan limit", code: "scan-limit" },
+  { names: "Validation rule 10", code: "reference-hygiene" },
+  { names: "Validation rule 3", code: "chain" },
+  { names: "Validation rule 4", code: "reachability" },
+  { names: "Validation rule 5", code: "data-model" },
+  { names: "Validation rule 6", code: "reference-visibility" },
+];
+
+function expectedChainCode(rule: string): BlockErrorCode {
+  const found = CHAIN_RULE_CLASSES.find((entry) => rule.includes(entry.names));
+  if (found === undefined) throw new Error(`no rule class for ${JSON.stringify(rule)}`);
+  return found.code;
+}
+
+for (const vector of section(blocks, "invalid_in_chain").cases) {
+  test(`in a chain, ${vector.name} is rejected by the rule it names`, () => {
+    assert.ok(vector.bytes !== undefined && vector.rule !== undefined);
+    const options = vector.scan_limit === undefined ? {} : { scanLimit: vector.scan_limit };
+    const store = new BlockStore(options);
+    for (const [index, setup] of (vector.setup ?? []).entries()) {
+      const accepted = store.add(hexToBytes(setup));
+      assert.equal(accepted.status, "accepted", `${vector.name}: setup[${index}]`);
+    }
+
+    // The case is a rejection by the store, never by the decoder: these bytes
+    // decode and their signature verifies.
+    const block = decodeBlock(hexToBytes(vector.bytes));
+    assert.ok(verifyBlockSignature(block), `${vector.name} is correctly signed`);
+
+    if (vector.scan_limit !== undefined) {
+      // A case that names a limit pins the limit, not the block: under the
+      // default the very same block against the very same store is valid.
+      const permissive = new BlockStore();
+      for (const setup of vector.setup ?? []) permissive.add(hexToBytes(setup));
+      assert.equal(
+        permissive.add(hexToBytes(vector.bytes)).status,
+        "accepted",
+        `${vector.name} is valid under the default scan limit`,
+      );
+    }
+
+    let error: unknown;
+    try {
+      store.add(hexToBytes(vector.bytes));
+      assert.fail(`accepted: ${vector.reason}`);
+    } catch (thrown) {
+      error = thrown;
+    }
+    assert.ok(error instanceof BlockError, `${vector.name}: ${String(error)}`);
+    assert.equal(
+      error.code,
+      expectedChainCode(vector.rule),
+      `${vector.name} (${vector.rule}): ${error.message}`,
+    );
+  });
+}
 
 // ---------------------------------------------------------------------------
 // The rules the vectors do not pin
@@ -653,6 +723,81 @@ test("the scan limit turns an unresolvable refs graph into a rejection", () => {
     (error: unknown) => error instanceof BlockError && error.code === "scan-limit",
   );
   assert.ok(DEFAULT_SCAN_LIMIT > hops + 1, "the default admits an honest graph");
+});
+
+test("the scan limit counts distinct foreign blocks, once each", () => {
+  // Carol's block defines the bond and is named by two different blocks of the
+  // refs graph, so resolution meets it twice and scans it once. Counting
+  // fetches, or digests, or recursion levels gives another number here.
+  const store = new BlockStore();
+  const provider = publicBlock(new Uint8Array(32).fill(0x04), { ops: [CAPITAL_OF] });
+  store.add(provider);
+  const first = publicBlock(new Uint8Array(32).fill(0x05), {
+    refs: [blockDigest(provider)],
+    ops: [createAtom("one")],
+  });
+  const second = publicBlock(new Uint8Array(32).fill(0x06), {
+    refs: [blockDigest(provider)],
+    ops: [createAtom("two")],
+  });
+  store.add(first);
+  store.add(second);
+
+  const dependent = publicBlock(ALICE, {
+    refs: [blockDigest(first), blockDigest(second)],
+    ops: [
+      PARIS,
+      FRANCE,
+      createMolecule(operationDigest(CAPITAL_OF), [
+        atomFiller(operationDigest(PARIS)),
+        atomFiller(operationDigest(FRANCE)),
+      ]),
+    ],
+  });
+  assert.equal(validateBlock(dependent, store).scanned, 3, "three blocks, four names");
+  assert.equal(validateBlock(dependent, store, { scanLimit: 3 }).scanned, 3);
+  assert.throws(
+    () => validateBlock(dependent, store, { scanLimit: 2 }),
+    (error: unknown) => error instanceof BlockError && error.code === "scan-limit",
+  );
+});
+
+test("a refs entry resolution never needs costs no unit of the scan limit", () => {
+  // The entry is still fetched — rules 6 and 10 are checked against it — but
+  // nothing reads its operations, so it is not scanned.
+  const store = new BlockStore();
+  const provider = publicBlock(BOB, { ops: [createAtom("an entity nobody here needs")] });
+  store.add(provider);
+  const dependent = publicBlock(ALICE, {
+    refs: [blockDigest(provider)],
+    ops: [
+      PARIS,
+      FRANCE,
+      CAPITAL_OF,
+      createMolecule(operationDigest(CAPITAL_OF), [
+        atomFiller(operationDigest(PARIS)),
+        atomFiller(operationDigest(FRANCE)),
+      ]),
+    ],
+  });
+  assert.equal(validateBlock(dependent, store).scanned, 0);
+  assert.equal(store.add(dependent).status, "accepted");
+});
+
+test("an ancestor of the author's own chain is not a foreign block", () => {
+  const store = new BlockStore();
+  const genesis = publicBlock(ALICE, { ops: [PARIS, FRANCE, CAPITAL_OF] });
+  store.add(genesis);
+  const tip = publicBlock(ALICE, {
+    prev: blockDigest(genesis),
+    ops: [createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+  // A limit of zero still admits it: the ancestry is not scanned.
+  const report = validateBlock(tip, store, { scanLimit: 0 });
+  assert.equal(report.scanned, 0);
 });
 
 test("a rotation block ends a chain and a rotation is never a genesis block", () => {
