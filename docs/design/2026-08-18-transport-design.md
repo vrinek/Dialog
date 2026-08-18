@@ -688,7 +688,9 @@ different mechanism from a server. There is no separate peer protocol because
 there is no separate peer.
 
 `{author}` is the author's Ed25519 public key in a text form the specification
-does not currently define — see open question Q1. `{CID}` is the base32 CIDv1
+did not define when this was written — see Q1, since settled: it is the
+multibase base32 form of `spec/03`, "Text representation of author keys", 56
+characters beginning `b5ua`. `{CID}` is the base32 CIDv1
 text form of `spec/03`, which is exactly the "external identifier" role that
 document reserves for it.
 
@@ -778,16 +780,28 @@ splits twenty chains across four servers hands no single party the full set.
 
 ## 5. Open questions for `spec/07-transport`
 
-Each of these is a todo waiting for a number.
+Each of these now has a todo. Q1 is settled and applied; Q2–Q8 are deliberately
+open and belong to whoever drafts `spec/07-transport.md`.
 
-**Q1 — A text form for an author's public key.**
+**Q1 — A text form for an author's public key.** — **settled**, see
+[`todos/076`](../../todos/076-complete-p2-a-canonical-text-form-for-an-authors-public-key.md).
 `spec/03` defines a text form for a digest (base32 CIDv1) and none for a 32-byte
 Ed25519 public key, but every transport identifier for a chain needs one. Fix a
 canonical, case-stable, URL-safe encoding — and decide whether it is a bare
 multibase string or a CID-like structure with a codec prefix. Nothing about
 transport can be written down before this exists.
 
-**Q2 — Is a block's plaintext head separately serveable?**
+*Answered:* multibase base32 (`b`, lowercase RFC 4648, unpadded) over the 34
+bytes `0xed 0x01 || key` — the multicodec `ed25519-pub` prefix and the key. Self
+-describing, one text alphabet with the CID form, 56 characters, always
+beginning `b5ua`, and convertible to `did:key` by re-encoding the same bytes in
+base58btc. Specified in `spec/03`, "Text representation of author keys", with
+`spec/04`'s "Key encoding" MAY turned into a pointer at it; implemented in both
+implementations and pinned in `vectors/` as each key's `public_key_text`. So
+`{author}` in §4.1 is that string.
+
+**Q2 — Is a block's plaintext head separately serveable?** — open,
+[`todos/069`](../../todos/069-pending-p2-is-a-blocks-plaintext-head-separately-serveable.md).
 `spec/05`'s scan limit anticipates "a block a node fetches only to read its type
 or its author", but the signature covers the whole block, so a head alone is
 unverifiable. A lying server could induce a wrong rule-6 rejection of a valid
@@ -795,21 +809,24 @@ public block. Decide: forbid partial serving; or state that a head is advisory
 and MUST NOT decide validity; or accept that the scan-limit clause describes an
 optimization no safe transport can offer.
 
-**Q3 — Does fork detection deserve a multi-source obligation?**
+**Q3 — Does fork detection deserve a multi-source obligation?** — open,
+[`todos/070`](../../todos/070-pending-p2-does-fork-detection-deserve-a-multi-source-obligation.md).
 `spec/02` rule 9 is normative and vacuous on a single-source node. Either add a
 SHOULD ("a node SHOULD obtain each subscribed chain from more than one source")
 or state explicitly in the security considerations that fork detection is
 best-effort and bounded by the node's reach. The current silence reads as a
 guarantee the protocol does not make.
 
-**Q4 — A serving node's obligations versus a storing node's.**
+**Q4 — A serving node's obligations versus a storing node's.** — open,
+[`todos/071`](../../todos/071-pending-p3-a-serving-nodes-obligations-versus-a-storing-nodes.md).
 `spec/05` permits a non-recipient node to drop private blocks it cannot decrypt.
 A node acting as a *server* that does so publishes a chain with a hole, and
 every block after it fails rule 3 at the client. Should the specification
 separate storage policy from serving policy, and say that a server retains
 opaque blocks?
 
-**Q5 — Locating a foreign block from a digest alone.**
+**Q5 — Locating a foreign block from a digest alone.** — open,
+[`todos/072`](../../todos/072-pending-p2-locating-a-foreign-block-from-a-digest-alone.md).
 A `refs` entry carries no author and no locator, so demand-driven resolution is
 content-addressed lookup with no routing information. Options: a server-side
 digest index (possible only for the public blocks it holds); an out-of-band
@@ -818,20 +835,23 @@ resolution only works within a server's held set. This is the requirement that
 comes nearest to justifying a change to the block format, and it should be
 decided before, not after, a profile ships.
 
-**Q6 — What does the subscription-privacy SHOULD actually demand?**
+**Q6 — What does the subscription-privacy SHOULD actually demand?** — open,
+[`todos/073`](../../todos/073-pending-p3-what-the-subscription-privacy-should-actually-demands.md).
 `spec/05` tells transports to "consider" the leak and stops. Turn it into
 something checkable — no persistent client identifier, no authentication by
 default, request partitioning across servers, supersets over minimal fetches —
 or downgrade it to informative text that says plainly that a server you ask is a
 server that knows.
 
-**Q7 — Where is the successor chain served?**
+**Q7 — Where is the successor chain served?** — open,
+[`todos/074`](../../todos/074-pending-p3-where-is-the-successor-chain-served.md).
 After a rotation a node learns `new_pub` and nothing about where that chain
 lives. Hosting continuity ("the same server as the predecessor") is an
 assumption the profile would be making silently. Say it, or define how a
 successor's location is discovered.
 
-**Q8 — Freshness has no signal.**
+**Q8 — Freshness has no signal.** — open,
+[`todos/075`](../../todos/075-pending-p3-freshness-has-no-signal.md).
 Nothing distinguishes "this is the tip" from "this is the tip I am willing to
 show you", and no block carries trustworthy time (`spec/02`: timestamps are
 self-reported and untrusted). A signed tip attestation would be a new signed
