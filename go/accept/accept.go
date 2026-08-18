@@ -538,10 +538,14 @@ func (v *View) ConflictsOfKind(k ConflictKind) []Conflict {
 // meta-bond but whose fillers do not fit its template, ascending.
 //
 // They are in the view like any other molecule and mean nothing at L3. Such a
-// molecule is publishable: block validation checks the number of fillers against
-// the bond's variable count and the shape of each filler, never the filler types
-// a particular bond expects, so "_A_ is true" over an atom is a valid block. L3
-// declines to guess what was meant, and lists them here rather than silently.
+// molecule is publishable: a meta-bond's Fillers line is a recognition criterion
+// applied during L2→L3 processing and not a rule of block validity, so block
+// validation checks the number of fillers against the bond's variable count and
+// the shape of each filler, never the filler types a particular bond expects,
+// and "_A_ is true" over an atom is a valid block (spec/06-meta-bonds.md,
+// "Meta-molecules are regular molecules"). That section requires the semantics
+// not to be applied and asks that such molecules be surfaced rather than
+// dropped: L3 declines to guess what was meant, and lists them here.
 func (v *View) MalformedMetaMolecules() []cid.Digest { return slices.Clone(v.malformed) }
 
 // Accepted returns the molecules of the view that survive the meta-bonds:

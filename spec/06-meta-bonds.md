@@ -35,6 +35,8 @@ Fillers:  A = atom (type 0) / bond (type 1) / molecule (type 2),
 
 Declares transitive equivalence between two entities of the same type. Both fillers MUST be the same type (both atoms, both bonds, or both molecules). If A is the same as B, and B is the same as C, then A, B, and C are all equivalent.
 
+That MUST binds the author publishing the equivalence, and its consequence is the loss of meta semantics, not invalidity: a molecule whose two fillers are of different types is a valid molecule declaring no equivalence, and implementations MUST NOT unify the entities it names. See "Meta-molecules are regular molecules" below, which states this for all five meta-bonds.
+
 **L3 semantics:** Implementations SHOULD treat equivalent entities as interchangeable when querying L3. The specific deduplication strategy (merge, prefer one, show both) is implementation-scoped.
 
 *Informative.* The reference implementation reads "interchangeable" at its word, and applies it to the other four meta-bonds as well: a truth assertion, a truth retraction, a contradiction or a supersession naming any member of an equivalence class is read as a statement about the whole class. The class, rather than the individual molecule, is what carries a truth state, what a supersession marks as replaced, and what a contradiction is surfaced between. The reasoning is that entities declared the same say the same thing, so a statement about one of them is a statement about all of them; the cost is that a subscribed author's equivalence redirects other authors' assertions onto molecules those authors never named, which is what "Security Considerations", "Equivalence attacks", is about and what subscription filtering bounds. Other strategies remain conformant — in particular, keeping every assertion attached to the entity actually named and exposing the class so that an application can widen the query itself. Whichever is chosen, a class whose members are asserted true by one subscribed author and untrue by another is a disagreement to surface under "Conflict handling" below, exactly as a single molecule in that position would be.
@@ -98,6 +100,16 @@ The resolution strategy is implementation-scoped. See [05-processing-model.md](0
 Meta-molecules are published using `create_molecule` like any other molecule. They follow the same content-addressing rules, appear in L1 and L2 as regular molecules, and are only distinguished by their bond template matching a known meta-bond.
 
 The standard meta-bonds are identified by the SHA-256 digest of their dCBOR-encoded template. An implementation recognizes a meta-molecule by checking whether the molecule's `bond` field matches the digest of any known meta-bond template. The `bond` field holds a 32-byte digest, not a full CID — see [03-encoding.md](03-encoding.md), "Internal references".
+
+The `Fillers:` line printed with each meta-bond above names the filler types that meta-bond's semantics are defined for. It is a **recognition criterion applied during L2→L3 processing**, not a rule of block validity. A molecule built from a meta-bond is validated exactly as any other molecule ([02-block-format.md](02-block-format.md), "Validation"), against a data model that has no notion of a meta-bond: rule 5 checks the number of fillers against the bond's variable count and each filler against its own type tag ([01-data-model.md](01-data-model.md)), and never against the filler types a particular bond expects. Consequently:
+
+- Implementations MUST NOT reject a block, or refuse an entity at L1 or L2, because a molecule's `bond` field matches a standard meta-bond while its fillers do not match that meta-bond's declared shape. Such a molecule is a valid, plain molecule; it has a digest, it propagates, and it enters L2 like any other.
+- Implementations MUST NOT apply a meta-bond's L3 semantics to a molecule whose fillers do not match its declared shape. It asserts nothing: `"_A_ is true"` filled with an atom is not a truth assertion, and an equivalence between two entities of different types unifies nothing.
+- Implementations SHOULD surface such molecules to the application layer rather than discard them silently. They remain molecules of L3 like any other, and an application may want to know that a subscribed author published something that reads as nothing.
+
+This keeps validation schema-driven and meta-bond-agnostic, which is what "Meta-molecules are regular molecules" asserts and what makes the extension process below work: whether a block validates cannot depend on which meta-bonds the validating implementation happens to know.
+
+*Informative.* The reference implementation does exactly this. A molecule whose bond is a standard meta-bond but whose fillers do not fit its template stays in the L3 view as an ordinary molecule, is read as no assertion at all, and is listed separately from the meta-molecules that were applied, so an application can see it without guessing what its author meant.
 
 ### Extension process
 

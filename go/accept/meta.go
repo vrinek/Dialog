@@ -61,12 +61,15 @@ type claims struct {
 // templates binds its fillers to a type — "_A_ is true" takes one molecule,
 // "_A_ contradicts _B_" takes two, "_A_ is the same as _B_" takes two of the
 // same type — and a molecule that carries anything else is not the assertion
-// its bond names. Such a molecule is not impossible: block validation checks the
-// number of fillers against the bond's variable count and the shape of each
-// filler, and never the filler *types* a particular bond expects, so an author
-// can publish "_A_ is the same as _B_" over an atom and a molecule, or "_A_ is
-// true" over an atom, and the block is valid. L3 ignores it rather than guessing
-// what was meant; it remains a molecule of the view like any other.
+// its bond names. Such a molecule is not impossible: the Fillers line of a
+// standard meta-bond is a recognition criterion applied here, at L2→L3, and not
+// a rule of block validity (spec/06-meta-bonds.md, "Meta-molecules are regular
+// molecules"). Block validation checks the number of fillers against the bond's
+// variable count and the shape of each filler, and never the filler *types* a
+// particular bond expects, so an author can publish "_A_ is the same as _B_"
+// over an atom and a molecule, or "_A_ is true" over an atom, and the block is
+// valid. L3 ignores it rather than guessing what was meant; it remains a
+// molecule of the view like any other.
 func read(v *View) claims {
 	var c claims
 	for _, d := range v.byKind[kindMolecule] {

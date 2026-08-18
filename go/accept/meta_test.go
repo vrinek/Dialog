@@ -116,11 +116,17 @@ func TestEquivalenceOfAtomsAndBonds(t *testing.T) {
 // rule out: a molecule whose bond is a standard meta-bond and whose fillers do
 // not fit its template.
 //
-// Block validation checks the number of fillers against the bond's variable
+// A meta-bond's Fillers line is a recognition criterion applied at L2→L3, not a
+// validity rule (spec/06-meta-bonds.md, "Meta-molecules are regular molecules"):
+// block validation checks the number of fillers against the bond's variable
 // count and the shape of each filler, never the filler types a particular bond
 // expects (spec/02-block-format.md, "Validation" rule 5), so every molecule here
 // is publishable and valid. L3 declines to read them as the assertions their
-// bonds name, and they stay in the view as plain molecules.
+// bonds name — the MUST NOT of that section — and surfaces them as plain
+// molecules of the view, which is its SHOULD.
+//
+// The truth-of-an-atom case is pinned in bytes as the truth_of_an_atom molecule
+// of vectors/entities.json, where it is a *valid* entity.
 func TestMalformedMetaMoleculesAreIgnored(t *testing.T) {
 	w := newWorld(t)
 	s := newSubject()
