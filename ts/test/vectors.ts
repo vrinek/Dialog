@@ -29,6 +29,7 @@ export interface VectorCase {
   value?: ValueModel;
   dcbor?: string;
   bytes?: string;
+  hex?: string;
   digest?: string;
   cid?: string;
   cid_text?: string;
@@ -52,6 +53,17 @@ export interface VectorCase {
   // Chain-relative rejections (`blocks.json`, `invalid_in_chain`).
   setup?: string[];
   scan_limit?: number;
+  // Privacy cases (`privacy.json`).
+  seed?: string;
+  ed25519_public_key?: string;
+  x25519_private_key?: string;
+  x25519_public_key?: string;
+  own?: string;
+  peer?: string;
+  shared_secret?: string;
+  info?: string;
+  wrapping_key?: string;
+  wrapped_key?: string;
 }
 
 export interface VectorSection {
@@ -73,7 +85,13 @@ export interface VectorFile {
   area: string;
   description: string;
   spec: string[];
-  inputs?: { note?: string; keys?: VectorKey[] };
+  inputs?: {
+    note?: string;
+    keys?: VectorKey[];
+    content_key?: string;
+    block_nonce?: string;
+    wrap_nonce?: string;
+  };
   sections: VectorSection[];
 }
 
