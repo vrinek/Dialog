@@ -103,6 +103,10 @@ Meta-molecules are published using `create_molecule` like any other molecule. Th
 
 The standard meta-bonds are identified by the SHA-256 digest of their dCBOR-encoded template. An implementation recognizes a meta-molecule by checking whether the molecule's `bond` field matches the digest of any known meta-bond template. The `bond` field holds a 32-byte digest, not a full CID — see [03-encoding.md](03-encoding.md), "Internal references".
 
+A meta-bond is an ordinary bond, so a molecule naming one satisfies validation rule 4 exactly as any other molecule does ([02-block-format.md](02-block-format.md), "Validation"): the bond MUST be reachable from the block whose molecule names it — created in that block, in an ancestor of the author's chain, or in a block reachable through `refs`. **The standard meta-bonds are not implicitly present in any chain, and no digest is exempt from rule 4.** Being standard means being recognized by every implementation at L2→L3, not existing before somebody publishes it. An author therefore publishes `create_bond` for each meta-bond they use, in the block that first uses it or in an earlier block of their own chain, or else names a block that did in `refs`. This keeps L1 validation schema-driven and meta-bond-agnostic, which is the same principle the paragraphs above rest on: whether a block validates cannot depend on which meta-bonds the validating implementation knows.
+
+*Informative.* Three strategies are available and all three are correct; the grounding demo's authors use one each. `atlas` publishes `create_bond("_A_ is true")` in the block where it first asserts something, which costs one operation and no dependency on anyone. `gazetteer` re-publishes four of the standard meta-bonds in its genesis block, although another author had already published one of them: the entity is content-addressed, so the re-publication adds an authorship record rather than a second entity ([05-processing-model.md](05-processing-model.md), "Accumulation rules"), and the author is then self-contained. `errata` names `gazetteer`'s genesis block in `refs` instead, which publishes nothing at all and couples its blocks to another author's chain layout. The consequence of all this is that the five best-known entities of the protocol have no canonical publication: each exists once as an entity and carries an authorship record per author who bothered to create it.
+
 The `Fillers:` line printed with each meta-bond above names the filler types that meta-bond's semantics are defined for. It is a **recognition criterion applied during L2→L3 processing**, not a rule of block validity. A molecule built from a meta-bond is validated exactly as any other molecule ([02-block-format.md](02-block-format.md), "Validation"), against a data model that has no notion of a meta-bond: rule 5 checks the number of fillers against the bond's variable count and each filler against its own type tag ([01-data-model.md](01-data-model.md)), and never against the filler types a particular bond expects. Consequently:
 
 - Implementations MUST NOT reject a block, or refuse an entity at L1 or L2, because a molecule's `bond` field matches a standard meta-bond while its fillers do not match that meta-bond's declared shape. Such a molecule is a valid, plain molecule; it has a digest, it propagates, and it enters L2 like any other.
@@ -175,6 +179,8 @@ create_molecule(
 ```
 
 Users who subscribe to Author C will see both atoms as equivalent in L3.
+
+The examples of this section show only the `create_molecule` operation. That is an elision for brevity: the meta-bond it names is an entity like any other and MUST be reachable from the block carrying the operation, so a publishable block also carries `create_bond("_A_ is the same as _B_")` — in this block, in an earlier block of Author C's chain, or in a block named in `refs`. See "Meta-molecules are regular molecules" above.
 
 ### Declaring bond equivalence
 
