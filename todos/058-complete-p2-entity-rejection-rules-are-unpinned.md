@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "058"
 tags: [conformance-vectors, data-model, validation, interoperability]
@@ -136,12 +136,12 @@ since the prose already works that example out.
 
 ## Acceptance Criteria
 
-- [ ] `vectors/entities.json` carries an `invalid` section covering every
+- [x] `vectors/entities.json` carries an `invalid` section covering every
       rejection rule of `spec/01-data-model.md`
-- [ ] The timestamp profile's six rules and the calendar rule are each pinned by
+- [x] The timestamp profile's six rules and the calendar rule are each pinned by
       at least one case, including the `1500-02-29` / `1600-02-29` pair
-- [ ] `vectors/README.md` records the new section and its case count
-- [ ] Both implementations reject every case in it
+- [x] `vectors/README.md` records the new section and its case count
+- [x] Both implementations reject every case in it
 
 ## Work Log
 
@@ -156,6 +156,51 @@ the prose — `ts/test/entity.test.ts`, everything below "Rejections" — and
 nothing in `vectors/` says another implementation must agree with any of them.
 The valid half of the file, by contrast, passed on the first run: 26 cases, all
 byte-identical, which is what a good vector file feels like.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. `vectors/entities.json` gains an
+`invalid` section, and the timestamp cases are the sharp end of it.
+
+**Changes:**
+
+- `go/internal/vectors/entities.go`: an `invalid` section of **38 cases**,
+  each with `bytes`, a `rule` naming the section of the specification it
+  violates, a `reason`, and a new `kind` field — `atom`, `bond`, `molecule` or
+  `filler` — naming the decoder that must refuse it, because the entity layer
+  has one decoder per kind. Coverage: the empty and non-text description; the
+  empty template, the one with no variable, the one whose variables are
+  lowercase and the one that repeats a name; the molecule with no fillers, an
+  empty filler list, an undeclared key and a CID in its `bond` field; type 5,
+  a text type tag, a 31-byte reference, a CID reference, a text reference, the
+  empty and byte-string IPFS URI, a bare-integer scalar, and a filler map with
+  an extra or a missing key; a unit without a value, a 31-byte unit, a text
+  quantity, an undeclared scalar key, a non-canonical decimal fraction, a
+  half-written range and a range carrying a unit; and one case per timestamp
+  rule — the plain date, `+00:00`, lowercase `t` and `z`, fractional seconds,
+  the leap second, `2024-02-30`, `1500-02-29`, and a range running backwards.
+- The generator checks every case against the reference decoder before it
+  emits it (`mustReject`), so the file cannot come to pin a rejection this
+  implementation does not make.
+- Two valid cases joined them, both of which the file lacked:
+  `fillers/scalar_datetime_leap_day` (`1600-02-29`, the accepting half of the
+  calendar pair rule 6 works out in prose) and `molecules/truth_of_an_atom`
+  (todo 059).
+- `go/conformance_test.go`: `TestEntityVectors` decodes every invalid case with
+  the decoder its `kind` names and fails if any of them is accepted.
+- `ts/test/entity.test.ts`: the same, plus a `rule` → `EntityErrorCode` map, so
+  a case is not merely rejected but rejected as the right class of error; the
+  one dCBOR-layer case is listed as such. Count assertions updated in
+  `entity.test.ts` and `cid.test.ts`, and the latter skips the new section.
+- `vectors/README.md`: the entities row, the `kind` field in "Case shapes", and
+  a paragraph in the walkthrough on why the invalid half is the one that
+  decides which entities exist.
+
+Not done, and not needed for this todo: the disambiguation-table bond templates
+and a molecule with an IPFS filler. Both are exercised by unit tests in both
+implementations; neither is a rejection rule.
 
 ## Notes
 

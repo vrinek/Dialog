@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "059"
 tags: [specification-gap, meta-bonds, data-model, validation]
@@ -125,11 +125,11 @@ well as prose. Whatever is chosen, §1's MUST needs a consequence attached to it
 
 ## Acceptance Criteria
 
-- [ ] `spec/06-meta-bonds.md` says whether a meta-molecule with unexpected
+- [x] `spec/06-meta-bonds.md` says whether a meta-molecule with unexpected
       filler types is invalid, or valid with no defined semantics
-- [ ] §1's "Both fillers MUST be the same type" names the consequence of
+- [x] §1's "Both fillers MUST be the same type" names the consequence of
       violating it
-- [ ] A conformance vector fixes the answer
+- [x] A conformance vector fixes the answer
 
 ## Work Log
 
@@ -145,6 +145,40 @@ other bond, but no filler *type* check is applied to a meta-bond, because
 `spec/02-block-format.md` rule 5 cites only `spec/01-data-model.md` and that
 document has no notion of a meta-bond. An implementation that read the
 `Fillers:` lines as normative would reject molecules this one accepts.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. A meta-bond's `Fillers:` line is a
+recognition criterion applied during L2→L3 processing, not a rule of block
+validity.
+
+**Changes:**
+
+- `spec/06-meta-bonds.md`, "Meta-molecules are regular molecules": a normative
+  paragraph and three bullets. Implementations MUST NOT reject a block, or
+  refuse an entity at L1 or L2, because a molecule's bond matches a standard
+  meta-bond while its fillers do not match the declared shape; MUST NOT apply
+  the meta-bond's L3 semantics to it; and SHOULD surface it to the application
+  rather than discard it. Followed by the reason — validation stays
+  schema-driven and meta-bond-agnostic, so whether a block validates cannot
+  depend on which meta-bonds the validator happens to know — and an informative
+  paragraph recording that the reference implementation keeps such a molecule
+  in the L3 view and lists it separately.
+- `spec/06-meta-bonds.md` §1: the MUST now names its consequence. It binds the
+  author; a molecule violating it is valid and declares no equivalence, and
+  implementations MUST NOT unify the entities it names.
+- `vectors/entities.json`: `molecules/truth_of_an_atom` — `"_A_ is true"` filled
+  with an atom — is a **valid** entity of the file, which fixes the reading in
+  bytes. `ts/test/entity.test.ts` asserts it is still recognized as a
+  meta-molecule by its bond digest.
+- `go/accept`: no behaviour change. `MalformedMetaMolecules` already did exactly
+  this — the molecule stays in the view, is read as no assertion, and is listed
+  — and `TestMalformedMetaMoleculesAreIgnored` already covered the three shapes.
+  Its comments and the package documentation now cite the section that requires
+  it rather than deriving it.
+- `ts/`: has no L3, so nothing beyond the vector case above.
 
 ## Notes
 

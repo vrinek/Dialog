@@ -81,7 +81,14 @@ by the final cross-validation phase, never read.
    rejection rules — the timestamp profile above all — are untested by the
    interop contract; the suite's rejection tests are hand-written from the
    prose) and 059 (a meta-bond's `Fillers:` line is not a validation rule
-   anywhere, so this implementation applies no filler-type check to one).
+   anywhere, so this implementation applies no filler-type check to one). Both
+   are since settled: `entities.json` grew an `invalid` section of 38 cases —
+   one or more per rejection rule of spec/01, the six timestamp rules and the
+   `1500-02-29` / `1600-02-29` calendar pair included — plus two valid cases,
+   so the counts above now read 66 cases, 28 valid and 38 invalid, over 16
+   entities. spec/06 now states that the `Fillers:` lines are L3 recognition
+   criteria and not validity rules, which is the reading this implementation
+   took.
 3. `block` — signing, digests, structural validation; every case in
    `vectors/blocks.json` (chain, forks, invalid cases; validation rules per
    spec/02 as far as the vectors exercise them, full rule engine per spec).
