@@ -132,3 +132,5 @@ The following are explicitly deferred to future protocol versions:
 | 07 | [Transport Profile](07-transport.md) | *Optional profile.* One serialization for wire and file, six sync operations, an HTTP binding |
 
 Documents 00–06 are the protocol. Document 07 is an optional profile: normative for an implementation that chooses to speak it, and binding on nothing else.
+
+Document 07 remains **Draft**. It now has one implementation — `go/transport`, which serves and syncs the grounding demo's committed chains over HTTP — and writing it surfaced five places where the draft is silent or says two things; they are listed in that document's "Gaps the first implementation found" and are what has to be settled before the profile leaves Draft.

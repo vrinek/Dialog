@@ -89,7 +89,7 @@ A client learns whether a range ended at the tip by comparing the last block it 
 
 A block sequence written to a file is a chain file. Nothing is added and nothing is removed: a range response saved to disk is a valid chain file, and a chain file offered to a server is a valid announce body. The conventional extension is `.dialog`; a file holding exactly one block MAY use `.block`, which is the same thing at length one.
 
-This is the property that keeps offline exchange from being a parallel mechanism. The grounding demo's committed chain directory is the degenerate case rather than an exception to it: each `.block` file is a one-block sequence, and concatenating one author's block files in the order the directory's index lists them yields, byte for byte, the range response for that author's whole chain from the genesis position. The index beside them is a local convenience — it carries no authority, and a reader that trusted it would still have to validate every block (see [02-block-format.md](02-block-format.md), "Validation").
+This is the property that keeps offline exchange from being a parallel mechanism. The grounding demo's committed chain directory is the degenerate case rather than an exception to it: each `.block` file is a one-block sequence, and concatenating one author's block files in the order the directory's index lists them yields, byte for byte, the range response for that author's whole chain from the genesis position. That equality is a test rather than a claim — `demo/internal/replay`'s `TestRangeResponseIsTheConcatenatedBlockFiles` serves the committed directory and compares the bytes. The index beside them is a local convenience — it carries no authority, and a reader that trusted it would still have to validate every block (see [02-block-format.md](02-block-format.md), "Validation").
 
 ### The six operations
 
@@ -340,6 +340,18 @@ This draft deliberately settles none of the following. Each has a todo, each is 
 | [073](../todos/073-pending-p3-what-the-subscription-privacy-should-actually-demands.md) | What the subscription-privacy SHOULD actually demands | Server rule 5; the event stream; Security Considerations |
 | [074](../todos/074-pending-p3-where-is-the-successor-chain-served.md) | Where is the successor chain served? | "Chain succession" |
 | [075](../todos/075-pending-p3-freshness-has-no-signal.md) | Freshness has no signal | `tip`; "What a server does not guarantee" |
+
+### Gaps the first implementation found
+
+The questions above were left open on purpose. The ones below were not: they are places where this draft is silent, or says two things, and an implementation had to choose. They were found by writing one (`go/transport`, the Go reference implementation of this profile), and each names the choice that implementation made so that a second implementation can match it or dispute it.
+
+| Todo | Question | Where it bites |
+|------|----------|----------------|
+| [085](../todos/085-pending-p2-dialog-tip-is-required-where-there-is-no-tip.md) | `Dialog-Tip` is required where there is no tip | "HTTP binding"; an empty `range` for an author the source holds nothing from |
+| [086](../todos/086-pending-p2-which-tip-does-a-server-with-a-hole-report.md) | Which tip does a server with a hole report? | `tip`; "Server rules" 1 and 2; the stability of a fork's branch choice |
+| [087](../todos/087-pending-p3-no-status-code-for-an-operation-a-server-does-not-implement.md) | No status code for an OPTIONAL operation a server does not implement | "The six operations"; "Status codes"; the event stream |
+| [088](../todos/088-pending-p2-when-is-an-announce-receipts-disposition-decided.md) | When is an announce receipt's disposition decided? | `announce`; the receipt's three members |
+| [089](../todos/089-pending-p3-limit-has-one-spelling-or-several.md) | Does `limit` have one spelling, and what does a repeated query parameter mean? | "HTTP binding", the bullets under the method-and-path table |
 
 ## Security Considerations
 
