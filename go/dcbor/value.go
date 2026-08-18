@@ -41,9 +41,15 @@ import (
 	"unicode/utf8"
 )
 
-// MaxDepth is the maximum nesting depth of arrays and maps that this package
-// will encode or decode. Dialog structures nest only a handful of levels
-// deep; the limit exists so that hostile input cannot exhaust the stack.
+// MaxDepth is the deepest nesting this package will encode or decode:
+// spec/03-encoding.md, "Deterministic CBOR" rule 10. A container — an array or
+// a map — is at depth 1 when no container encloses it and one deeper than the
+// container immediately enclosing it otherwise; a decimal fraction, tag and
+// content array together, counts as one container. Items that are not
+// containers add no depth. Dialog structures nest about six levels, so the
+// bound is purely defensive: it lets hostile input be rejected instead of
+// exhausting the stack, and it is fixed by the specification so that every
+// implementation rejects the same bytes.
 const MaxDepth = 64
 
 // A Value is a CBOR value inside Dialog's dCBOR profile. The only

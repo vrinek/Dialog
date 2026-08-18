@@ -310,7 +310,12 @@ func TestEncodeErrors(t *testing.T) {
 		{"invalid UTF-8 text", Text("\xff\xfe"), "not valid UTF-8"},
 		{"invalid UTF-8 map key", Map{{"\xff", Null}}, "not valid UTF-8"},
 		{"nil value", Array{nil}, "nil value"},
-		{"too deep", deepArray(MaxDepth + 1), "nesting deeper than"},
+		// deepArray(n) wraps an empty array n times, so its innermost
+		// container is at depth n+1: one past the bound of rule 10.
+		{"too deep", deepArray(MaxDepth), "nesting deeper than"},
+		// A decimal fraction is one container too, so MaxDepth arrays around
+		// one put it at depth MaxDepth+1.
+		{"too deep by a decimal fraction", wrap(Decimal{Exponent: -2, Mantissa: 314}, MaxDepth), "nesting deeper than"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -325,12 +330,41 @@ func TestEncodeErrors(t *testing.T) {
 	}
 }
 
-func deepArray(depth int) Value {
-	var v Value = Array{}
-	for i := 0; i < depth; i++ {
+// wrap puts v inside n nested arrays.
+func wrap(v Value, n int) Value {
+	for i := 0; i < n; i++ {
 		v = Array{v}
 	}
 	return v
+}
+
+// deepArray returns an empty array wrapped depth times, which is depth+1
+// containers: its innermost sits at nesting depth depth+1 in the counting of
+// spec/03-encoding.md, "Deterministic CBOR" rule 10.
+func deepArray(depth int) Value { return wrap(Array{}, depth) }
+
+// TestEncodeAtTheNestingLimit is the accepting half of rule 10: a structure
+// whose deepest container is at depth MaxDepth encodes, and re-decodes.
+func TestEncodeAtTheNestingLimit(t *testing.T) {
+	for name, v := range map[string]Value{
+		"arrays":  deepArray(MaxDepth - 1),
+		"map":     wrap(Map{{Key: "a", Value: Uint(1)}}, MaxDepth-1),
+		"decimal": wrap(Decimal{Exponent: -2, Mantissa: 314}, MaxDepth-1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			b, err := Encode(v)
+			if err != nil {
+				t.Fatalf("Encode at depth %d: %v", MaxDepth, err)
+			}
+			got, err := Decode(b)
+			if err != nil {
+				t.Fatalf("Decode at depth %d: %v", MaxDepth, err)
+			}
+			if !Equal(got, v) {
+				t.Error("Decode(Encode(v)) differs from v at the depth limit")
+			}
+		})
+	}
 }
 
 func TestMustEncodePanics(t *testing.T) {

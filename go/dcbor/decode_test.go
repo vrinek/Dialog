@@ -157,20 +157,42 @@ func TestDecodeRejects(t *testing.T) {
 	}
 }
 
-func TestDecodeRejectsDeepNesting(t *testing.T) {
-	deep := strings.Repeat("81", MaxDepth+2) + "80"
-	_, err := Decode(mustHex(t, deep))
-	if err == nil {
-		t.Fatal("Decode: expected an error for excessive nesting")
+// TestDecodeNestingBoundary pins rule 10 of spec/03-encoding.md on both sides,
+// in the specification's counting: the outermost container is at depth 1, a
+// decimal fraction is one container and not two, and 64 is the deepest a
+// document may go.
+func TestDecodeNestingBoundary(t *testing.T) {
+	// n nested arrays: n-1 heads around an empty array, so the innermost
+	// container is at depth n.
+	nest := func(n int, inner string) string {
+		return strings.Repeat("81", n-1) + inner
 	}
-	if !strings.Contains(err.Error(), "nesting deeper than") {
-		t.Errorf("Decode error = %v, want a nesting-depth error", err)
+	tests := []struct {
+		name string
+		hex  string
+		ok   bool
+	}{
+		{"arrays at the limit", nest(MaxDepth, "80"), true},
+		{"arrays one past the limit", nest(MaxDepth+1, "80"), false},
+		{"arrays far past the limit", nest(MaxDepth+64, "80"), false},
+		{"maps at the limit", strings.Repeat("81", MaxDepth-1) + "a0", true},
+		{"maps one past the limit", strings.Repeat("81", MaxDepth) + "a0", false},
+		// A decimal fraction is one level: tag and content array together.
+		{"decimal at the limit", nest(MaxDepth, "c4822119013a"), true},
+		{"decimal one past the limit", nest(MaxDepth+1, "c4822119013a"), false},
 	}
-
-	// One level inside the limit still decodes.
-	ok := strings.Repeat("81", MaxDepth) + "80"
-	if _, err := Decode(mustHex(t, ok)); err != nil {
-		t.Errorf("Decode at the depth limit: unexpected error: %v", err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Decode(mustHex(t, tc.hex))
+			switch {
+			case tc.ok && err != nil:
+				t.Errorf("Decode: unexpected error: %v", err)
+			case !tc.ok && err == nil:
+				t.Fatal("Decode: expected a nesting-depth error")
+			case !tc.ok && !strings.Contains(err.Error(), "nesting deeper than"):
+				t.Errorf("Decode error = %v, want a nesting-depth error", err)
+			}
+		})
 	}
 }
 

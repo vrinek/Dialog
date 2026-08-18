@@ -52,10 +52,10 @@ func (d *decoder) errorAt(off int, msg string) error {
 	return &SyntaxError{Offset: off, Msg: msg}
 }
 
+// value decodes one item. depth is the nesting depth of the container holding
+// it — 0 at the top level, where nothing holds it — so a container found here
+// sits at depth+1 (spec/03-encoding.md, "Deterministic CBOR" rule 10).
 func (d *decoder) value(depth int) (Value, error) {
-	if depth > MaxDepth {
-		return nil, d.errorAt(d.pos, fmt.Sprintf("nesting deeper than %d levels", MaxDepth))
-	}
 	start := d.pos
 	if d.pos >= len(d.data) {
 		return nil, d.errorAt(start, "unexpected end of input")
@@ -97,13 +97,17 @@ func (d *decoder) value(depth int) (Value, error) {
 		return Text(raw), nil
 
 	case majorArray:
+		level, err := d.enter(start, depth)
+		if err != nil {
+			return nil, err
+		}
 		n, err := d.count(start, ai, "array")
 		if err != nil {
 			return nil, err
 		}
 		arr := make(Array, 0, n)
 		for i := uint64(0); i < n; i++ {
-			item, err := d.value(depth + 1)
+			item, err := d.value(level)
 			if err != nil {
 				return nil, err
 			}
@@ -123,6 +127,17 @@ func (d *decoder) value(depth int) (Value, error) {
 	panic("unreachable")
 }
 
+// enter accounts for a container found inside a container of the given depth,
+// returning the new container's own depth. Rule 10 of spec/03-encoding.md puts
+// the outermost container at depth 1 and bounds the deepest at MaxDepth.
+func (d *decoder) enter(start, depth int) (int, error) {
+	level := depth + 1
+	if level > MaxDepth {
+		return 0, d.errorAt(start, fmt.Sprintf("nesting deeper than %d levels", MaxDepth))
+	}
+	return level, nil
+}
+
 // tagValue handles major type 6. Tag 4 (decimal fraction) is the sole tag
 // inside Dialog's profile; every other tag is rejected
 // (spec/03-encoding.md, "Deterministic CBOR" rule 6).
@@ -134,8 +149,10 @@ func (d *decoder) tagValue(start int, ai byte, depth int) (Value, error) {
 	if tag != tagDecimalFraction {
 		return nil, d.errorAt(start, fmt.Sprintf("CBOR tags (major type 6) are not permitted, except tag 4 (decimal fraction); got tag %d", tag))
 	}
-	if depth+1 > MaxDepth {
-		return nil, d.errorAt(start, fmt.Sprintf("nesting deeper than %d levels", MaxDepth))
+	// The tag and its content array are one container for rule 10, and hold
+	// two integers, which are not containers: one level, no recursion.
+	if _, err := d.enter(start, depth); err != nil {
+		return nil, err
 	}
 
 	// c4 82 <exponent> <mantissa> (spec/03-encoding.md, "Decimal fractions").
@@ -223,6 +240,10 @@ func (d *decoder) simple(start int, ai byte) (Value, error) {
 }
 
 func (d *decoder) mapValue(start int, ai byte, depth int) (Value, error) {
+	level, err := d.enter(start, depth)
+	if err != nil {
+		return nil, err
+	}
 	n, err := d.count(start, ai, "map")
 	if err != nil {
 		return nil, err
@@ -244,7 +265,7 @@ func (d *decoder) mapValue(start int, ai byte, depth int) (Value, error) {
 			}
 		}
 		prevKey = encKey
-		val, err := d.value(depth + 1)
+		val, err := d.value(level)
 		if err != nil {
 			return nil, err
 		}

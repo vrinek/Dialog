@@ -49,10 +49,10 @@ func MustEncode(v Value) []byte {
 	return b
 }
 
+// encodeValue writes one value. depth is the nesting depth of the container
+// holding it — 0 at the top level — so a container written here sits at
+// depth+1 (spec/03-encoding.md, "Deterministic CBOR" rule 10).
 func encodeValue(buf *bytes.Buffer, v Value, depth int) error {
-	if depth > MaxDepth {
-		return fmt.Errorf("dcbor: nesting deeper than %d levels", MaxDepth)
-	}
 	switch val := v.(type) {
 	case Uint:
 		writeHead(buf, majorUint, uint64(val))
@@ -60,16 +60,21 @@ func encodeValue(buf *bytes.Buffer, v Value, depth int) error {
 		writeHead(buf, majorNeg, uint64(val))
 	case Decimal:
 		// c4 82 <exponent> <mantissa>, both shortest-form integers
-		// (spec/03-encoding.md, "Decimal fractions").
+		// (spec/03-encoding.md, "Decimal fractions"). The tag and its content
+		// array are one container for rule 10, holding two non-containers.
 		if err := val.checkCanonical(); err != nil {
+			return err
+		}
+		level, err := enter(depth)
+		if err != nil {
 			return err
 		}
 		writeHead(buf, majorTag, tagDecimalFraction)
 		writeHead(buf, majorArray, 2)
-		if err := encodeValue(buf, Int(val.Exponent), depth+1); err != nil {
+		if err := encodeValue(buf, Int(val.Exponent), level); err != nil {
 			return err
 		}
-		if err := encodeValue(buf, Int(val.Mantissa), depth+1); err != nil {
+		if err := encodeValue(buf, Int(val.Mantissa), level); err != nil {
 			return err
 		}
 	case Text:
@@ -82,9 +87,13 @@ func encodeValue(buf *bytes.Buffer, v Value, depth int) error {
 		writeHead(buf, majorBytes, uint64(len(val)))
 		buf.Write(val)
 	case Array:
+		level, err := enter(depth)
+		if err != nil {
+			return err
+		}
 		writeHead(buf, majorArray, uint64(len(val)))
 		for _, item := range val {
-			if err := encodeValue(buf, item, depth+1); err != nil {
+			if err := encodeValue(buf, item, level); err != nil {
 				return err
 			}
 		}
@@ -100,7 +109,22 @@ func encodeValue(buf *bytes.Buffer, v Value, depth int) error {
 	return nil
 }
 
+// enter accounts for a container inside a container of the given depth,
+// returning the new container's own depth. Rule 10 of spec/03-encoding.md puts
+// the outermost container at depth 1 and bounds the deepest at MaxDepth.
+func enter(depth int) (int, error) {
+	level := depth + 1
+	if level > MaxDepth {
+		return 0, fmt.Errorf("dcbor: nesting deeper than %d levels", MaxDepth)
+	}
+	return level, nil
+}
+
 func encodeMap(buf *bytes.Buffer, m Map, depth int) error {
+	level, err := enter(depth)
+	if err != nil {
+		return err
+	}
 	// Sort by the bytewise lexicographic order of each key's CBOR encoding
 	// (spec/03-encoding.md, "Deterministic CBOR" rule 2).
 	type encodedEntry struct {
@@ -130,7 +154,7 @@ func encodeMap(buf *bytes.Buffer, m Map, depth int) error {
 	writeHead(buf, majorMap, uint64(len(entries)))
 	for _, e := range entries {
 		buf.Write(e.key)
-		if err := encodeValue(buf, e.value, depth+1); err != nil {
+		if err := encodeValue(buf, e.value, level); err != nil {
 			return err
 		}
 	}
