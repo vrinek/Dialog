@@ -181,6 +181,7 @@ Meta-molecules are applied during L2→L3 processing. The protocol defines the s
 The protocol requires:
 - Implementations MUST recognize the standard meta-bonds
 - Implementations MUST surface conflicts (e.g., when one subscribed author asserts "X is true" and another asserts "X is untrue") to the application layer
+- Implementations MUST NOT apply the semantics of a meta-molecule that every subscribed author who published it has retracted, and MUST apply them while one of them still backs it (see [06-meta-bonds.md](06-meta-bonds.md), "Withdrawing meta-molecules", which defines backing, says whose retraction counts, and gives the order the meta-bonds are applied to each other in). Whether a meta-molecule stands is decided by the same per-author, later-wins reading of block order that "Assertion order" below defines for any other molecule
 
 The protocol does NOT require any specific conflict resolution strategy. Possible strategies include:
 - Flag for user intervention

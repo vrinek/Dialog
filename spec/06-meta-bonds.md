@@ -113,6 +113,24 @@ This keeps validation schema-driven and meta-bond-agnostic, which is what "Meta-
 
 *Informative.* The reference implementation does exactly this. A molecule whose bond is a standard meta-bond but whose fillers do not fit its template stays in the L3 view as an ordinary molecule, is read as no assertion at all, and is listed separately from the meta-molecules that were applied, so an application can see it without guessing what its author meant.
 
+### Withdrawing meta-molecules
+
+A meta-molecule's L3 semantics apply while it stands. Because a meta-molecule is a molecule, the truth meta-bonds can be said of one, and that is how the author who published it takes it back.
+
+An author **backs** a meta-molecule by publishing it: publication is the declaration, and a meta-molecule nobody has said anything else about is backed by every author who published it. An explicit `"«M» is true"` from one of those authors is backing too, and `"«M» is untrue"` from one of them withdraws that author's backing. Which of an author's statements is the one that counts is settled exactly as it is for any other molecule — by **block order** within that author's chain, the later statement taking precedence over the earlier ("Truth retraction" above, and [05-processing-model.md](05-processing-model.md), "Assertion order"). An author who publishes an equivalence, retracts it, and later publishes or asserts it again backs it once more.
+
+On that basis:
+
+1. Implementations MUST apply a meta-molecule's semantics while at least one subscribed author who published it still backs it.
+2. Implementations MUST NOT apply them once every subscribed author who published it has withdrawn their backing. A withdrawn equivalence unifies nothing, a withdrawn contradiction is not surfaced, and a withdrawn supersession marks nothing as replaced.
+3. A retraction published by a subscribed author who did not publish the meta-molecule MUST NOT withdraw it. Nobody has a veto over another author's declaration: that retraction is a disagreement *about* the meta-molecule and is surfaced under "Conflict handling" above like any other. An author who wants the declaration to be theirs re-publishes it, which makes them one of its authors (see [05-processing-model.md](05-processing-model.md), "Accumulation rules") and puts its standing partly in their hands.
+4. The truth meta-bonds are not themselves subject to this rule. `"«X is untrue» is untrue"` is one author restating their position about X, which block order already settles, so a truth assertion or retraction applies on its author's block order alone. Gating them would start a regress with no bottom.
+5. A meta-molecule that no longer applies is not removed. It stays an entity of L3, with its authorship and its truth state, exactly as a retracted plain molecule does.
+
+*Informative.* Applying the truth meta-bonds to meta-molecules gives L3 an order of work: which meta-molecules stand has to be decided before the ones that do are applied. The reference implementation reads a meta-molecule's standing from the truth assertions naming *that molecule* and not from those naming its equivalence class, because the equivalence closure is one of the things standing decides and evaluating the gate through the closure would define the closure in terms of itself. Its order is: read the view's meta-molecules, decide which of them stand, close the equivalences over those that do, and only then apply truth, supersession and contradiction — every one of which reads the classes the closure produced. Where an author's latest position holds a retraction and something else at the same point of their chain — one block both publishing a meta-molecule and retracting it — no ordering settles the two, and this implementation leaves the backing standing rather than treating an unsettled position as a withdrawal.
+
+*Informative.* A meta-molecule's truth state and its standing are different questions, and a view can hold both answers at once. Publication is backing and is not a truth assertion, so almost every meta-molecule is unasserted and applies; and when one subscribed author publishes an equivalence and another retracts it, the equivalence is Retracted as a molecule — the disagreement is on the record — while it goes on applying, because its own author never took it back. That is rule 3 seen from the other side.
+
 ### Extension process
 
 The v1 standard library is intentionally minimal. New meta-bonds will be adopted through an RFC-like process:
