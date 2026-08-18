@@ -40,11 +40,18 @@ When a node receives a block, it MUST:
 1. Validate the block according to the rules in [02-block-format.md](02-block-format.md)
 2. If valid, store the block and make it available for L2 processing
 3. If invalid, reject the block
-4. If the block cannot be validated because its `prev` predecessor is not held, or is itself unvalidated, hold it as **stored but unvalidated**, or discard it — the choice is implementation-scoped
+4. If the block cannot be validated because a block validation needs is not held and cannot be obtained — its `prev` predecessor, or a block reference resolution must read to decide rule 4 — hold it as **stored but unvalidated**, or discard it — the choice is implementation-scoped
 
 Validation is incremental: because every block in the store was validated when it was received, checking a new block's chain integrity is a lookup among accepted blocks rather than a re-validation of its ancestry. Validity is therefore defined inductively from the genesis block, and the induction is carried by the store (see [02-block-format.md](02-block-format.md), "Validation").
 
-A **stored but unvalidated** block is one whose bytes a node holds and whose validity it has not been able to establish, because the block's ancestry has not arrived. Such a block is neither valid nor invalid. A node MAY keep it while it fetches the missing ancestors, and MUST validate it once they are available and validated; a node MAY instead discard it and re-request it later. A stored but unvalidated block MUST NOT be made available for L2 processing: its operations contribute nothing to the ontology graph until the block is validated. Nodes MUST NOT treat it as the predecessor of another block for the purposes of rule 3.
+A **stored but unvalidated** block is one whose bytes a node holds and whose validity it has not been able to establish, because a block that validating it requires has not arrived. Two causes produce that state, and they are the same state:
+
+- **Ancestry.** The block's `prev` predecessor is not held, or is itself stored but unvalidated, so rule 3 cannot be decided.
+- **Reference resolution.** Resolving the entity digests the block's operations name needs a block the node does not hold and cannot obtain — an entry of the block's own `refs`, a block reached transitively through one, or an ancestor of the author's own chain that step 3 of the resolution procedure walks — and a digest is still unresolved when resolution runs out of blocks it can read. Rule 4 cannot be decided (see [02-block-format.md](02-block-format.md), "Validation" rule 4, and "Resolution procedure" below).
+
+Such a block is neither valid nor invalid. A node MAY keep it while it fetches the missing blocks, and MUST validate it once they are available; a node MAY instead discard it and re-request it later. A stored but unvalidated block MUST NOT be made available for L2 processing: its operations contribute nothing to the ontology graph until the block is validated. Nodes MUST NOT treat it as the predecessor of another block for the purposes of rule 3.
+
+**Absence is not evidence.** A node that cannot obtain a block has learned nothing about the validity of the block that needs it, and MUST NOT record that block as invalid on that ground. The rule is what keeps a validity verdict a property of the blocks rather than of the network: without it, a source that withholds a single foreign block could make a node permanently reject a block that is in fact valid, and two nodes would disagree about a block for a reason that has nothing to do with it. See [07-transport.md](07-transport.md), "Verification obligations", for the same rule stated as an obligation on a client of the transport profile.
 
 #### Chain management
 
@@ -106,7 +113,15 @@ To validate a block H:
 3. For unresolved digests, check ancestor blocks in the same chain (following `prev`)
 4. For still-unresolved digests, fetch blocks listed in H's `refs` and check if the entity was created there
 5. If a referenced block's entities themselves have unresolved transitive dependencies (e.g., a molecule references a bond not yet seen), recurse into that block's own `refs`
-6. Continue until all digests are transitively resolved, or the scan limit is reached
+6. Continue until all digests are transitively resolved, the scan limit is reached, or resolution runs out of blocks it can read
+
+The procedure has three outcomes, and rule 4's verdict is whichever one it reaches:
+
+1. **Every digest resolves.** The rule passes.
+2. **A digest is provably absent from the reachable set.** Resolution completed against the blocks the node holds — every `refs` entry was held and scanned, every block they reach transitively was read, the author's own chain was walked to its genesis block — and no operation anywhere in it creates the digest. Or the scan limit was reached. The digest is unresolvable and the block is **invalid** under rule 4.
+3. **A block resolution needs is not held and cannot be obtained.** The verdict is not determinable: the node has not decided, and the block is **stored but unvalidated** (see "Block reception" above), not invalid. It MUST NOT reach L2 and MUST NOT serve as another block's rule 3 predecessor; it MAY be revalidated when the missing block arrives, and MAY be discarded.
+
+Outcome 3 is reached only when the missing block could have mattered. A `refs` entry demand-driven resolution never needed — because every digest resolved before it — leaves the verdict at outcome 1: nothing was withheld that the block's validity depended on.
 
 ##### Scan limit
 
@@ -120,6 +135,8 @@ One unit of the limit is **one distinct foreign block scanned** — a block reac
 - A `refs` entry the node **does not hold** does not count: nothing was fetched and no operation was read. Neither does a block a node fetches only to read its type or its author, for validation rules 6 and 10, without reading its operations (see [02-block-format.md](02-block-format.md), "Validation"). Such a block counts from the moment resolution scans it.
 
 If resolution must scan a further foreign block once the limit has been reached, the block being validated MUST be treated as invalid (unresolvable references). A block whose digests all resolve within the limit is unaffected by it, however far the refs graph around it extends.
+
+**The limit is a definitive verdict; a missing block is not.** The two look alike — in both, resolution stops with a digest unresolved — and they are opposite cases. The limit is a bound the node chose, reached against blocks it holds: the traversal is complete up to a number every default-configured node shares, so the same block gets the same rejection everywhere, and nothing outside the node's control decided it. A `refs` entry the node does not hold decides nothing at all: nothing was fetched, nothing was counted against the limit, and the block that needed it is stored but unvalidated (outcome 3 above), never invalid.
 
 Implementations SHOULD make the limit user-configurable, and the default SHOULD be **256** foreign blocks per block validated.
 
@@ -280,3 +297,6 @@ Alice's data in L2 is limited to what was actually needed.
 - [03-encoding.md](03-encoding.md) — CID computation
 - [04-cryptography.md](04-cryptography.md) — Private block encryption
 - [06-meta-bonds.md](06-meta-bonds.md) — Standard meta-bond library and L3 application rules
+
+### Informative
+- [07-transport.md](07-transport.md) — Optional transport profile; its client rules restate "Absence is not evidence" for a node fetching blocks over a network

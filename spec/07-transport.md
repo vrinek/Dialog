@@ -264,7 +264,7 @@ A client MUST validate every block it receives, from every source, per [02-block
 1. A client MUST re-hash every block it receives and MUST identify it by the digest it computes, never by the position the block held in a sequence, never by the URL it was fetched from, and never by anything a source said about it. A `block` response whose bytes hash to something other than the requested digest is a failed fetch, not a block.
 2. A client MUST verify the range property of a range response for itself, by checking that each block's `prev` names the block before it and that the first block's `prev` names the position it asked about. A source that skips a block produces a break the client sees immediately; *within* a range, completeness is free.
 3. A client MUST NOT treat transport-level authenticity as validation. TLS protects the request pattern, not the data. A plaintext mirror is a downgrade in privacy and not in integrity.
-4. A client MUST NOT let a source's answer decide a validation outcome that the source's bytes do not compel. In particular, a 404 for a `refs` entry is a fetch that did not succeed; it is not a finding that the reference is unresolvable.
+4. A client MUST NOT let a source's answer decide a validation outcome that the source's bytes do not compel. In particular, a 404 for a `refs` entry is a fetch that did not succeed; it is not a finding that the reference is unresolvable. The block that named it is stored but unvalidated, not invalid ([05-processing-model.md](05-processing-model.md), "Block reception", "Absence is not evidence"; [02-block-format.md](02-block-format.md), validation rule 4).
 
 #### The multi-source rule
 
@@ -284,7 +284,7 @@ Demand-driven resolution is on the validation path and is bounded (see [05-proce
 
 1. **Batch.** A client resolving a block's `refs` SHOULD issue one `blocks` request naming every digest it still needs, rather than a `block` request per digest. The limit's default of 256 is a count of blocks, not of round trips, and it is only affordable as one exchange.
 2. **A fetch that fails is not a unit of the limit.** The limit counts distinct foreign blocks *scanned* — fetched and read for the definitions they carry. A digest no source returned was not scanned and MUST NOT be counted, exactly as [05-processing-model.md](05-processing-model.md) says of a `refs` entry the node does not hold.
-3. **A failed fetch is not an invalidity.** A block whose `refs` a client cannot obtain has not been shown invalid; the client has not been able to decide. The verdict it deserves is the *stored but unvalidated* status of [05-processing-model.md](05-processing-model.md), "Block reception" — but that status is defined there for a missing `prev` and not for an unfetchable `refs` entry, so the specification does not currently say. See todo 078; until it is settled, a client of this profile MUST NOT report a block as invalid on the strength of a fetch that failed, and SHOULD retry from another source.
+3. **A failed fetch is not an invalidity.** A block whose `refs` a client cannot obtain has not been shown invalid; the client has not been able to decide. Its verdict is the *stored but unvalidated* status of [05-processing-model.md](05-processing-model.md), "Block reception", which covers an unobtainable `refs` entry exactly as it covers a missing `prev` — the third outcome of validation rule 4 ([02-block-format.md](02-block-format.md), "Validation"). A client MUST NOT report a block as invalid on the strength of a fetch that failed, MAY revalidate the block when the missing one arrives, and SHOULD retry from another source. The specification-level rule is the load-bearing one: it is what keeps a source that withholds a foreign block from invalidating a valid block at every client, whether or not the client speaks this profile.
 
 #### Chain succession
 
@@ -340,7 +340,6 @@ This draft deliberately settles none of the following. Each has a todo, each is 
 | [073](../todos/073-pending-p3-what-the-subscription-privacy-should-actually-demands.md) | What the subscription-privacy SHOULD actually demands | Server rule 5; the event stream; Security Considerations |
 | [074](../todos/074-pending-p3-where-is-the-successor-chain-served.md) | Where is the successor chain served? | "Chain succession" |
 | [075](../todos/075-pending-p3-freshness-has-no-signal.md) | Freshness has no signal | `tip`; "What a server does not guarantee" |
-| [078](../todos/078-pending-p2-an-unfetchable-refs-entry-has-no-defined-verdict.md) | An unfetchable `refs` entry has no defined verdict | "Interaction with the scan limit", point 3 |
 
 ## Security Considerations
 
