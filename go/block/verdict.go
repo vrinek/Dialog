@@ -176,7 +176,10 @@ func (s *ValidatingStore) Add(b *Block) (*Admission, error) {
 	// The blocks that were waiting for this one can be decided now — whichever
 	// verdict this one got. An arrival settles a rule 4 dependency by being
 	// readable, which a stored but unvalidated block is; only rule 3 waits for
-	// the block to be accepted, and it goes on waiting if it was not.
+	// the block to be accepted, and it goes on waiting if it was not. That is
+	// the SHOULD of spec/05-processing-model.md, "Block reception",
+	// "Revalidation on arrival" (todos/084), which this store satisfies for
+	// every block it keeps — it keeps them all.
 	s.settle(adm.Digest)
 	return adm, nil
 }

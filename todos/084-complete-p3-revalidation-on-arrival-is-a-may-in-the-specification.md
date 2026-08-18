@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "084"
 tags: [processing-model, specification-gap, conformance]
@@ -87,9 +87,9 @@ be taken later if a third implementation appears and diverges.
 
 ## Acceptance Criteria
 
-- [ ] The specification says when a held block is revalidated, or says that it
+- [x] The specification says when a held block is revalidated, or says that it
       does not say
-- [ ] Both implementations are checked against whatever it says
+- [x] Both implementations are checked against whatever it says
 
 ## Work Log
 
@@ -100,6 +100,40 @@ be taken later if a third implementation appears and diverges.
 Both implementations now wake waiters on arrival. The specification still only
 permits it, so the agreement is a convention between two codebases rather than a
 conformance requirement.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended: a SHOULD in "Block reception", with the reason in
+the same passage.
+
+- `spec/05-processing-model.md`, "Block reception": a new **Revalidation on
+  arrival** paragraph. A node that *keeps* a block as stored but unvalidated
+  SHOULD validate it again when a block it was waiting for arrives, whatever
+  verdict the arriving block itself received, and the two causes are spelled
+  out — a reference-resolution dependency is settled by the arriving block being
+  *readable* ("Resolution reads blocks, not verdicts"), and an ancestry
+  dependency is settled by the same event because a node validates a block when
+  it receives it, so the arrival is the moment the predecessor's verdict exists.
+  A rule 3 waiter woken by an undecided arrival fails rule 3 again and goes on
+  waiting. The readability cause is settled by a key rather than a block and
+  gets the same SHOULD.
+- The MAY-discard is untouched and is named as the escape: the SHOULD binds a
+  node that keeps held blocks, so a node with no waiting index is conformant by
+  discarding and re-requesting. What is ruled out is keeping a block, receiving
+  what it waited for, and leaving it undecided anyway.
+- The two consequent sentences were aligned with it: `spec/05`'s resolution
+  outcome 3 and its undecryptable-reference paragraph, and
+  `spec/02-block-format.md`'s validation rule 4 outcome, all of which said "MAY
+  be revalidated".
+- Both implementations already satisfy it and now cite it:
+  `go/block/verdict.go`, `ValidatingStore.Add` (the `settle` call), and
+  `ts/src/block.ts`, `BlockStore.add` (the `retryPending` call on the
+  unvalidated path). No behaviour changed in either; the tests `todos/083` added
+  are the ones that pin it.
+
+**Vectors: no byte moved.** Verdict timing touches no encoding.
 
 ## Notes
 

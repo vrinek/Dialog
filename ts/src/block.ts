@@ -2012,7 +2012,10 @@ export class BlockStore implements BlockSource {
         // waiter's verdict depend on a chain standing rule 4 never asked
         // about. Rule 3 is the one rule that wants its block *accepted*, and a
         // waiter woken for it simply fails rule 3 again and is re-filed under
-        // the same block, at the cost of one validation (todos/083).
+        // the same block, at the cost of one validation (todos/083). The
+        // specification requires this of a store that keeps held blocks, which
+        // this one does: spec/05-processing-model.md, "Block reception",
+        // "Revalidation on arrival" (todos/084).
         this.retryPending(selfDigest);
         return { status: "unvalidated", digest: selfDigest, pending: error };
       }
