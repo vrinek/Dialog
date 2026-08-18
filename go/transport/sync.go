@@ -86,6 +86,11 @@ type ChainSync struct {
 	// about them: their ancestry, or a block their refs name, has not arrived.
 	// They are neither accepted nor refused, and another source may settle them.
 	Unvalidated []cid.Digest
+	// Rejected are the received blocks the store refused: blocks a rule showed
+	// wrong, which are not stored. A source that serves one is not one to trust
+	// further, but it is not a reason to stop syncing from it either — the
+	// blocks are self-authenticating, and this is the client noticing.
+	Rejected []cid.Digest
 	// Forks are the forks the store holds in this author's chain after the sync.
 	//
 	// A fork here is the multi-source rule paying off: two sources serving
@@ -164,9 +169,10 @@ func (s *Syncer) SyncChain(ctx context.Context, pub ed25519.PublicKey) (*ChainSy
 		case block.VerdictUnvalidated:
 			result.Unvalidated = append(result.Unvalidated, d)
 		case block.VerdictUnknown:
-			// The store does not hold it, which happens only if it was rejected
-			// on arrival. It arrived, so it stays in Received, and it belongs to
-			// neither of the other two lists.
+			// The store does not hold it, which happens only if a rule showed
+			// it wrong on arrival. It arrived, so it stays in Received, and the
+			// verdict it got is the third list.
+			result.Rejected = append(result.Rejected, d)
 		}
 	}
 	for _, fork := range s.Store.Forks() {
@@ -254,18 +260,17 @@ func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed2551
 // undecided verdict costs a unit of the scan limit
 // (spec/07-transport.md, "Interaction with the scan limit").
 func (s *Syncer) offer(ctx context.Context, src Source, b *block.Block) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if s.Resolve {
-		if err := s.resolveRefs(ctx, src, b); err != nil {
-			return err
-		}
+		s.resolveRefs(ctx, src, b)
 	}
-	if _, err := s.Store.Add(b); err != nil {
-		// An invalid block is not a transport failure and does not stop the
-		// sync: the source handed over something the protocol rejects, which is
-		// a fact about the block. It is dropped, and the blocks after it in the
-		// chain will fail rule 3 and be held.
-		return nil
-	}
+	// An invalid block is not a transport failure and does not stop the sync:
+	// the source handed over something the protocol rejects, which is a fact
+	// about the block. It is not stored, it is reported in ChainSync.Rejected,
+	// and the blocks after it in the chain will fail rule 3 and be held.
+	_, _ = s.Store.Add(b)
 	return nil
 }
 
@@ -277,7 +282,7 @@ func (s *Syncer) offer(ctx context.Context, src Source, b *block.Block) error {
 // unvalidated, and that is enough for the block that named it, because
 // resolution reads blocks and not verdicts (spec/05-processing-model.md,
 // "Resolution procedure").
-func (s *Syncer) resolveRefs(ctx context.Context, src Source, b *block.Block) error {
+func (s *Syncer) resolveRefs(ctx context.Context, src Source, b *block.Block) {
 	var missing []cid.Digest
 	for _, ref := range b.Refs() {
 		if !s.Store.Has(ref) && !slices.Contains(missing, ref) {
@@ -285,20 +290,21 @@ func (s *Syncer) resolveRefs(ctx context.Context, src Source, b *block.Block) er
 		}
 	}
 	if len(missing) == 0 {
-		return nil
+		return
 	}
 	fetched, err := src.Blocks(ctx, missing)
 	if err != nil {
 		// A failed fetch is not an invalidity, and it is not a reason to stop
-		// syncing. The block that named the digest will be held.
-		return nil
+		// syncing. The block that named the digest will be held, and another
+		// source may settle it later.
+		return
 	}
 	for _, foreign := range fetched {
-		if _, err := s.Store.Add(foreign); err != nil {
-			continue
-		}
+		// A foreign block that is itself invalid is refused by the store and
+		// changes nothing: the block that named it is then held, exactly as if
+		// the fetch had failed.
+		_, _ = s.Store.Add(foreign)
 	}
-	return nil
 }
 
 // querySiblings asks every source about every position the store holds more than

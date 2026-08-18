@@ -2,6 +2,7 @@ package transport
 
 import (
 	"crypto/ed25519"
+	"errors"
 	"slices"
 	"testing"
 
@@ -367,4 +368,123 @@ func prevOf(t *testing.T, b *block.Block) *cid.Digest {
 		return nil
 	}
 	return &d
+}
+
+// TestSyncSurvivesASourceThatFails: a source that fails is not a failure of the
+// sync. That is the point of having more than one — a 404, a timeout or a
+// refusal is a fact about that source, and the next one is asked the same
+// question (spec/07-transport.md, "The multi-source rule").
+func TestSyncSurvivesASourceThatFails(t *testing.T) {
+	pub, blocks := testChain(t, 50, 3)
+	working, _ := serve(t, ServerConfig{Store: memStore(t, blocks...)})
+
+	// A client pointed at a server that is not there.
+	broken, err := NewClient("http://127.0.0.1:1/dialog/v1", nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	store := block.NewValidatingStore(nil)
+	result, err := NewSyncer(store, broken, working).SyncChain(t.Context(), pub)
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+	if result.Sources[0].Err == nil {
+		t.Error("the unreachable source reported no error")
+	}
+	if result.Sources[0].Blocks != 0 {
+		t.Error("the unreachable source contributed blocks")
+	}
+	if len(result.Accepted) != len(blocks) {
+		t.Errorf("accepted %d of %d blocks; a failing source stopped the sync", len(result.Accepted), len(blocks))
+	}
+}
+
+// TestSyncChainFrom is the single-source sync: what a node does when it has one
+// source, with the standing consequence that a fork it is not shown is a fork it
+// will never see.
+func TestSyncChainFrom(t *testing.T) {
+	pub, genesis, branches := forkedChain(t)
+	left, _ := serve(t, ServerConfig{Store: memStore(t, genesis, branches[0])})
+	right, _ := serve(t, ServerConfig{Store: memStore(t, genesis, branches[1])})
+
+	store := block.NewValidatingStore(nil)
+	syncer := NewSyncer(store, left, right)
+	one, err := syncer.SyncChainFrom(t.Context(), left, pub)
+	if err != nil {
+		t.Fatalf("SyncChainFrom: %v", err)
+	}
+	if len(one.Sources) != 1 {
+		t.Fatalf("the sync consulted %d sources, want 1", len(one.Sources))
+	}
+	if len(one.Forks) != 0 {
+		t.Errorf("one source showed a fork it does not serve: %v", one.Forks)
+	}
+
+	// The same syncer, asked to use everything it has, finds it.
+	all, err := syncer.SyncChain(t.Context(), pub)
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+	if len(all.Forks) != 1 {
+		t.Errorf("forks = %v, want the one the second source reveals", all.Forks)
+	}
+}
+
+// TestPollAndPrefetch covers the two helpers a node uses between syncs: polling
+// a tip for a few dozen bytes, and pulling a batch of foreign blocks in one
+// exchange because the scan limit is a block count and not a round-trip budget.
+func TestPollAndPrefetch(t *testing.T) {
+	pub, blocks := testChain(t, 51, 2)
+	source, _ := serve(t, ServerConfig{Store: memStore(t, blocks...)})
+
+	first, err := Poll(t.Context(), source, pub, "")
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	if first.Block == nil || first.ETag == "" {
+		t.Fatalf("Poll = %+v, want the tip and its entity tag", first)
+	}
+	unchanged, err := Poll(t.Context(), source, pub, first.ETag)
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	if !unchanged.Unchanged {
+		t.Error("polling an unmoved chain fetched the tip again")
+	}
+
+	resolver := NewResolver(t.Context(), block.NewMemStore(), source)
+	resolver.Prefetch(digests(blocks))
+	// Both are cached now, so resolving them touches nothing but the cache; a
+	// digest nobody holds is still reported as a fetch that did not succeed.
+	for _, b := range blocks {
+		if got, err := resolver.Block(b.Digest()); err != nil || got.Digest() != b.Digest() {
+			t.Errorf("Block(%s) = %v, %v after Prefetch", b.Digest(), got, err)
+		}
+	}
+	_, missing := testChain(t, 52, 1)
+	resolver.Prefetch([]cid.Digest{missing[0].Digest()})
+	if _, err := resolver.Block(missing[0].Digest()); !errors.Is(err, block.ErrNotFound) {
+		t.Errorf("err = %v, want a failed fetch", err)
+	}
+}
+
+// TestSyncReportsARejectedBlock: a source that serves a block a rule shows wrong
+// is not a reason to stop syncing, and the block is not silently dropped — the
+// client noticed, and says so.
+func TestSyncReportsARejectedBlock(t *testing.T) {
+	bad := invalidBlock(t, 53)
+	source, _ := serve(t, ServerConfig{Store: memStore(t, bad)})
+
+	store := block.NewValidatingStore(nil)
+	result, err := NewSyncer(store, source).SyncChain(t.Context(), bad.PublicKey())
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+	if len(result.Rejected) != 1 || result.Rejected[0] != bad.Digest() {
+		t.Fatalf("result = %+v, want the block reported as rejected", result)
+	}
+	if store.Has(bad.Digest()) {
+		t.Error("a rejected block was stored")
+	}
 }
