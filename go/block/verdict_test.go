@@ -171,6 +171,13 @@ func TestUnvalidatedBlockIsNotAPredecessor(t *testing.T) {
 // The block it needs is admitted as *undecided* itself — its own ancestry is
 // missing — and that is enough, because resolution reads blocks rather than
 // verdicts (spec/05-processing-model.md, "Resolution procedure").
+//
+// This is the divergence scenario of todos/083, and it is the one order that
+// separates a store waking its waiters on an *arrival* from one waking them on
+// an *acceptance*. The same scenario is pinned on the other side by ts/'s "rule
+// 4: the same blocks in the other order reach the same verdicts (todos/083)":
+// two conformant nodes offered these blocks in this order MUST reach the same
+// verdicts, and until todos/083 was applied they did not.
 func TestPendingReferenceIsRevalidatedOnArrival(t *testing.T) {
 	bondTemplate := "_A_ is the capital of _B_"
 	bond := entity.MustBond(bondTemplate)

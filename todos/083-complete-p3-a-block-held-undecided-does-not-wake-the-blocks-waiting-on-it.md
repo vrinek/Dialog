@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "083"
 tags: [reference-implementation, validation, processing-model]
@@ -86,9 +86,9 @@ added later if the wasted validations ever matter.
 
 ## Acceptance Criteria
 
-- [ ] Offering the same blocks in the same order gives the same verdicts in both
+- [x] Offering the same blocks in the same order gives the same verdicts in both
       implementations
-- [ ] Each implementation has a test for the order that separates them today
+- [x] Each implementation has a test for the order that separates them today
 
 ## Work Log
 
@@ -99,6 +99,38 @@ added later if the wasted validations ever matter.
 Found while writing `ValidatingStore.settle`: deciding when to re-offer a held
 block is exactly where the two decisions meet, and the answer `todos/082` gives
 makes an arrival — not an acceptance — the event that matters.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended. An arrival wakes the blocks waiting on it whatever
+verdict the arriving block got.
+
+- `ts/src/block.ts`, `BlockStore.add`: the unvalidated path now calls
+  `retryPending(selfDigest)` too, with the reasoning at the call site — rule 4
+  needed the block *readable*, which a stored-but-unvalidated block is, and rule
+  3 is the one rule that wants it *accepted*, so a rule 3 waiter woken by an
+  undecided arrival fails the same rule again and is re-filed under the same
+  block. `hold`'s doc comment already said "re-validated by the same arrival",
+  which was false before this change and is true after it.
+- `ts/test/block.test.ts`: two tests. "rule 4: the same blocks in the other order
+  reach the same verdicts (todos/083)" is the divergence scenario — Alice's
+  genesis never offered, Alice's second block carrying the bond, Bob's block
+  naming it in `refs`, offered Bob-first; it fails without the fix and passes
+  with it. "rule 3: an undecided arrival re-files the waiter it cannot settle
+  (todos/083)" pins the other branch, which the fix is what makes reachable.
+- `go/block/verdict_test.go`, `TestPendingReferenceIsRevalidatedOnArrival`: the
+  behaviour was already right; the test now names the scenario as this todo's
+  and points at its TypeScript twin, so the two are findable from each other.
+
+**Vectors: no byte moved.** This is a verdict-timing question and touches no
+encoding.
+
+**Left open:** nothing in `spec/05-processing-model.md` *requires* revalidation
+on arrival — it says a node MAY revalidate. Both implementations now agree by
+construction rather than by the specification, which is a conformance gap for
+the third implementation. Filed as `todos/084`.
 
 ## Notes
 

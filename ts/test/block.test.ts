@@ -670,6 +670,80 @@ test("rule 4: a definition resolves from a block the store has not accepted", ()
   assert.equal(store.get(blockDigest(dependent))?.valid, true);
 });
 
+test("rule 4: the same blocks in the other order reach the same verdicts (todos/083)", () => {
+  // The order that separates a store waking its waiters on acceptance from one
+  // waking them on arrival, which is the divergence todos/083 settled. It is
+  // the previous test's blocks offered the other way round, and spec/05,
+  // "Resolution reads blocks, not verdicts", is why the answer must not
+  // differ: Bob's block needs Alice's second block to be *readable*, not to be
+  // valid, so Alice's second block turning up decides Bob's — whatever verdict
+  // it gets itself.
+  const undelivered = publicBlock(ALICE, { ops: [createAtom("a block nobody sent")] });
+  const provider = publicBlock(ALICE, {
+    prev: blockDigest(undelivered),
+    ops: [CAPITAL_OF],
+  });
+  const dependent = publicBlock(BOB, {
+    refs: [blockDigest(provider)],
+    ops: [PARIS, FRANCE, createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+
+  const store = new BlockStore();
+  // Bob's block first: the block its refs name is not held, so rule 4 is
+  // undecided and it waits on Alice's second block.
+  const waiting = store.add(dependent);
+  assert.equal(waiting.status, "unvalidated");
+  assert.deepEqual(waiting.pending?.awaiting, blockDigest(provider));
+
+  // Alice's second block arrives and is itself undecided: its own predecessor
+  // is still missing, so rule 3 cannot be evaluated.
+  const held = store.add(provider);
+  assert.equal(held.status, "unvalidated");
+  assert.deepEqual(held.pending?.awaiting, blockDigest(undelivered));
+
+  // The arrival is what Bob's block was waiting for, and an undecided block is
+  // still a readable one.
+  assert.equal(
+    store.get(blockDigest(dependent))?.valid,
+    true,
+    "the arrival of the block its refs name decided Bob's block",
+  );
+  assert.equal(
+    store.get(blockDigest(provider))?.valid,
+    false,
+    "and settled nothing about Alice's own chain",
+  );
+});
+
+test("rule 3: an undecided arrival re-files the waiter it cannot settle (todos/083)", () => {
+  // The other half of waking on arrival: rule 3 asks for a predecessor that
+  // was *accepted* (spec/02, "Validation" rule 3), so a waiter woken by an
+  // arrival that is itself undecided fails the same rule again and goes back
+  // to waiting on the same block. It is decided when that block is accepted,
+  // and not before.
+  const undelivered = publicBlock(ALICE, { ops: [createAtom("a block nobody sent")] });
+  const middle = publicBlock(ALICE, { prev: blockDigest(undelivered), ops: [CAPITAL_OF] });
+  const tip = publicBlock(ALICE, { prev: blockDigest(middle), ops: [PARIS] });
+
+  const store = new BlockStore();
+  assert.equal(store.add(tip).status, "unvalidated");
+  assert.equal(store.add(middle).status, "unvalidated");
+  assert.equal(
+    store.get(blockDigest(tip))?.valid,
+    false,
+    "an unvalidated block is not a predecessor",
+  );
+
+  // The genesis block turns up, and the chain settles from the bottom up: the
+  // re-filed waiter is still filed under the block it needs accepted.
+  assert.equal(store.add(undelivered).status, "accepted");
+  assert.equal(store.get(blockDigest(middle))?.valid, true);
+  assert.equal(store.get(blockDigest(tip))?.valid, true);
+});
+
 test("rule 4: a digest nothing defines stays invalid when nothing was missing", () => {
   // The other failing outcome: resolution read every block it asked for — the
   // block itself, which has neither ancestors nor refs — so the digest is

@@ -2004,6 +2004,16 @@ export class BlockStore implements BlockSource {
     } catch (error) {
       if (error instanceof BlockError && error.code === "unvalidated") {
         this.hold(selfDigest, bytes, block, error.awaiting);
+        // An arrival wakes the blocks waiting for it whatever verdict it got
+        // itself. Reference resolution reads blocks and not verdicts (spec/05,
+        // "Resolution procedure", "Resolution reads blocks, not verdicts"), so
+        // a rule 4 waiter needed this block to be *readable*, which it now is:
+        // holding it undecided and leaving the waiter to wait would make the
+        // waiter's verdict depend on a chain standing rule 4 never asked
+        // about. Rule 3 is the one rule that wants its block *accepted*, and a
+        // waiter woken for it simply fails rule 3 again and is re-filed under
+        // the same block, at the cost of one validation (todos/083).
+        this.retryPending(selfDigest);
         return { status: "unvalidated", digest: selfDigest, pending: error };
       }
       throw error;
