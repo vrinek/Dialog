@@ -1,0 +1,88 @@
+name: Demo
+
+# The grounding demo (demo/README.md): a second Go module that replays
+# committed Dialog chains through the reference implementation and serves them
+# to an AI assistant over MCP. It is its own module — it requires go/ through a
+# `replace`, and carries the MCP SDK the library deliberately does not — so it
+# gets its own job rather than a step in go.yml, whose whole run is scoped to
+# the library and the vectors it generates.
+#
+# It runs on every push and pull request, not only on changes under demo/: the
+# demo builds against go/ from the working tree, so a change to the library is
+# exactly the kind of change that breaks it, and that is worth being told about
+# in the same run that made it.
+#
+# There is no tag trigger and nothing to release: the demo is not a published
+# module, and go.yml's cache-poisoning suppression has no counterpart here.
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same ref makes the previous run's answer irrelevant.
+concurrency:
+  group: demo-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: demo
+
+jobs:
+  check:
+    name: Build, vet, test, chains
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # This job only reads the repository. Keeping the token in
+          # .git/config afterwards would hand it to every later step, and to
+          # anything those steps run.
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          # demo/go.mod's `toolchain` directive is the version this module is
+          # built with, exactly as go/go.mod is for the library.
+          go-version-file: demo/go.mod
+          cache-dependency-path: demo/go.sum
+
+      - name: Check formatting
+        # gofmt -l exits 0 whether or not it found anything, so the file list
+        # is the failure signal and has to be tested for emptiness.
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean; run 'gofmt -w .' in demo/"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        # -race because the MCP server's view and subscription set are read and
+        # swapped from concurrent handlers; -shuffle=on because a suite whose
+        # order matters is hiding shared state, and the subscription set is
+        # exactly that kind of state.
+        run: go test -count=1 -race -shuffle=on ./...
+
+      - name: Check the committed chains are current
+        # The chains are generated, never hand-edited, and regeneration must be
+        # byte-identical — the discipline vectors/ has. -check rebuilds them in
+        # memory and compares, so a drift is reported without touching the tree.
+        run: go run ./cmd/genchains -check
+
+      - name: Check go.mod tidiness
+        run: go mod tidy -diff
