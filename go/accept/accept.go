@@ -78,6 +78,14 @@
 // contradiction is surfaced between. Other strategies are conformant and the
 // specification says so; this one is recorded there as the reference reading.
 //
+// Every reading reports what produced it. A truth state comes with the
+// Assertions behind it, and an equivalence class, a supersession edge and a
+// contradiction come with their Declarations: the meta-molecule that declared
+// them and the subscribed authors still backing it, each placed in their own
+// chain. Attribution is what the authorship tags of L2 are for, and an
+// application that reports "these two are the same" without being able to add
+// "because gazetteer says so" has laundered an opinion into a fact.
+//
 // A meta-molecule is itself an ordinary entity of the view: it is filtered like
 // any other molecule and Lookup answers for it. What L3 adds is the reading. A
 // molecule whose bond is a standard meta-bond but whose fillers do not fit that
