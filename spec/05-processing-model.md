@@ -40,14 +40,15 @@ When a node receives a block, it MUST:
 1. Validate the block according to the rules in [02-block-format.md](02-block-format.md)
 2. If valid, store the block and make it available for L2 processing
 3. If invalid, reject the block
-4. If the block cannot be validated because a block validation needs is not held and cannot be obtained — its `prev` predecessor, or a block reference resolution must read to decide rule 4 — hold it as **stored but unvalidated**, or discard it — the choice is implementation-scoped
+4. If the block cannot be validated because a block validation needs cannot be read — its `prev` predecessor or a block reference resolution must read to decide rule 4, either not held and unobtainable or held as ciphertext the node has no key for — hold it as **stored but unvalidated**, or discard it — the choice is implementation-scoped
 
 Validation is incremental: because every block in the store was validated when it was received, checking a new block's chain integrity is a lookup among accepted blocks rather than a re-validation of its ancestry. Validity is therefore defined inductively from the genesis block, and the induction is carried by the store (see [02-block-format.md](02-block-format.md), "Validation").
 
-A **stored but unvalidated** block is one whose bytes a node holds and whose validity it has not been able to establish, because a block that validating it requires has not arrived. Two causes produce that state, and they are the same state:
+A **stored but unvalidated** block is one whose bytes a node holds and whose validity it has not been able to establish, because a block that validating it requires is one it cannot read. Three causes produce that state, and they are the same state:
 
 - **Ancestry.** The block's `prev` predecessor is not held, or is itself stored but unvalidated, so rule 3 cannot be decided.
 - **Reference resolution.** Resolving the entity digests the block's operations name needs a block the node does not hold and cannot obtain — an entry of the block's own `refs`, a block reached transitively through one, or an ancestor of the author's own chain that step 3 of the resolution procedure walks — and a digest is still unresolved when resolution runs out of blocks it can read. Rule 4 cannot be decided (see [02-block-format.md](02-block-format.md), "Validation" rule 4, and "Resolution procedure" below).
+- **Readability.** Resolution needs the operations of a block the node *does* hold and cannot read: a private block it has no decryption key for, whose operations are inside its `enc` ciphertext. Rule 4 cannot be decided for the same reason, and what would settle it is a key rather than a block (see "Undecryptable reference handling" below).
 
 Such a block is neither valid nor invalid. A node MAY keep it while it fetches the missing blocks, and MUST validate it once they are available; a node MAY instead discard it and re-request it later. A stored but unvalidated block MUST NOT be made available for L2 processing: its operations contribute nothing to the ontology graph until the block is validated. Nodes MUST NOT treat it as the predecessor of another block for the purposes of rule 3.
 
@@ -119,7 +120,7 @@ The procedure has three outcomes, and rule 4's verdict is whichever one it reach
 
 1. **Every digest resolves.** The rule passes.
 2. **A digest is provably absent from the reachable set.** Resolution completed against the blocks the node holds — every `refs` entry was held and scanned, every block they reach transitively was read, the author's own chain was walked to its genesis block — and no operation anywhere in it creates the digest. Or the scan limit was reached. The digest is unresolvable and the block is **invalid** under rule 4.
-3. **A block resolution needs is not held and cannot be obtained.** The verdict is not determinable: the node has not decided, and the block is **stored but unvalidated** (see "Block reception" above), not invalid. It MUST NOT reach L2 and MUST NOT serve as another block's rule 3 predecessor; it MAY be revalidated when the missing block arrives, and MAY be discarded.
+3. **A block resolution needs cannot be read** — it is not held and cannot be obtained, or it is held as ciphertext the node has no key for ("Undecryptable reference handling" below). The verdict is not determinable: the node has not decided, and the block is **stored but unvalidated** (see "Block reception" above), not invalid. It MUST NOT reach L2 and MUST NOT serve as another block's rule 3 predecessor; it MAY be revalidated when the missing block arrives, and MAY be discarded.
 
 Outcome 3 is reached only when the missing block could have mattered. A `refs` entry demand-driven resolution never needed — because every digest resolved before it — leaves the verdict at outcome 1: nothing was withheld that the block's validity depended on.
 
@@ -152,7 +153,13 @@ The first rule is evaluated as each referenced block is resolved, not by fetchin
 
 ##### Undecryptable reference handling
 
-If a node can decrypt block H but cannot decrypt a block listed in H's `refs`, this is a validation error. The node MUST surface this error to the application layer. The node MUST NOT silently accept the block with partial validation.
+A node can hold a block and still not be able to read it: a private block it has no key for is a byte string where the operations should be. If resolving H's digests needs the operations of such a block — an entry of H's `refs`, a block reached transitively through one, or an ancestor of H's own chain — the node has not decided H's validity. H is **stored but unvalidated**, exactly as it would be if that block had never arrived: it MUST NOT reach L2, it MUST NOT serve as another block's rule 3 predecessor, it MAY be revalidated once the key arrives, and it MAY be discarded. A node MUST NOT record H as invalid on this ground.
+
+Validity is a property of the blocks, not of the node reading them. The same H is decidable for a node that holds the key — the operations are there, and they either define the digest or they do not — so a rejection here would make one node's verdict disagree with another's over a capability rather than over the blocks. A content key can be wrapped for a further recipient at any time (see [04-cryptography.md](04-cryptography.md), "Key management"), so a node that rejected H would have let a key it does not *yet* hold decide that another author's block is wrong. This is the argument of "Absence is not evidence" above, applied to the one other way resolution can fail to read a block it needs.
+
+The node MUST surface the undecided state to the application layer. It is actionable in a way a missing block is not — what is wanted is a key, and only the application layer can seek one — and a node that swallowed it would leave a user wondering why a block never reaches L3. The node MUST NOT silently accept the block with partial validation.
+
+Validation rule 6 is not this case. That rule is about a **public** block naming a private one, which is a defect in the referencing block itself: every node reads a block's `type` in the clear, so the finding is the same at every node and the public block is invalid, not undecided (see [02-block-format.md](02-block-format.md), "Validation" rule 6). The undecided verdict here belongs to a **private** block's `refs`, which MAY name a block of any type, and to a node that holds one of those blocks without holding its key — two authors sharing one chain's key and not the other's.
 
 ##### Fat blocks
 
