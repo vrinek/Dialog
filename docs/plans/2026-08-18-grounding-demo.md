@@ -76,6 +76,37 @@ protocol findings, which get filed as todos like every other phase's.
    `064` changed L3 behaviour, so `errata` also publishes an equivalence it
    withdraws a block later and the chains were regenerated for it.
 2. `dialog-mcp` server + tools + tests (tool-level, over the committed chains).
+   — **done:** `demo/cmd/dialog-mcp` serves the six tools over an `accept.View`
+   on the stdio transport, using the official Go SDK
+   (`github.com/modelcontextprotocol/go-sdk` v1.7.0, the module's only direct
+   dependency beyond the library; it brings eight indirect ones of its own —
+   a JSON Schema implementation, a JSON codec, `x/oauth2`, `x/sync`, `x/time`
+   and a URI-template package. The library module is untouched and keeps its
+   x/crypto-only surface). The chains are embedded in the binary by
+   default, so the command needs no working directory; `-chains DIR` or
+   `$DIALOG_MCP_CHAINS` serves a directory instead, and either way the blocks
+   take the full validating load path of `internal/replay`.
+   `internal/render` is the demo's voice: it resolves a molecule's bond and
+   fillers and spells the sentence — scalars with their unit atoms, datetime
+   ranges as their endpoints, molecule fillers in guillemets so a meta-molecule
+   reads as a statement about a statement — with its template scan pinned to
+   `entity.ParseTemplateVariables` by a test, and reading from L2 rather than
+   the view because filtering is per entity and not transitive
+   (spec/05-processing-model.md, "Filtering rules"). Every response cites full
+   digests, CID text forms and author names; every error distinguishes a
+   malformed identifier, a digest L2 never held, and an entity L2 holds that
+   this subscription set does not admit. The subscription set is process state
+   and documented as such. Tests call the handlers directly over the committed
+   chains — lookup by words, the conflicted Valdoria claim with both authors,
+   both conflicts of the dispute, Holland's class with the equivalence that
+   declared it, the twice-published truth bond's two authorship records, the
+   withdrawn errata equivalence, the supersession chain, and the delta message
+   when `gazetteer` is dropped — plus an in-memory transport test that the six
+   tools list with inferred schemas. Two findings filed: `todos/067` (an applied
+   equivalence or supersession cannot be attributed through the L3 API, so the
+   server scans for the declaring meta-molecules itself) and `todos/068` (L3
+   computes an assertion's position in its author's chain and reports only the
+   block digest).
 3. Walkthrough README + CI (demo module build+test job) + plan closure.
 
 ## Rules for implementing agents
@@ -83,7 +114,7 @@ protocol findings, which get filed as todos like every other phase's.
 Library modules (`go/`, `ts/`) are read-only for this track except where a
 genuine library gap blocks the demo — file a todo instead of patching around
 it, and surface the gap in the report. Spec is normative; protocol findings
-become todos (next free: 067). Checks: demo module `gofmt -l`, `go vet`,
+become todos (next free: 069). Checks: demo module `gofmt -l`, `go vet`,
 `go test` clean before every commit; the repo's full Go battery must stay
 green (the library is untouched, so this is a smoke check). Granular commits,
 required trailers, no pushes.
