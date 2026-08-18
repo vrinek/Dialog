@@ -63,6 +63,11 @@ type Assertion struct {
 	// spec/05-processing-model.md, "Accumulation rules", step 3, and what
 	// gives the assertion its place in the author's block order.
 	Block cid.Digest
+	// Position is that place: where the block sits in the author's chain.
+	// Latest is decided by comparing these, so an application explaining a
+	// truth state quotes the position that decided it — "in their block 4 of
+	// 4" — rather than the 32 bytes of Block.
+	Position ChainPosition
 	// Subject is the molecule the meta-molecule names. It may be a different
 	// molecule from the one queried, when the two are equivalent: an
 	// assertion applies across an equivalence class.
@@ -80,7 +85,7 @@ func (a Assertion) String() string {
 	if a.Latest {
 		suffix = ", latest"
 	}
-	return fmt.Sprintf("%x %s %s (in block %s%s)", a.Author[:8], a.Stance, a.Subject, a.Block, suffix)
+	return fmt.Sprintf("%x %s %s (in block %s, %s%s)", a.Author[:8], a.Stance, a.Subject, a.Block, a.Position, suffix)
 }
 
 // a truthRecord is one assertion placed in its author's block order.
@@ -271,12 +276,13 @@ func (v *View) applyClass(records []truthRecord) {
 	assertions := make([]Assertion, 0, len(records))
 	for _, r := range records {
 		assertions = append(assertions, Assertion{
-			Author:  r.author.public(),
-			Stance:  r.stance,
-			Meta:    r.meta,
-			Block:   r.block,
-			Subject: r.subject,
-			Latest:  r.latest,
+			Author:   r.author.public(),
+			Stance:   r.stance,
+			Meta:     r.meta,
+			Block:    r.block,
+			Position: v.positions[r.block],
+			Subject:  r.subject,
+			Latest:   r.latest,
 		})
 	}
 	v.assertions[class] = assertions

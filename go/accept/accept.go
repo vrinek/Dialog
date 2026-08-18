@@ -135,6 +135,10 @@ type View struct {
 	order   []cid.Digest                      // every in-view digest, ascending
 	byKind  map[block.EntityKind][]cid.Digest // ascending within each kind
 
+	// positions places every block that published an in-view entity in its
+	// author's chain. See BlockPosition.
+	positions map[cid.Digest]ChainPosition
+
 	// class maps an in-view digest to the identity of its equivalence class,
 	// and classMembers maps that identity to the class's in-view members,
 	// ascending. A digest that no equivalence names is its own class.
@@ -153,6 +157,13 @@ type View struct {
 	supersededBy      map[cid.Digest][]cid.Digest // class -> the classes that replace it
 	supersessionEdges []edge                      // between classes
 	contradicts       map[cid.Digest][]cid.Digest // class -> the classes declared to contradict it
+
+	// The declarations behind the three readings above, by class: which
+	// meta-molecule said it, and which subscribed authors still stand behind
+	// it. See Declaration.
+	equivalenceDecls   map[cid.Digest][]Declaration
+	supersessionDecls  map[cid.Digest][]Declaration
+	contradictionDecls map[cid.Digest][]Declaration
 
 	malformed []cid.Digest
 	withdrawn []cid.Digest
@@ -202,6 +213,10 @@ func Build(g *graph.Graph, src block.Source, subs *Subscriptions) (*View, error)
 		supersedes:   make(map[cid.Digest][]cid.Digest),
 		supersededBy: make(map[cid.Digest][]cid.Digest),
 		contradicts:  make(map[cid.Digest][]cid.Digest),
+
+		equivalenceDecls:   make(map[cid.Digest][]Declaration),
+		supersessionDecls:  make(map[cid.Digest][]Declaration),
+		contradictionDecls: make(map[cid.Digest][]Declaration),
 	}
 
 	// 1. Filtering. graph.Entries answers in digest order, so every index
@@ -216,34 +231,43 @@ func Build(g *graph.Graph, src block.Source, subs *Subscriptions) (*View, error)
 		v.byKind[e.Kind()] = append(v.byKind[e.Kind()], d)
 	}
 
-	// 2. Reading the meta-molecules, which are among the entities just
+	// 2. Block order: every block that published one of those entities,
+	// placed in its author's chain. Every reading below reports the positions
+	// it decided by, rather than leaving the application to work them out
+	// again (spec/05-processing-model.md, "Assertion order").
+	order := newBlockOrder(src)
+	if err := v.placeBlocks(order); err != nil {
+		return nil, err
+	}
+
+	// 3. Reading the meta-molecules, which are among the entities just
 	// filtered: they are ordinary molecules and pass or fail like any other.
 	c := read(v)
 	v.malformed = c.malformed
 
-	// 3. Which of them still stand. A meta-molecule its own authors have all
-	// retracted is not applied, and deciding that comes before applying
-	// anything — the equivalence closure of step 4 is one of the things it
-	// decides (spec/06-meta-bonds.md, "Withdrawing meta-molecules").
-	order := newBlockOrder(src)
+	// 4. Which of them still stand, and on whose backing. A meta-molecule its
+	// own authors have all retracted is not applied, and deciding that comes
+	// before applying anything — the equivalence closure of step 5 is one of
+	// the things it decides (spec/06-meta-bonds.md, "Withdrawing
+	// meta-molecules").
 	if err := applyStanding(v, &c, order); err != nil {
 		return nil, err
 	}
 
-	// 4. The equivalence closure, first among the readings, because every
+	// 5. The equivalence closure, first among the readings, because every
 	// other one lands on a class rather than on a bare digest.
 	v.closeEquivalences(c)
 
-	// 5. Truth, which is the only reading that needs block order.
+	// 6. Truth, which is the only reading that needs block order.
 	if err := applyTruth(v, c, order); err != nil {
 		return nil, err
 	}
 
-	// 6. Supersession and contradiction, neither of which needs an order.
+	// 7. Supersession and contradiction, neither of which needs an order.
 	applySupersession(v, c)
 	applyContradictions(v, c)
 
-	// 7. The conflicts found while placing blocks in their order: an
+	// 8. The conflicts found while placing blocks in their order: an
 	// ambiguous succession is an ambiguous order.
 	v.conflicts = append(v.conflicts, order.conflicts...)
 	slices.SortFunc(v.conflicts, compareConflicts)
@@ -283,6 +307,15 @@ func (v *View) closeEquivalences(c claims) {
 		}
 		v.class[d] = root
 		v.classMembers[root] = append(v.classMembers[root], d)
+	}
+	// The record of who said so. A declaration is filed against the class of
+	// each end it names that the view holds — the same class for both ends,
+	// the union having just put them there — so that EquivalenceDeclarations
+	// answers for any member. A declaration naming nothing the view holds
+	// unifies nothing and is filed nowhere; the meta-molecule is still an
+	// entity of the view and Lookup still answers for it.
+	for _, cl := range c.equivalences {
+		v.declare(v.equivalenceDecls, cl, cl.a, cl.b)
 	}
 }
 
@@ -397,6 +430,7 @@ func (v *View) Assertions(d cid.Digest) []Assertion {
 	for i, a := range src {
 		out[i] = a
 		out[i].Author = slices.Clone(a.Author)
+		out[i].Position = a.Position.clone()
 	}
 	slices.SortFunc(out, func(x, y Assertion) int {
 		if c := compareKeys(x.Author, y.Author); c != 0 {

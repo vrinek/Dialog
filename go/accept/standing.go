@@ -16,6 +16,10 @@ type standingRecord struct {
 	retract bool
 }
 
+// authorSet is the set of authors whose backing still stands, as standing
+// reports it back to applyStanding.
+type authorSet map[authorKey]bool
+
 // compareStandingRecords groups an author's statements by lineage and orders
 // them within it, which is the only order this file needs and one that does not
 // depend on the order the blocks arrived in.
@@ -30,8 +34,9 @@ func compareStandingRecords(a, b standingRecord) int {
 }
 
 // applyStanding drops the equivalences, contradictions and supersessions whose
-// authors have all taken them back, and records them for
-// View.WithdrawnMetaMolecules.
+// authors have all taken them back, records them for
+// View.WithdrawnMetaMolecules, and keeps the backing of the ones that survive
+// for View.EquivalenceDeclarations and its two siblings.
 //
 // "Implementations MUST apply a meta-molecule's semantics while at least one
 // subscribed author who published it still backs it [and] MUST NOT apply them
@@ -79,15 +84,16 @@ func applyStanding(v *View, c *claims, order *blockOrder) error {
 	keep := func(gated []claim) ([]claim, error) {
 		out := gated[:0:0]
 		for _, cl := range gated {
-			stands, err := standing(cl, bySubject, order)
+			backers, err := standing(cl, bySubject, order)
 			if err != nil {
 				return nil, err
 			}
-			if stands {
-				out = append(out, cl)
+			if len(backers) == 0 {
+				withdrawn.add(cl.meta)
 				continue
 			}
-			withdrawn.add(cl.meta)
+			cl.backing = v.backing(cl, backers)
+			out = append(out, cl)
 		}
 		return out, nil
 	}
@@ -106,9 +112,16 @@ func applyStanding(v *View, c *claims, order *blockOrder) error {
 	return nil
 }
 
-// standing reports whether at least one subscribed author who published this
-// meta-molecule still backs it.
-func standing(cl claim, bySubject map[cid.Digest][]claim, order *blockOrder) (bool, error) {
+// standing returns the subscribed authors who published this meta-molecule and
+// still back it. An empty set is a withdrawn meta-molecule: nobody is left
+// behind it.
+//
+// The answer is per author rather than a bare yes, because attribution is the
+// point of the gate. One author of a jointly published equivalence can retract
+// theirs and leave the equivalence standing on the other's word, and an
+// application reporting who says so must name the author who still does and not
+// the one who stopped (spec/06-meta-bonds.md, "Withdrawing meta-molecules").
+func standing(cl claim, bySubject map[cid.Digest][]claim, order *blockOrder) (authorSet, error) {
 	publisher := make(map[authorKey]bool, len(cl.prov))
 	records := make([]standingRecord, 0, len(cl.prov))
 	for _, a := range cl.prov {
@@ -118,13 +131,13 @@ func standing(cl claim, bySubject map[cid.Digest][]claim, order *blockOrder) (bo
 		}
 		pos, err := order.of(a.Block)
 		if err != nil {
-			return false, fmt.Errorf("accept: ordering the publication of %s: %w", cl.meta, err)
+			return nil, fmt.Errorf("accept: ordering the publication of %s: %w", cl.meta, err)
 		}
 		publisher[author] = true
 		records = append(records, standingRecord{author: author, pos: pos})
 	}
 	if len(records) == 0 { // unreachable: an entity is in the view because a subscribed author published it
-		return false, nil
+		return nil, nil
 	}
 
 	for _, t := range bySubject[cl.meta] {
@@ -135,7 +148,7 @@ func standing(cl claim, bySubject map[cid.Digest][]claim, order *blockOrder) (bo
 			}
 			pos, err := order.of(a.Block)
 			if err != nil {
-				return false, fmt.Errorf("accept: ordering the assertion %s about %s: %w", t.meta, cl.meta, err)
+				return nil, fmt.Errorf("accept: ordering the assertion %s about %s: %w", t.meta, cl.meta, err)
 			}
 			records = append(records, standingRecord{
 				author: author, pos: pos, retract: t.stance == Retracted,
@@ -149,6 +162,7 @@ func standing(cl claim, bySubject map[cid.Digest][]claim, order *blockOrder) (bo
 	// backing stands unless every record at that last position is a retraction,
 	// so an author who publishes and retracts at the same point of their chain
 	// has said two things no ordering settles and has withdrawn nothing.
+	backers := make(authorSet, len(publisher))
 	for start := 0; start < len(records); {
 		end := start
 		for end < len(records) &&
@@ -157,16 +171,36 @@ func standing(cl claim, bySubject map[cid.Digest][]claim, order *blockOrder) (bo
 			end++
 		}
 		last := records[end-1].pos.index // the group is sorted by index
-		stands := false
 		for i := start; i < end; i++ {
 			if records[i].pos.index == last && !records[i].retract {
-				stands = true
+				backers[records[i].author] = true
+				break
 			}
-		}
-		if stands {
-			return true, nil
 		}
 		start = end
 	}
-	return false, nil
+	return backers, nil
+}
+
+// backing turns the standing authors into the record an application reads: one
+// entry per authorship tag of the meta-molecule whose author still backs it,
+// placed in that author's chain.
+//
+// The entries come from cl.prov, which the filtering step built ascending by
+// author and then by block, so an author who published the same meta-molecule
+// in two blocks backs it from both and both are reported.
+func (v *View) backing(cl claim, backers authorSet) []Backing {
+	var out []Backing
+	for _, a := range cl.prov {
+		author, ok := keyOf(a.Author)
+		if !ok || !backers[author] {
+			continue
+		}
+		out = append(out, Backing{
+			Author:   slices.Clone(a.Author),
+			Block:    a.Block,
+			Position: v.positions[a.Block],
+		})
+	}
+	return out
 }

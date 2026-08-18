@@ -18,6 +18,9 @@ import (
 type claim struct {
 	// meta is the meta-molecule's digest.
 	meta cid.Digest
+	// template is the standard meta-bond's template, as the claim's reading
+	// is reported by Declaration.Template.
+	template string
 	// a and b are the entities its fillers name. A one-filler meta-bond —
 	// "_A_ is true", "_A_ is untrue" — leaves b zero.
 	a, b cid.Digest
@@ -34,6 +37,11 @@ type claim struct {
 	// subscribed author published it, and only subscribed authors' assertions
 	// have effect.
 	prov []graph.Authorship
+	// backing are the subscribed authors of prov who still stand behind the
+	// claim, filled by applyStanding for the three gated meta-bonds and left
+	// empty for the two truth ones, which are not gated. A gated claim that
+	// survives has at least one. See Declaration.
+	backing []Backing
 }
 
 // claims is every meta-molecule of the view, sorted into what it declares.
@@ -108,7 +116,7 @@ func read(v *View) claims {
 // readOne checks one meta-molecule's fillers against its template and returns
 // the claim it makes. ok is false for a molecule whose fillers do not fit.
 func readOne(d cid.Digest, template string, fillers []entity.Filler, prov []graph.Authorship) (claim, bool) {
-	c := claim{meta: d, prov: prov}
+	c := claim{meta: d, template: template, prov: prov}
 	switch template {
 	case entity.TemplateEquivalence:
 		// "Declares transitive equivalence between two entities of the same

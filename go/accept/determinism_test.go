@@ -27,7 +27,8 @@ func fingerprint(v *View) string {
 		d := e.Digest()
 		fmt.Fprintf(&b, "entity %s %s %x\n", e.Kind(), d, e.Entity().Bytes())
 		for _, a := range e.Authors() {
-			fmt.Fprintf(&b, "  by %x in %s\n", a.Author, a.Block)
+			pos, placed := v.BlockPosition(a.Block)
+			fmt.Fprintf(&b, "  by %x in %s at %s (%v)\n", a.Author, a.Block, pos, placed)
 		}
 		fmt.Fprintf(&b, "  truth=%s superseded=%v\n", v.Truth(d), v.IsSuperseded(d))
 		fmt.Fprintf(&b, "  class=%s\n", digests(v.EquivalenceClass(d)))
@@ -37,6 +38,9 @@ func fingerprint(v *View) string {
 		for _, a := range v.Assertions(d) {
 			fmt.Fprintf(&b, "  assertion %v\n", a)
 		}
+		writeDeclarations(&b, "equivalence", v.EquivalenceDeclarations(d))
+		writeDeclarations(&b, "supersession", v.SupersessionDeclarations(d))
+		writeDeclarations(&b, "contradiction", v.ContradictionDeclarations(d))
 	}
 	for _, k := range []block.EntityKind{block.KindAtom, block.KindBond, block.KindMolecule} {
 		fmt.Fprintf(&b, "kind %s %s\n", k, digests(v.DigestsOfKind(k)))
@@ -58,6 +62,18 @@ func fingerprint(v *View) string {
 	fmt.Fprintf(&b, "malformed=%s\n", digests(v.MalformedMetaMolecules()))
 	fmt.Fprintf(&b, "withdrawn=%s\n", digests(v.WithdrawnMetaMolecules()))
 	return b.String()
+}
+
+// writeDeclarations renders one reading's provenance — the meta-molecules
+// behind it and the authors still backing each, with the block positions they
+// were decided by.
+func writeDeclarations(b *strings.Builder, kind string, decls []Declaration) {
+	for _, d := range decls {
+		fmt.Fprintf(b, "  %s declaration %v\n", kind, d)
+		for _, back := range d.Backing {
+			fmt.Fprintf(b, "    backed %v\n", back)
+		}
+	}
 }
 
 // TestDeterministicView rebuilds the same view a hundred times from the same

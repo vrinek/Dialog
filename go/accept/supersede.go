@@ -59,6 +59,9 @@ func applySupersession(v *View, c claims) {
 				by[e].add(k)
 			}
 		}
+		// The record behind the edge, readable from either end: see
+		// View.SupersessionDeclarations.
+		v.declare(v.supersessionDecls, cl, cl.a, cl.b)
 	}
 	slices.SortFunc(v.supersessionEdges, compareEdges)
 
@@ -149,6 +152,10 @@ func applyContradictions(v *View, c claims) {
 				by[e].add(k)
 			}
 		}
+		// The same record per entity that Conflict.Meta and
+		// Conflict.Declarers report per surfaced conflict: see
+		// View.ContradictionDeclarations.
+		v.declare(v.contradictionDecls, cl, cl.a, cl.b)
 	}
 	slices.SortFunc(pairs, compareEdges)
 	for _, e := range pairs {

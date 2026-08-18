@@ -2,6 +2,7 @@ package accept
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"slices"
@@ -29,6 +30,136 @@ type position struct {
 	lineage cid.Digest
 	// index counts blocks from that genesis block, which is index 0.
 	index int
+}
+
+// A ChainPosition is where a block sits in its author's chain: the block order
+// of spec/05-processing-model.md, "Assertion order", reported rather than only
+// used.
+//
+// L3 has to compute it — "the later assertion (by block order) takes
+// precedence" (spec/06-meta-bonds.md, "Truth retraction") is a statement about
+// position in a chain, and it is why Build needs an L1 block source at all. An
+// application that wants to explain a truth state rather than assert it needs
+// the same thing: "gazetteer says it is untrue, in gazetteer block 4 of 4,
+// their last word" is checkable, and a bare block digest is not.
+//
+// The zero value places nothing. See View.BlockPosition and Assertion.Position.
+type ChainPosition struct {
+	// Author is the key the block is signed with — the author of everything
+	// the block published.
+	Author ed25519.PublicKey
+	// Lineage identifies the chain the block belongs to: the digest of the
+	// oldest genesis block this node can follow the succession back to. It is
+	// an identifier and not a key; two positions are comparable only when
+	// their lineages are equal, because "the assertions of two different
+	// authors are not ordered against each other"
+	// (spec/05-processing-model.md, "Assertion order").
+	Lineage cid.Digest
+	// Height counts blocks from that genesis block, which is height 0. The
+	// count continues across a key rotation: "every block of a successor chain
+	// comes after every block of the chain it succeeds" (same section), so the
+	// first block of a successor chain is one past the rotation block, and a
+	// successor's genesis block is height 0 only when this node cannot verify
+	// the succession behind it.
+	Height int
+	// Length is how far the lineage runs as this view can see it: one past the
+	// Height of the furthest block the view placed. A view that holds
+	// something from its author's tip therefore reports the whole chain's
+	// length, which is what makes "block 4 of 4" sayable; a view that holds
+	// nothing published after block 2 reports 3, because block 3 is not a
+	// block it was given any reason to read.
+	Length int
+}
+
+// IsZero reports whether the position places nothing.
+func (p ChainPosition) IsZero() bool { return p.Length == 0 }
+
+func (p ChainPosition) String() string {
+	if p.IsZero() {
+		return "unplaced"
+	}
+	return fmt.Sprintf("block %d of %d by %x", p.Height+1, p.Length, p.Author[:8])
+}
+
+func (p ChainPosition) clone() ChainPosition {
+	p.Author = slices.Clone(p.Author)
+	return p
+}
+
+// BlockPosition returns where a block sits in its author's chain, for any block
+// that published an entity of the view. ok is false for a block the view had no
+// reason to place: one outside it, or one whose only entities filtering left
+// out.
+//
+// This is the same order every truth reading in this package is decided by, so
+// an application explaining a decision quotes the position that made it rather
+// than recomputing one that might differ (spec/05-processing-model.md,
+// "Assertion order").
+func (v *View) BlockPosition(d cid.Digest) (ChainPosition, bool) {
+	p, ok := v.positions[d]
+	if !ok {
+		return ChainPosition{}, false
+	}
+	return p.clone(), true
+}
+
+// placeBlocks records the position of every block that published an entity of
+// the view, so that BlockPosition can answer for the provenance tags the view
+// hands out and not only for the assertions it read.
+//
+// It runs before any meta-bond is applied, which is what lets every later
+// reading report a position without ordering anything twice: blockOrder
+// memoizes, so the walks here are the same walks standing and truth would have
+// made.
+//
+// Every such block is one L1 validated and holds — "for each valid block in L1"
+// (spec/05-processing-model.md, "Accumulation rules") — so one the source does
+// not hold is an inconsistency between the layers and an error, exactly as it is
+// when an assertion cannot be ordered.
+func (v *View) placeBlocks(order *blockOrder) error {
+	type published struct {
+		block  cid.Digest
+		author ed25519.PublicKey
+	}
+	var (
+		seen digestSet
+		list []published
+	)
+	for _, d := range v.order {
+		for _, a := range v.entries[d].Authors() {
+			if seen.has(a.Block) {
+				continue
+			}
+			seen.add(a.Block)
+			list = append(list, published{block: a.Block, author: a.Author})
+		}
+	}
+	// Ascending by block digest, so the walks — and any ambiguous succession
+	// they surface — happen in an order the arrival of blocks cannot change.
+	slices.SortFunc(list, func(x, y published) int { return compareDigests(x.block, y.block) })
+
+	v.positions = make(map[cid.Digest]ChainPosition, len(list))
+	length := make(map[cid.Digest]int, len(list))
+	for _, p := range list {
+		pos, err := order.of(p.block)
+		if err != nil {
+			return fmt.Errorf("accept: placing block %s in its chain: %w", p.block, err)
+		}
+		v.positions[p.block] = ChainPosition{
+			Author:  slices.Clone(p.author),
+			Lineage: pos.lineage,
+			Height:  pos.index,
+		}
+		if pos.index+1 > length[pos.lineage] {
+			length[pos.lineage] = pos.index + 1
+		}
+	}
+	for _, p := range list {
+		pos := v.positions[p.block]
+		pos.Length = length[pos.Lineage]
+		v.positions[p.block] = pos
+	}
+	return nil
 }
 
 // A lineage is one logical author's whole block sequence: a chain, extended
