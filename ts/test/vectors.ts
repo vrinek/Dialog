@@ -33,10 +33,22 @@ export interface VectorCase {
   cid?: string;
   cid_text?: string;
   kind?: string;
-  type?: number;
+  type?: number | string;
   description?: string;
   template?: string;
   variables?: string[];
+  // Block cases (`blocks.json`).
+  author?: string;
+  prev?: string | null;
+  refs?: string[];
+  ts?: number;
+  enc?: string;
+  nonce?: string;
+  signing_bytes?: string;
+  signing_input?: string;
+  signature?: string;
+  block?: string;
+  blocks?: string[];
 }
 
 export interface VectorSection {
@@ -45,11 +57,20 @@ export interface VectorSection {
   cases: VectorCase[];
 }
 
+/** A test key from a file's `inputs`, with its published private material. */
+export interface VectorKey {
+  name: string;
+  seed: string;
+  private_key: string;
+  public_key: string;
+}
+
 export interface VectorFile {
   vectors: string;
   area: string;
   description: string;
   spec: string[];
+  inputs?: { note?: string; keys?: VectorKey[] };
   sections: VectorSection[];
 }
 

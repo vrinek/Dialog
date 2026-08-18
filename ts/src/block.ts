@@ -1373,6 +1373,13 @@ export interface ValidationReport {
   readonly uncheckedRefs: readonly Uint8Array[];
   /** How many foreign blocks reference resolution scanned. */
   readonly scanned: number;
+  /**
+   * Present when this block's `ts` is earlier than its predecessor's. The
+   * field SHOULD be monotonic and implementations SHOULD warn when it is not
+   * (spec/02, the `ts` row), but a timestamp is self-reported and untrusted:
+   * this is a warning and never a validity decision.
+   */
+  readonly nonMonotonicTimestamp?: { readonly previous: bigint; readonly current: bigint };
   /** False when the source cannot answer sibling queries, so rule 9 could not
    * be evaluated. */
   readonly forkDetectionPerformed: boolean;
@@ -1423,7 +1430,19 @@ export function validateBlock(
   }
 
   // Rule 3: chain integrity.
-  checkChainIntegrity(block, selfDigest, source);
+  const predecessor = checkChainIntegrity(block, selfDigest, source);
+
+  // The `ts` SHOULD be monotonic within a chain; a node SHOULD warn when it is
+  // not, and MUST NOT decide validity on it.
+  let nonMonotonicTimestamp: { previous: bigint; current: bigint } | undefined;
+  if (
+    predecessor !== undefined &&
+    isPlaintextBlock(block) &&
+    isPlaintextBlock(predecessor.block) &&
+    block.ts < predecessor.block.ts
+  ) {
+    nonMonotonicTimestamp = { previous: predecessor.block.ts, current: block.ts };
+  }
 
   const uncheckedRefs: Uint8Array[] = [];
   let scanned = 0;
@@ -1500,6 +1519,7 @@ export function validateBlock(
     digest: selfDigest,
     ...(fork === undefined ? {} : { fork }),
     ...(succession === undefined ? {} : { succession }),
+    ...(nonMonotonicTimestamp === undefined ? {} : { nonMonotonicTimestamp }),
     uncheckedRefs,
     scanned,
     forkDetectionPerformed,
@@ -1516,7 +1536,11 @@ function article(kind: Entity["kind"]): string {
  * accepted as valid, carrying the same `pub`; and no block may be appended to a
  * chain a rotation block has ended (spec/02, "rotate_key").
  */
-function checkChainIntegrity(block: Block, selfDigest: Uint8Array, source: BlockSource): void {
+function checkChainIntegrity(
+  block: Block,
+  selfDigest: Uint8Array,
+  source: BlockSource,
+): StoredBlock | undefined {
   const rotation = source.rotationOf?.(block.pub);
   if (rotation !== undefined && !bytesEqual(rotation.digest, selfDigest)) {
     throw new BlockError(
@@ -1525,7 +1549,7 @@ function checkChainIntegrity(block: Block, selfDigest: Uint8Array, source: Block
     );
   }
 
-  if (block.prev === null) return;
+  if (block.prev === null) return undefined;
 
   const predecessor = source.get(block.prev);
   if (predecessor === undefined) {
@@ -1552,6 +1576,7 @@ function checkChainIntegrity(block: Block, selfDigest: Uint8Array, source: Block
       "prev names a rotation block, which is the last block of its chain: the new key begins a separate chain",
     );
   }
+  return predecessor;
 }
 
 /** Rule 9: another held block of this chain claiming the same predecessor. */
