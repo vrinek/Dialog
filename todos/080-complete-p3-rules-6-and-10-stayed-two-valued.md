@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "080"
 tags: [block-format, processing-model, validation, specification-gap]
@@ -109,12 +109,15 @@ only when the missing block could have mattered".
 
 ## Acceptance Criteria
 
-- [ ] *Unchecked* has a stated consequence for the block that carries it
-- [ ] The specification says whether a node MUST re-evaluate rules 6 and 10 when
+- [x] *Unchecked* has a stated consequence for the block that carries it
+      (none: the block is valid, and the status names what the verdict does not
+      cover)
+- [x] The specification says whether a node MUST re-evaluate rules 6 and 10 when
       a previously unheld `refs` entry arrives, and what happens to a block
-      already promoted to L2 if it then fails
-- [ ] The asymmetry with rule 4's third outcome is either justified in the text
-      or removed
+      already promoted to L2 if it then fails (it is not obliged to, MUST NOT
+      invalidate what it accepted, and nothing in L2 is undone)
+- [x] The asymmetry with rule 4's third outcome is either justified in the text
+      or removed (justified, in rule 6)
 
 ## Work Log
 
@@ -126,6 +129,57 @@ Found while writing rule 4's third outcome: the rule immediately below it
 handles the same missing block with a different status, a different vocabulary
 and no stated consequence. 078 was ratified as Option 1, which deliberately did
 not unify the vocabularies; this is what it left behind.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1, stated as verdict stability. Rules 6 and
+10 bind only for the `refs` entries a validation of that block resolved. An
+entry no validation resolved is permanently outside the block's validity: a
+block once valid stays valid, and discovering later — in another block's context
+— that an unresolved entry names a private or own-chain block MUST NOT flip the
+verdict. That answers the L2 question by dissolving it: nothing is undone in an
+append-only graph, because nothing changes. *Unchecked* is explicitly
+informational — it tells the application which entries the verdict does not
+cover, and nothing more.
+
+**Changes:**
+
+- `spec/02-block-format.md`: the "Validation" preamble gained "A verdict moves
+  in one direction"; rule 6 gained the meaning of *unchecked*, the binding
+  scope, the MUST NOT re-open an accepted verdict, and the justification of the
+  asymmetry with rule 4 (an unresolved digest means the node cannot show the
+  block **sound**; an unchecked entry only that it has not found it
+  **unsound**); rule 10's own-chain half cites both.
+- `spec/05-processing-model.md`: "Public/private reference rules" gained the
+  matching paragraph — the evaluation point fixes what the verdict covers, a
+  node is not obliged to re-evaluate, and what it MAY do is surface the finding.
+- `go/block/validate.go`: behaviour already matched — an unheld entry is a
+  warning and never a rejection, and the package records no verdicts. The
+  report gained `UncheckedRefs`, which names the entries rules 6 and 10 could
+  not be evaluated against, so that a caller can tell which parts of an accepted
+  verdict it must never re-open; the doc comments cite the rule.
+- `go/block/validate_test.go`: new `TestUncheckedRefsAreInformational`.
+- `ts/src/block.ts`: `BlockStore` already enforced the rule — a block stored as
+  valid is never re-validated, so an entry arriving later cannot invalidate it.
+  The doc comments on `uncheckedRefs` and on the rules 6/10 pass say so.
+- `ts/test/block.test.ts`: a public block naming a not-yet-held private block is
+  accepted, stays valid when that block arrives and is a duplicate when offered
+  again — while a store that held the private block first still rejects it, so
+  the rule itself is undiminished.
+
+**Not changed, deliberately.** Both implementations check rules 6 and 10 against
+every `refs` entry the source holds at validation time, not only against the
+entries a digest needed. `vectors/blocks.json`'s
+`public_block_references_a_private_block` pins that reading — its rejected block
+carries a `create_atom`, so resolution needs nothing — and the specification's
+"once it holds" trigger is unchanged. What the decision forbids is re-opening an
+accepted verdict, which is the caller's obligation in Go, where `Validate` is a
+function of a block and a source. `todos/081` asks whether that leaves an edge
+worth closing in the API.
+
+**Vectors: no byte moved.** `genvectors` reproduces `vectors/` byte for byte.
 
 ## Notes
 

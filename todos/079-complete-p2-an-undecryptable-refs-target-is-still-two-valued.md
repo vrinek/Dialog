@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "079"
 tags: [processing-model, block-format, validation, cryptography, specification-gap]
@@ -108,10 +108,10 @@ way resolution can fail to read a block it holds.
 
 ## Acceptance Criteria
 
-- [ ] The specification says whether a `refs` target the node holds and cannot
+- [x] The specification says whether a `refs` target the node holds and cannot
       decrypt makes the referencing block invalid or undecided
-- [ ] Rule 4's third outcome either covers the case or explicitly excludes it
-- [ ] Both implementations agree with the text, and a test pins the verdict
+- [x] Rule 4's third outcome either covers the case or explicitly excludes it
+- [x] Both implementations agree with the text, and a test pins the verdict
 
 ## Work Log
 
@@ -123,6 +123,58 @@ Found while making rule 4 three-valued: the new outcome is defined for a block
 that is not held, and the one other way resolution can fail to read a block it
 needs — holding it as ciphertext without a key — was left on the old two-valued
 reading in both the specification and both implementations.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. A `refs` target the node holds and cannot
+decrypt — or one reached transitively, or a private ancestor of the author's own
+chain — leaves the referencing block in the same *stored but unvalidated* state
+`todos/078` defined: undecidable **by this node**, revalidatable if the key
+arrives, MUST NOT reach L2, and the node MUST still surface the situation to the
+application. The existing MUST stays, reworded from "a validation error" to the
+undecided state; the MUST NOT silently accept stays as it was. The reason is the
+one 078 accepted: validity is objective, the same block is decidable for a key
+holder, and a capability this node lacks is not evidence about the block — the
+more so as a content key can be wrapped for a further recipient at any time.
+Rule 6 is untouched and is explicitly not this case: a *public* block naming a
+private one is a defect every node reads in the clear, and it is invalid on
+discovery; 079 is about a *private* block's `refs`, which may name any type.
+
+**Changes:**
+
+- `spec/05-processing-model.md`: "Undecryptable reference handling" rewritten —
+  the verdict, the rationale, the surfacing MUST, and the contrast with rule 6.
+  The *stored but unvalidated* definition gained **readability** as its third
+  cause, "Block reception" step 4 and the resolution procedure's outcome 3 name
+  it.
+- `spec/02-block-format.md`: the "Validation" preamble and rule 4's third
+  outcome cover a block held without its key; the MUST NOT records "neither the
+  absence of a block nor the absence of a key is evidence about validity".
+- `go/block/validate.go`: the resolver records the first block it needed, held
+  and could not read. A digest unresolved with that gap open is a rule 4 error
+  wrapping the new `ErrUndecryptable`, which `IsUnvalidated` now answers true to
+  beside `ErrNotFound`; the error names the block a key is wanted for, which is
+  the surfacing. `go/block/payload.go`'s `ValidatePayload` doc says the same for
+  the key holder's pass.
+- `go/block/validate_test.go`: new `TestUndecryptableReferenceIsUndecided` — a
+  private `refs` target held without its key is undecided, stable across
+  validations and valid once a `Decrypter` supplies the payload; a private
+  ancestor of a public block's own chain is the same; an unreadable block no
+  digest needs decides nothing.
+- `ts/src/block.ts`: the resolver exposes `unreadableBlock`, rule 4 throws
+  `unvalidated` for it, and `BlockError` carries `undecryptable` — separate from
+  `awaiting`, because no arrival settles it and the store has nothing to file
+  the held block under. TypeScript has no decryption, so any private block its
+  resolution reaches is one of these.
+- `ts/test/block.test.ts`: three tests — a public block over a private ancestor,
+  one reached through the refs graph, and an unreadable block no digest needs.
+
+**Vectors: no byte moved.** No case in `vectors/blocks.json` depends on an
+unreadable block: the rule 6 case rejects on the referencing block's own type
+and the rule 4 cases hold every block resolution reads. `genvectors` reproduces
+`vectors/` byte for byte.
 
 ## Notes
 
