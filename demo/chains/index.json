@@ -1,0 +1,137 @@
+{
+  "format": "dialog-demo-chains/1",
+  "description": "The Dialog grounding demo's three author chains, one file per block.",
+  "generator": "go run ./cmd/genchains",
+  "chains": [
+    {
+      "author": "atlas",
+      "public_key": "bc7bd1e9402df7543daa93ce16f430ae49daacf41bc11212b80a897b597799f9",
+      "blocks": [
+        {
+          "index": 0,
+          "file": "atlas/000.block",
+          "digest": "5693c25cc1b72b71fca62897d451d821a3e6dc4738c76c42d98d333a96d91fa9",
+          "cid": "bafyreicwspbfzqnxfny7zjris7kfdwbbuptnyrzyy5wefwmngm5jnwi7ve",
+          "ops": 5,
+          "size": 395
+        },
+        {
+          "index": 1,
+          "file": "atlas/001.block",
+          "digest": "302b0ea052802a0264a9e2cf9d0df2a0fd15bf41ca70956361af9e29567eeb9c",
+          "cid": "bafyreibqfmhkauuafibgjkpcz6oq34va7uk36qokockwgynptyuvm7xltq",
+          "ops": 22,
+          "size": 965
+        },
+        {
+          "index": 2,
+          "file": "atlas/002.block",
+          "digest": "4d1c622f5dd800950395c7f42ed91ac6f9a5d4540df9f9547f8b6e79046eba30",
+          "cid": "bafyreicndrrc6xoyackqhfoh6qxnsgwg7gs5ivan7h4vi74lnz4qi3v2ga",
+          "ops": 11,
+          "size": 1964
+        },
+        {
+          "index": 3,
+          "file": "atlas/003.block",
+          "digest": "e89c73df95b9693ba87cb7dcdd0d29b8315b727c39d655556e1bf77ef8c543a4",
+          "cid": "bafyreihitrz57fnzne52q7fx3toq2knygfnxe7bz2zkvk3q3657prrkduq",
+          "ops": 11,
+          "size": 2855
+        },
+        {
+          "index": 4,
+          "file": "atlas/004.block",
+          "digest": "f01091ad9097c965443cfe35d245923c62c6633e98eb2083bfa72a524cecc01d",
+          "cid": "bafyreihqcci23eexzfsuiph6gxjeler4mldggpuy5mqihp5hfjjez3gadu",
+          "ops": 11,
+          "size": 2148
+        },
+        {
+          "index": 5,
+          "file": "atlas/005.block",
+          "digest": "b58fe9ed70a56b59863ba2abb887e6faf2fc1b32e26ae4cb21303304e1b875e1",
+          "cid": "bafyreifvr7u624ffnnmymo5cvo4ipzx26l6bwmxcnlsmwijqgmcododv4e",
+          "ops": 2,
+          "size": 334
+        }
+      ]
+    },
+    {
+      "author": "gazetteer",
+      "public_key": "3a1afa88f4556116fc671949c976afc708f840b83ef4b94e596b2df0ce9e4e05",
+      "blocks": [
+        {
+          "index": 0,
+          "file": "gazetteer/000.block",
+          "digest": "c52a0528fed5806fa700da8381bb892872b8841a207749d415d1608177c26bbf",
+          "cid": "bafyreigfficsr7wvqbx2oag2qoa3xcjiok4iigrao5e5iformcaxpqtlx4",
+          "ops": 10,
+          "size": 560
+        },
+        {
+          "index": 1,
+          "file": "gazetteer/001.block",
+          "digest": "dc58de0fb49778fb310690c0f1073618eabb6d68915c69e21470f06181793f1b",
+          "cid": "bafyreig4ldpa7nexpd5tcbuqydyqonqy5k5w22erlru6efdq6bqyc6j7dm",
+          "ops": 5,
+          "size": 1060
+        },
+        {
+          "index": 2,
+          "file": "gazetteer/002.block",
+          "digest": "81b69e87b85f437770be49edf8fa823340ac4120c357e6ec437d4f0a7070aff8",
+          "cid": "bafyreiebw2pipoc7in3xbpsj5x4pvarticwecigdk7toyq35j4fha4fp7a",
+          "ops": 3,
+          "size": 736
+        },
+        {
+          "index": 3,
+          "file": "gazetteer/003.block",
+          "digest": "b7213d28ba2747c49eb5118fb5aff9171a8d3e7e463fa4be5abaa9626a5aa455",
+          "cid": "bafyreifxee6srorhi7cj5nirr62276ixdkgt47sgh6sl4wv2vfrguwveku",
+          "ops": 4,
+          "size": 838
+        }
+      ]
+    },
+    {
+      "author": "errata",
+      "public_key": "6b06356942551947bc908ee9fce73f195d8ce2e9eedcad50698b2bf666ef0c1e",
+      "blocks": [
+        {
+          "index": 0,
+          "file": "errata/000.block",
+          "digest": "510074caa87f6d790a672fd8f280c8cc71dd3ac76f32e6faf41466eb42e2f23f",
+          "cid": "bafyreicrab2mvkd7nv4quzzp3dzibsgmohotvr3pgltpv5aum3vufyxsh4",
+          "ops": 3,
+          "size": 700
+        },
+        {
+          "index": 1,
+          "file": "errata/001.block",
+          "digest": "01bde8a00ecf977d1fbbf131c5fcebbf7d8bebf2ec65c94b1a63861f6b8be4df",
+          "cid": "bafyreiabxxukadwps56r7o7rghc7z257pwf6x4xmmxeuwgtdqypwxc7e34",
+          "ops": 2,
+          "size": 655
+        },
+        {
+          "index": 2,
+          "file": "errata/002.block",
+          "digest": "4445b760db8a5cc029533c979ff5eab985afd442f44e4c1138acca8a3ed7c902",
+          "cid": "bafyreiceiw3wbw4kltacsuz4s6p7l2vzqwx5iqxujzgbcofmzkfd5v6jai",
+          "ops": 2,
+          "size": 642
+        },
+        {
+          "index": 3,
+          "file": "errata/003.block",
+          "digest": "1baacc44e4b8a513c5cee1f9a2d4e7c5a4e415eb4ec12b69bcf8a96f63868cf8",
+          "cid": "bafyreia3vlgejzfyuuj4ltxb7grnjz6futsbl22oyevwtphyvfxwhbum7a",
+          "ops": 1,
+          "size": 331
+        }
+      ]
+    }
+  ]
+}
