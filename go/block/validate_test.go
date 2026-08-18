@@ -281,10 +281,16 @@ func TestReachability(t *testing.T) {
 		}
 
 		// The same block with the scan limit set below what resolution needs
-		// is invalid (spec/05-processing-model.md, "Scan limit").
+		// is invalid (spec/05-processing-model.md, "Scan limit"). The limit is
+		// a bound the node chose, reached against blocks it holds, so it is a
+		// definitive rejection and not the undecided verdict a missing block
+		// produces.
 		_, err = Validate(b, store, &Options{ScanLimit: 1})
 		if !isRule(err, 4) || !errors.Is(err, ErrScanLimit) {
 			t.Errorf("Validate with a scan limit of 1 = %v, want a rule 4 violation wrapping ErrScanLimit", err)
+		}
+		if IsUnvalidated(err) {
+			t.Errorf("Validate with a scan limit of 1 = %v, want a definitive rejection and not a stored-but-unvalidated verdict", err)
 		}
 	})
 
@@ -299,8 +305,15 @@ func TestReachability(t *testing.T) {
 			t.Fatalf("build: %v", err)
 		}
 		store.MustAdd(b)
-		if _, err := Validate(b, store, nil); !isRule(err, 4) {
+		// Every block resolution could read was read — the block itself, and it
+		// has neither ancestors nor refs — so the digest is provably absent and
+		// the rejection is definitive.
+		_, err = Validate(b, store, nil)
+		if !isRule(err, 4) {
 			t.Errorf("Validate = %v, want a rule 4 violation", err)
+		}
+		if IsUnvalidated(err) {
+			t.Errorf("Validate = %v, want an invalid block and not an undecided one: nothing was missing from the store", err)
 		}
 	})
 
@@ -320,12 +333,33 @@ func TestReachability(t *testing.T) {
 			t.Fatalf("build: %v", err)
 		}
 		store.MustAdd(provider, b)
-		if _, err := Validate(b, store, nil); !isRule(err, 4) {
+		// The store holds the defining block; the block does not name it. That
+		// is a completed resolution over everything reachable *from the block*,
+		// so it is a rejection and not an undecided verdict.
+		_, err = Validate(b, store, nil)
+		if !isRule(err, 4) {
 			t.Errorf("Validate = %v, want a rule 4 violation: prev is not a resolution path and refs is empty", err)
 		}
+		if IsUnvalidated(err) {
+			t.Errorf("Validate = %v, want an invalid block: nothing resolution needed was missing", err)
+		}
 	})
+}
 
-	t.Run("referenced block absent from the source", func(t *testing.T) {
+// TestUnobtainableReferenceIsUndecided is the third outcome of rule 4
+// (spec/02-block-format.md, "Validation" rule 4; spec/05-processing-model.md,
+// "Resolution procedure"): resolution that needs a block the source does not
+// hold has not shown the block invalid, it has failed to decide. The block is
+// stored but unvalidated, exactly as one whose prev has not arrived, and it
+// validates unchanged once the missing block turns up.
+func TestUnobtainableReferenceIsUndecided(t *testing.T) {
+	bondTemplate := "_A_ is the capital of _B_"
+	bond := entity.MustBond(bondTemplate)
+	paris := entity.MustAtom("Paris, the capital of France")
+	france := entity.MustAtom("France")
+	fillers := []entity.Filler{entity.AtomFiller(paris.Digest()), entity.AtomFiller(france.Digest())}
+
+	t.Run("a refs entry the source does not hold", func(t *testing.T) {
 		store := NewMemStore()
 		alice := mustBuilder(t, 1)
 		provider, err := alice.Public(1, nil, MustCreateBond(bondTemplate))
@@ -341,8 +375,112 @@ func TestReachability(t *testing.T) {
 			t.Fatalf("build: %v", err)
 		}
 		store.MustAdd(b) // the provider is never stored
-		if _, err := Validate(b, store, nil); !isRule(err, 4) {
-			t.Errorf("Validate = %v, want a rule 4 violation", err)
+
+		_, err = Validate(b, store, nil)
+		if !isRule(err, 4) || !IsUnvalidated(err) {
+			t.Fatalf("Validate = %v, want a rule 4 error wrapping ErrNotFound: the node cannot decide, so the block is stored but unvalidated", err)
+		}
+		// The verdict is a function of what the store holds and nothing else:
+		// asking again with nothing changed answers the same.
+		if _, again := Validate(b, store, nil); again.Error() != err.Error() {
+			t.Errorf("a second Validate over the same store = %v, want the same verdict as %v", again, err)
+		}
+
+		// The missing block arrives; nothing about the block changes; it is
+		// valid. A source that withheld one foreign block never got to make it
+		// invalid.
+		store.MustAdd(provider)
+		if report := mustValidate(t, b, store, nil); report.Scanned != 1 {
+			t.Errorf("scanned %d foreign block(s) after the provider arrived, want 1", report.Scanned)
+		}
+	})
+
+	t.Run("a transitively referenced block the source does not hold", func(t *testing.T) {
+		// Carol defines the bond, Alice's block names Carol's, Bob's names
+		// Alice's. Bob's refs entry is held; the block it leads to is not, and
+		// the digest is unresolved for want of a block one hop further out.
+		store := NewMemStore()
+		carol := mustBuilder(t, 3)
+		first, err := carol.Public(1, nil, MustCreateBond(bondTemplate))
+		if err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		alice := mustBuilder(t, 1)
+		second, err := alice.Public(2, []cid.Digest{first.Digest()},
+			MustCreateAtom(paris.Description()), MustCreateAtom(france.Description()))
+		if err != nil {
+			t.Fatalf("second: %v", err)
+		}
+		bob := mustBuilder(t, 2)
+		b, err := bob.Public(3, []cid.Digest{second.Digest()}, MustCreateMolecule(bond, fillers))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		store.MustAdd(second, b) // Carol's block is never stored
+
+		_, err = Validate(b, store, nil)
+		if !isRule(err, 4) || !IsUnvalidated(err) {
+			t.Fatalf("Validate = %v, want a rule 4 error wrapping ErrNotFound", err)
+		}
+		store.MustAdd(first)
+		mustValidate(t, b, store, nil)
+	})
+
+	t.Run("an ancestor deeper in the author's own chain", func(t *testing.T) {
+		// Rule 3 checks the immediate predecessor; a gap further back surfaces
+		// only when a digest needs what the missing ancestor defined, and it is
+		// the same undecided verdict.
+		store := NewMemStore()
+		author := mustBuilder(t, 1)
+		genesis, err := author.Public(1, nil, MustCreateBond(bondTemplate))
+		if err != nil {
+			t.Fatalf("genesis: %v", err)
+		}
+		middle, err := author.Public(2, nil, MustCreateAtom("an unrelated entity"))
+		if err != nil {
+			t.Fatalf("middle: %v", err)
+		}
+		tip, err := author.Public(3, nil,
+			MustCreateAtom(paris.Description()),
+			MustCreateAtom(france.Description()),
+			MustCreateMolecule(bond, fillers))
+		if err != nil {
+			t.Fatalf("tip: %v", err)
+		}
+		store.MustAdd(middle, tip) // the genesis block, which defines the bond, is missing
+
+		_, err = Validate(tip, store, nil)
+		if !isRule(err, 4) || !IsUnvalidated(err) {
+			t.Fatalf("Validate = %v, want a rule 4 error wrapping ErrNotFound", err)
+		}
+		store.MustAdd(genesis)
+		mustValidate(t, tip, store, nil)
+	})
+
+	t.Run("a refs entry resolution never needed", func(t *testing.T) {
+		// The block resolves every digest from its own operations, so the entry
+		// it also names is never fetched. Resolution completed; the verdict is
+		// valid, not undecided (spec/05, "Resolution procedure": outcome 3 is
+		// reached only when the missing block could have mattered).
+		store := NewMemStore()
+		alice := mustBuilder(t, 1)
+		provider, err := alice.Public(1, nil, MustCreateAtom("an entity nobody needs"))
+		if err != nil {
+			t.Fatalf("provider: %v", err)
+		}
+		bob := mustBuilder(t, 2)
+		b, err := bob.Public(2, []cid.Digest{provider.Digest()},
+			MustCreateBond(bondTemplate),
+			MustCreateAtom(paris.Description()),
+			MustCreateAtom(france.Description()),
+			MustCreateMolecule(bond, fillers))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		store.MustAdd(b) // the provider is never stored
+		report := mustValidate(t, b, store, nil)
+		if report.Scanned != 0 {
+			t.Errorf("scanned %d foreign block(s), want 0: no digest needed one", report.Scanned)
 		}
 	})
 }

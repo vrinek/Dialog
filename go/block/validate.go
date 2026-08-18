@@ -25,6 +25,27 @@ const DefaultScanLimit = 256
 // from a genuinely unresolvable reference.
 var ErrScanLimit = errors.New("block: the foreign block scan limit")
 
+// IsUnvalidated reports whether a validation error means the node has not been
+// able to decide, rather than that the block is wrong.
+//
+// Validation has three outcomes, not two (spec/02-block-format.md,
+// "Validation" rule 4; spec/05-processing-model.md, "Block reception"): a
+// block is valid, invalid, or *stored but unvalidated* — held, neither valid
+// nor invalid, because a block validating it requires has not arrived. The
+// third is what this reports, whichever rule reached it: rule 3's missing
+// predecessor and rule 4's unobtainable refs target are the same verdict.
+//
+// A caller MUST NOT record such a block as rejected. It may keep the bytes and
+// validate again when the missing block arrives, or discard them and ask
+// again; what it may not do is let a block it could not fetch decide that
+// another block is invalid, since a source that withholds one foreign block
+// would then be able to invalidate a block that is in fact valid.
+//
+// The scan limit is the deliberate opposite (ErrScanLimit): a bound the node
+// chose, reached against blocks it holds, and therefore a definitive
+// rejection.
+func IsUnvalidated(err error) bool { return err != nil && errors.Is(err, ErrNotFound) }
+
 // Options tunes validation. A nil *Options means the defaults.
 type Options struct {
 	// ScanLimit caps the distinct foreign blocks reference resolution scans
@@ -208,6 +229,18 @@ func ruleErr(rule int, b *Block, format string, args ...any) error {
 // A rejection is a *RuleError naming the rule. A missing block is reported
 // with ErrNotFound in the chain: errors.Is(err, ErrNotFound) distinguishes
 // "this block is wrong" from "I do not have enough of the graph yet".
+//
+// Two rules can end that way, and they end that way for the same reason. Rule
+// 3 does when the predecessor is not held; rule 4 does when reference
+// resolution needs a block the source does not hold — a refs entry, a block
+// reached transitively through one, or an ancestor deeper in the author's own
+// chain — and a digest is left unresolved for want of it. Both mean the block
+// is *stored but unvalidated* (spec/05-processing-model.md, "Block
+// reception"): neither valid nor invalid, kept out of L2, and validatable
+// again once the missing block arrives. The absence of a block is not evidence
+// about the validity of the block that names it, so a caller MUST NOT record
+// such a block as rejected — which is what makes IsUnvalidated a question
+// worth asking before acting on any error this returns.
 //
 // For a private block, rules 4, 5, 6 and 10 are listed in the report's
 // Unchecked field rather than evaluated: refs and ops are inside enc, which
@@ -454,6 +487,7 @@ type resolver struct {
 
 	nextAncestor  *cid.Digest
 	ancestorGap   *cid.Digest // the ancestor the source does not hold
+	refsGap       *cid.Digest // the first refs-graph block the source does not hold
 	privateWarned bool
 
 	queue   []cid.Digest
@@ -485,8 +519,19 @@ func (r *resolver) resolve(d cid.Digest) (record, error) {
 			return rec, nil
 		}
 	}
+	// Three-valued rule 4 (spec/02-block-format.md, "Validation" rule 4;
+	// spec/05-processing-model.md, "Resolution procedure"). Resolution has
+	// failed, and which failure it is depends on whether it ran out of
+	// definitions or ran out of blocks it could read. A gap in either direction
+	// — the author's own chain or the refs graph — means the node has not
+	// decided, so the error wraps ErrNotFound and the caller reads it as
+	// "stored but unvalidated" rather than "invalid". Only a resolution that
+	// completed against everything the source holds proves a digest absent.
 	if r.ancestorGap != nil {
-		return record{}, fmt.Errorf("entity %s is not reachable from this block; the author's chain is incomplete at block %s, which the source does not hold", d, r.ancestorGap)
+		return record{}, fmt.Errorf("entity %s could not be resolved: the author's chain is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.ancestorGap, ErrNotFound)
+	}
+	if r.refsGap != nil {
+		return record{}, fmt.Errorf("entity %s could not be resolved: the refs graph is incomplete at block %s, which the source does not hold, so the block is stored but unvalidated rather than invalid: %w", d, r.refsGap, ErrNotFound)
 	}
 	return record{}, fmt.Errorf("entity %s is not reachable from this block, from an ancestor in the author's chain, or from any block in the refs graph", d)
 }
@@ -564,8 +609,12 @@ func (r *resolver) extendRefs() error {
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			// An unavailable CID provider is not itself a failure: another ref
-			// may still define the digest. If none does, resolve reports the
-			// unresolved digest. Nothing was scanned, so nothing is counted.
+			// may still define the digest. If none does, the verdict is not
+			// determinable rather than invalid, which is what recording the gap
+			// is for (see resolve). Nothing was scanned, so nothing is counted.
+			if r.refsGap == nil {
+				r.refsGap = &d
+			}
 			r.report.warn(4, r.block.Digest(), "referenced block %s is not held by the source", d)
 			return nil
 		}

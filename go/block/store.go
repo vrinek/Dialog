@@ -13,7 +13,9 @@ import (
 
 // ErrNotFound is what a Source returns for a digest it does not hold. It is
 // distinct from a validation failure: a block that cannot be fetched is
-// unresolved, not invalid, and validation says which of the two it hit.
+// unresolved, not invalid, and validation says which of the two it hit. A
+// validation error carrying it means the block is stored but unvalidated; see
+// IsUnvalidated.
 var ErrNotFound = errors.New("block: not found")
 
 // A Source hands out blocks by digest. It is the minimum a validator needs:
