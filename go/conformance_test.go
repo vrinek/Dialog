@@ -275,6 +275,63 @@ func TestEntityVectors(t *testing.T) {
 
 // TestBlockVectors replays the scenario: every block decodes, verifies, keeps
 // its identity, and validates against the store the earlier blocks built.
+// pinnedKeys returns the Ed25519 identities a vector file's inputs pin. The
+// two files that carry keys declare different inputs types around them, and
+// the decoder rejects unknown fields, so each is decoded as what it is.
+func pinnedKeys(t *testing.T, name string) []vectorfile.KeyCase {
+	t.Helper()
+	doc := read(t, name)
+	switch name {
+	case "blocks.json":
+		in, err := vectorfile.DecodeInputs[vectorfile.BlockInputs](doc)
+		if err != nil {
+			t.Fatalf("%s inputs: %v", name, err)
+		}
+		return in.Keys
+	case "privacy.json":
+		in, err := vectorfile.DecodeInputs[vectorfile.PrivacyInputs](doc)
+		if err != nil {
+			t.Fatalf("%s inputs: %v", name, err)
+		}
+		return in.Keys
+	default:
+		t.Fatalf("%s pins no keys", name)
+		return nil
+	}
+}
+
+// TestAuthorKeyTextVectors checks the text form of every pinned author key:
+// the implementation must produce each key's public_key_text from its
+// public_key bytes, and read the same bytes back out of the text
+// (spec/03-encoding.md, "Text representation of author keys").
+func TestAuthorKeyTextVectors(t *testing.T) {
+	for _, name := range []string{"blocks.json", "privacy.json"} {
+		keys := pinnedKeys(t, name)
+		if len(keys) == 0 {
+			t.Fatalf("%s pins no keys", name)
+		}
+		for _, key := range keys {
+			t.Run(name+"/"+key.Name, func(t *testing.T) {
+				pub := mustHex(t, key.Name, key.PublicKey)
+				got, err := cid.AuthorKeyText(pub)
+				if err != nil {
+					t.Fatalf("AuthorKeyText: %v", err)
+				}
+				if got != key.PublicKeyText {
+					t.Errorf("author key text = %s, want %s", got, key.PublicKeyText)
+				}
+				back, err := cid.ParseAuthorKeyText(key.PublicKeyText)
+				if err != nil {
+					t.Fatalf("ParseAuthorKeyText(%s): %v", key.PublicKeyText, err)
+				}
+				if hex.EncodeToString(back) != key.PublicKey {
+					t.Errorf("parsed key = %x, want %s", back, key.PublicKey)
+				}
+			})
+		}
+	}
+}
+
 func TestBlockVectors(t *testing.T) {
 	doc := read(t, "blocks.json")
 	chain := cases[vectorfile.BlockCase](t, doc, "chain")

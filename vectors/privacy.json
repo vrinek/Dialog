@@ -7,25 +7,28 @@
     "spec/02-block-format.md"
   ],
   "inputs": {
-    "note": "Every key comes from a seed of 32 equal bytes and every nonce from a byte repeated 24 times. These are test values with published secret material and MUST NOT be used for anything but conformance testing; in production a nonce MUST NOT repeat under one key.",
+    "note": "Every key comes from a seed of 32 equal bytes and every nonce from a byte repeated 24 times. These are test values with published secret material and MUST NOT be used for anything but conformance testing; in production a nonce MUST NOT repeat under one key. public_key_text is the canonical text form of public_key — multibase base32 over 0xed 0x01 || key (spec/03-encoding.md, \"Text representation of author keys\").",
     "keys": [
       {
         "name": "author",
         "seed": "0101010101010101010101010101010101010101010101010101010101010101",
         "private_key": "01010101010101010101010101010101010101010101010101010101010101018a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-        "public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        "public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+        "public_key_text": "b5uayvchd3v2at4mv7vjnwlj4xjoxfsthbg7r3fasdpzxjcabwqhw6xa"
       },
       {
         "name": "recipient",
         "seed": "0202020202020202020202020202020202020202020202020202020202020202",
         "private_key": "02020202020202020202020202020202020202020202020202020202020202028139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-        "public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        "public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+        "public_key_text": "b5uaycolxb2uh2f27k2rvizwdjr7mzs4nrki3j3rxujo7md23r7e3hfa"
       },
       {
         "name": "third_party",
         "seed": "0303030303030303030303030303030303030303030303030303030303030303",
         "private_key": "0303030303030303030303030303030303030303030303030303030303030303ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
-        "public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+        "public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+        "public_key_text": "b5ua62sjiyyundqwg5luqgoeqlgkwckkze45fyy7zgy3mcrquvsdtpui"
       }
     ],
     "content_key": "1111111111111111111111111111111111111111111111111111111111111111",

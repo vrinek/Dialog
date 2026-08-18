@@ -9,37 +9,42 @@
     "spec/05-processing-model.md"
   ],
   "inputs": {
-    "note": "Every key comes from a seed of 32 equal bytes. These are test keys with published private material and MUST NOT be used for anything but conformance testing.",
+    "note": "Every key comes from a seed of 32 equal bytes. These are test keys with published private material and MUST NOT be used for anything but conformance testing. public_key_text is the canonical text form of public_key — multibase base32 over 0xed 0x01 || key (spec/03-encoding.md, \"Text representation of author keys\") — and an implementation MUST reproduce it from the key bytes.",
     "keys": [
       {
         "name": "alice",
         "seed": "0101010101010101010101010101010101010101010101010101010101010101",
         "private_key": "01010101010101010101010101010101010101010101010101010101010101018a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
-        "public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        "public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+        "public_key_text": "b5uayvchd3v2at4mv7vjnwlj4xjoxfsthbg7r3fasdpzxjcabwqhw6xa"
       },
       {
         "name": "bob",
         "seed": "0202020202020202020202020202020202020202020202020202020202020202",
         "private_key": "02020202020202020202020202020202020202020202020202020202020202028139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
-        "public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        "public_key": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+        "public_key_text": "b5uaycolxb2uh2f27k2rvizwdjr7mzs4nrki3j3rxujo7md23r7e3hfa"
       },
       {
         "name": "alice_successor",
         "seed": "0303030303030303030303030303030303030303030303030303030303030303",
         "private_key": "0303030303030303030303030303030303030303030303030303030303030303ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
-        "public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+        "public_key": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+        "public_key_text": "b5ua62sjiyyundqwg5luqgoeqlgkwckkze45fyy7zgy3mcrquvsdtpui"
       },
       {
         "name": "carol",
         "seed": "0404040404040404040404040404040404040404040404040404040404040404",
         "private_key": "0404040404040404040404040404040404040404040404040404040404040404ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
-        "public_key": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c"
+        "public_key": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+        "public_key_text": "b5ua4ve5mc4crq4dr2z5yhr77b37icchi5rctav25o4tipezt3pnl47a"
       },
       {
         "name": "dave",
         "seed": "0505050505050505050505050505050505050505050505050505050505050505",
         "private_key": "05050505050505050505050505050505050505050505050505050505050505056e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
-        "public_key": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1"
+        "public_key": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+        "public_key_text": "b5uaw46q43uu3bn4p2e5pjrkzr7x7j3zks4lg4pfg6lspx7gnqbifx4i"
       }
     ]
   },

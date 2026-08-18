@@ -59,6 +59,18 @@ All byte strings are lowercase hex with no separators. Every case has a `name`
 that is unique within its section, and most carry a `note` explaining what the
 case is for.
 
+Where a file's `inputs` carry `keys`, each entry is one Ed25519 identity: its
+32-byte `seed`, the 64-byte `private_key` (`seed || public_key`, the expanded
+form many libraries take), the raw `public_key`, and `public_key_text` — the
+canonical text form of that key, multibase base32 over `0xed 0x01 || key`
+([03-encoding.md](../spec/03-encoding.md), "Text representation of author
+keys"). The text form is derived, not independent: an implementation must
+produce it from the key bytes and read the same bytes back out of it. Like
+`cid_text` in [`entities.json`](entities.json), it is a rendering rather than a
+byte dump — the form an author is named in outside the protocol's CBOR
+structures — and its near-misses (uppercase, padded, a wrong multicodec prefix)
+MUST be rejected.
+
 ### The value model
 
 Wherever a file shows a CBOR value's structure, it uses one JSON shape, so that
@@ -153,8 +165,10 @@ A reasonable order to work through, each step depending on the last:
    Dialog does not, mints digests for structures another implementation refuses
    to parse. The timestamp cases are where a stock date parser will quietly
    disagree with the specification.
-3. **`blocks.json`** — reproduce `signing_bytes` before worrying about the
-   signature: if those bytes are right and the signature is not, the problem is
+3. **`blocks.json`** — start with the `inputs`: derive each key from its seed,
+   and render each `public_key_text`, which is the identifier a chain is named
+   by anywhere outside the blocks. Then reproduce `signing_bytes` before
+   worrying about the signature: if those bytes are right and the signature is not, the problem is
    in the signing procedure, not the encoding. Then replay the `chain` section
    in order into a store and validate each block; the `forks` section is the
    one condition [02-block-format.md](../spec/02-block-format.md) rule 9

@@ -195,7 +195,7 @@ func aadValue(h privacy.Header) dcbor.Value {
 
 func privacyInputs(key privacy.Key) PrivacyInputs {
 	return PrivacyInputs{
-		Note: "Every key comes from a seed of 32 equal bytes and every nonce from a byte repeated 24 times. These are test values with published secret material and MUST NOT be used for anything but conformance testing; in production a nonce MUST NOT repeat under one key.",
+		Note: "Every key comes from a seed of 32 equal bytes and every nonce from a byte repeated 24 times. These are test values with published secret material and MUST NOT be used for anything but conformance testing; in production a nonce MUST NOT repeat under one key. public_key_text is the canonical text form of public_key — multibase base32 over 0xed 0x01 || key (spec/03-encoding.md, \"Text representation of author keys\").",
 		Keys: []KeyCase{
 			keyCase("author", seedAlice),
 			keyCase("recipient", seedBob),

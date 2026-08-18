@@ -264,6 +264,12 @@ type KeyCase struct {
 	// libraries take; Seed is the 32-byte form RFC 8032 calls the private key.
 	PrivateKey string `json:"private_key"`
 	PublicKey  string `json:"public_key"`
+	// PublicKeyText is the canonical text form of the public key
+	// (spec/03-encoding.md, "Text representation of author keys"): multibase
+	// base32 over 0xed 0x01 || key. It is the form an author is named in
+	// outside the protocol's CBOR structures, and an implementation must
+	// reproduce it from PublicKey.
+	PublicKeyText string `json:"public_key_text"`
 }
 
 // BlockInputs is the inputs block of vectors/blocks.json.

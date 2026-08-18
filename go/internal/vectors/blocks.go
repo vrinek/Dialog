@@ -57,11 +57,16 @@ func seedPub(seed byte) ed25519.PublicKey {
 
 func keyCase(name string, seed byte) KeyCase {
 	priv := seedKey(seed)
+	text, err := cid.AuthorKeyText(seedPub(seed))
+	if err != nil { // unreachable: an Ed25519 public key is 32 bytes
+		panic("vectors: author key text: " + err.Error())
+	}
 	return KeyCase{
-		Name:       name,
-		Seed:       hexOf(priv.Seed()),
-		PrivateKey: hexOf(priv),
-		PublicKey:  hexOf(seedPub(seed)),
+		Name:          name,
+		Seed:          hexOf(priv.Seed()),
+		PrivateKey:    hexOf(priv),
+		PublicKey:     hexOf(seedPub(seed)),
+		PublicKeyText: text,
 	}
 }
 
@@ -126,7 +131,7 @@ func blocksDocument() (Document, error) {
 
 func blockInputs() BlockInputs {
 	return BlockInputs{
-		Note: "Every key comes from a seed of 32 equal bytes. These are test keys with published private material and MUST NOT be used for anything but conformance testing.",
+		Note: "Every key comes from a seed of 32 equal bytes. These are test keys with published private material and MUST NOT be used for anything but conformance testing. public_key_text is the canonical text form of public_key — multibase base32 over 0xed 0x01 || key (spec/03-encoding.md, \"Text representation of author keys\") — and an implementation MUST reproduce it from the key bytes.",
 		Keys: []KeyCase{
 			keyCase("alice", seedAlice),
 			keyCase("bob", seedBob),
