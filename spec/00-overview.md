@@ -18,7 +18,7 @@ The protocol defines the ontology data model, block format and validation, encod
 
 ### What the protocol does NOT define
 
-- **Transport.** How nodes discover each other and exchange blocks is an implementation concern. The protocol defines the data format and validation rules only.
+- **Transport.** How nodes discover each other and exchange blocks is an implementation concern. The protocol defines the data format and validation rules only. [07-transport.md](07-transport.md) is an **optional interoperability profile**, not part of this list's exception: no block, chain or implementation is invalid for not speaking it, and file-based exchange is a complete conforming transport.
 - **Conflict resolution strategy.** When subscribed authors disagree, the protocol surfaces the conflict but does not dictate how to resolve it.
 - **Query interface.** How applications query Layer 3 (SQL, GraphQL, API, etc.) is an implementation choice.
 - **L3 processing rules** beyond author filtering, meta-molecule application, and mandatory conflict detection.
@@ -129,3 +129,6 @@ The following are explicitly deferred to future protocol versions:
 | 04 | [Cryptography](04-cryptography.md) | Ed25519 signatures, X25519 encryption |
 | 05 | [Processing Model](05-processing-model.md) | L1/L2/L3 layers, subscriptions |
 | 06 | [Meta-Bonds](06-meta-bonds.md) | Standard meta-bond library, extension process |
+| 07 | [Transport Profile](07-transport.md) | *Optional profile.* One serialization for wire and file, six sync operations, an HTTP binding |
+
+Documents 00–06 are the protocol. Document 07 is an optional profile: normative for an implementation that chooses to speak it, and binding on nothing else.

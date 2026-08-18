@@ -90,6 +90,7 @@ MARKDOWN_FILES=(
     "spec/04-cryptography.md"
     "spec/05-processing-model.md"
     "spec/06-meta-bonds.md"
+    "spec/07-transport.md"
 )
 
 # Verify all files exist

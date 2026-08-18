@@ -13,7 +13,7 @@ Distributed, append-only ontology graph protocol.
 
 ## What the protocol does NOT define
 
-- Transport (how nodes discover each other and exchange blocks)
+- Transport (how nodes discover each other and exchange blocks) — [`spec/07`](spec/07-transport.md) is an *optional* profile, not a requirement
 - Conflict resolution strategy (implementation decides)
 - Query interface (SQL, GraphQL, etc. are implementation choices)
 - L3 processing rules beyond author filtering, meta-molecule application, and mandatory conflict detection
@@ -21,6 +21,22 @@ Distributed, append-only ontology graph protocol.
 ## Specification
 
 The full protocol specification is in [`spec/`](spec/00-overview.md).
+
+| # | Document | Covers |
+|---|----------|--------|
+| 00 | [Overview](spec/00-overview.md) | Scope, architecture, fixed parameters, document index |
+| 01 | [Data Model](spec/01-data-model.md) | Atoms, bonds, molecules, filler types |
+| 02 | [Block Format](spec/02-block-format.md) | Block structure, operations, the ten validation rules |
+| 03 | [Encoding](spec/03-encoding.md) | dCBOR, CIDs, the text forms of a CID and an author key |
+| 04 | [Cryptography](spec/04-cryptography.md) | Ed25519 signatures, X25519 encryption, key rotation |
+| 05 | [Processing Model](spec/05-processing-model.md) | L1/L2/L3, subscriptions, demand-driven resolution |
+| 06 | [Meta-Bonds](spec/06-meta-bonds.md) | Standard meta-bond library, extension process |
+| 07 | [Transport Profile](spec/07-transport.md) | **Optional profile.** One serialization for wire and file, six sync operations, an HTTP binding |
+
+Documents 00–06 are the protocol. Document 07 is normative for an
+implementation that chooses to speak it and binding on nothing else: no block,
+chain or implementation is invalid for not speaking it, and exchanging files is
+a complete conforming transport.
 
 ## Implementations
 
