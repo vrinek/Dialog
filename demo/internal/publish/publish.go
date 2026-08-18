@@ -307,13 +307,12 @@ func (w *world) gazetteer(atlas Chain) (Chain, error) {
 	//   - Lisboa's molecule is declared equivalent to atlas's Lisbon molecule
 	//     explicitly, so L3 unifies the two.
 	//   - Amsterdam's is not. Its bond is equivalent to atlas's bond and its
-	//     country atom is equivalent to atlas's country atom, and the
-	//     specification's bond-equivalence example says molecules using either
-	//     template are treated as expressing the same relationship — but no
-	//     implementation is told to derive molecule equivalence from the
-	//     equivalence of the parts, and the reference implementation does not.
-	//     See todos/063; the demo keeps both cases so the difference is
-	//     testable.
+	//     country atom is equivalent to atlas's country atom, and that is not
+	//     enough: equivalence relates the entities a meta-molecule names and is
+	//     never derived from the equivalence of a molecule's parts
+	//     (spec/06-meta-bonds.md, "Equivalence"), so the two Amsterdam
+	//     molecules stay two classes carrying two truth states. The demo keeps
+	//     both shapes so the difference is testable (todos/063).
 	lisboa := content.CapitalCityMolecule("Lisboa", "Portugal")
 	lisbon := content.CapitalMolecule("Lisbon", "Portugal")
 	amsterdam := content.CapitalCityMolecule("Amsterdam", "Holland")

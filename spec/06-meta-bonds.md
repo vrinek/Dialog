@@ -39,6 +39,8 @@ That MUST binds the author publishing the equivalence, and its consequence is th
 
 **L3 semantics:** Implementations SHOULD treat equivalent entities as interchangeable when querying L3. The specific deduplication strategy (merge, prefer one, show both) is implementation-scoped.
 
+*Informative.* Equivalence relates the entities a meta-molecule names, and nothing else. Under the reference reading it is the transitive closure of the pairs subscribed authors have *declared*, and it is not otherwise closed: no equivalence between two molecules is derived from an equivalence between their bonds, or between the entities filling them. Two molecules whose bonds are declared equivalent, and whose fillers are declared equivalent position by position, are therefore two classes and not one — each carries its own truth state, and an assertion, retraction, contradiction or supersession naming one says nothing about the other. An author who wants two molecules treated as the same statement declares that with a molecule-level equivalence, which is what "Declaring molecule equivalence" below is for. Two things argue for the narrow reading. Deriving the wider one is a fixpoint over the whole view — a derived molecule equivalence can make two further molecules equivalent in turn — and every implementation would have to compute it identically, down to what "equivalent" means for a scalar or IPFS filler that no equivalence can name, for two nodes to agree about what a class contains; and a class is what carries a truth state, so disagreeing about its membership is disagreeing about what is true. It also keeps the blast radius small: under the wider reading a single bond equivalence silently unifies every molecule built on either template, which is the attack "Security Considerations", "Equivalence attacks", already warns about, multiplied by the size of the graph. Whether equivalence should compose through a molecule's parts is deferred (see [00-overview.md](00-overview.md), "Open questions (v1)").
+
 *Informative.* The reference implementation reads "interchangeable" at its word, and applies it to the other four meta-bonds as well: a truth assertion, a truth retraction, a contradiction or a supersession naming any member of an equivalence class is read as a statement about the whole class. The class, rather than the individual molecule, is what carries a truth state, what a supersession marks as replaced, and what a contradiction is surfaced between. The reasoning is that entities declared the same say the same thing, so a statement about one of them is a statement about all of them; the cost is that a subscribed author's equivalence redirects other authors' assertions onto molecules those authors never named, which is what "Security Considerations", "Equivalence attacks", is about and what subscription filtering bounds. Other strategies remain conformant — in particular, keeping every assertion attached to the entity actually named and exposing the class so that an application can widen the query itself. Whichever is chosen, a class whose members are asserted true by one subscribed author and untrue by another is a disagreement to surface under "Conflict handling" below, exactly as a single molecule in that position would be.
 
 #### 2. Truth assertion
@@ -180,7 +182,7 @@ create_molecule(
 )
 ```
 
-In L3, molecules using either bond template are treated as expressing the same relationship.
+In L3 the two bonds are members of one equivalence class, so an application that has found a molecule using either template can find the molecules using the other by walking that class. The declaration is about the bonds: it does not by itself make two molecules built from them equivalent to each other. See "Declaring molecule equivalence" below, and the informative paragraph on what equivalence does and does not close over in "Equivalence" above.
 
 ### Declaring molecule equivalence
 
@@ -214,7 +216,7 @@ create_molecule(
 )
 ```
 
-In L3, both molecules are treated as the same assertion. This is useful when atom-level or bond-level equivalence alone is insufficient because the molecules combine different atoms and different bond templates.
+In L3, both molecules are treated as the same assertion. A molecule-level equivalence is what says that two molecules are the same statement, and the only thing that says it: the equivalences Author C could publish between the two bonds, or between the atoms filling them, relate those entities and are not composed into an equivalence between the molecules built from them (see "Equivalence" above).
 
 ## References
 

@@ -112,6 +112,73 @@ func TestEquivalenceOfAtomsAndBonds(t *testing.T) {
 	}
 }
 
+// TestEquivalenceIsDeclaredNeverDerived names the rule of
+// spec/06-meta-bonds.md, "Equivalence": the closure is over the pairs
+// subscribed authors declared, and "no equivalence between two molecules is
+// derived from an equivalence between their bonds, or between the entities
+// filling them".
+//
+// Alice publishes the same fact twice, once with each of two bonds she has
+// declared equivalent, over atoms she has declared equivalent position by
+// position. Every part of the two molecules is interchangeable and the
+// molecules are still two classes, with two independent truth states: her
+// assertion about one leaves the other unasserted. Declaring the molecules
+// themselves equivalent is what joins them.
+func TestEquivalenceIsDeclaredNeverDerived(t *testing.T) {
+	w := newWorld(t)
+	alice := w.builder(1)
+
+	capitalOf := block.MustCreateBond("_A_ is the capital of _B_")
+	capitalCityOf := block.MustCreateBond("_A_ is the capital city of _B_")
+	first, firstOps := statement(capitalOf, "Amsterdam", "Netherlands")
+	second, secondOps := statement(capitalCityOf, "Amsterdam", "Holland")
+
+	ops := []block.Operation{capitalOf, capitalCityOf}
+	ops = append(ops, firstOps...)
+	ops = append(ops, secondOps...)
+	ops = append(ops,
+		metaBondOp(entity.TemplateEquivalence),
+		sameAs(entity.FillerBond, capitalOf.Bond().Digest(), capitalCityOf.Bond().Digest()),
+		sameAs(entity.FillerAtom,
+			block.MustCreateAtom("Netherlands").Atom().Digest(),
+			block.MustCreateAtom("Holland").Atom().Digest()),
+		metaBondOp(entity.TemplateTruthAssertion),
+		isTrue(first.Molecule().Digest()),
+	)
+	w.publish(alice, ops...)
+
+	a, b := first.Molecule().Digest(), second.Molecule().Digest()
+	v := w.view(alice.PublicKey())
+
+	// The parts are interchangeable.
+	if !v.Equivalent(capitalOf.Bond().Digest(), capitalCityOf.Bond().Digest()) {
+		t.Fatal("the two bonds are not equivalent, so the test states nothing")
+	}
+	if !v.Equivalent(block.MustCreateAtom("Netherlands").Atom().Digest(),
+		block.MustCreateAtom("Holland").Atom().Digest()) {
+		t.Fatal("the two country atoms are not equivalent, so the test states nothing")
+	}
+	// The molecules built from them are not.
+	if v.Equivalent(a, b) {
+		t.Error("an equivalence between two molecules was derived from the equivalence of their parts")
+	}
+	if got := v.EquivalenceClass(b); !slices.Equal(got, []cid.Digest{b}) {
+		t.Errorf("EquivalenceClass of the undeclared molecule = %s, want itself alone", digests(got))
+	}
+	// And the truth states are independent, the class being what carries one.
+	assertTruth(t, v, a, Asserted)
+	assertTruth(t, v, b, Unasserted)
+
+	// Declaring the molecules equivalent is what joins them, and the assertion
+	// then crosses the class.
+	w.publish(alice, sameAs(entity.FillerMolecule, a, b))
+	v = w.view(alice.PublicKey())
+	if !v.Equivalent(a, b) {
+		t.Fatal("the declared molecule equivalence did not join the two molecules")
+	}
+	assertTruth(t, v, b, Asserted)
+}
+
 // TestMalformedMetaMoleculesAreIgnored covers the case a bond digest cannot
 // rule out: a molecule whose bond is a standard meta-bond and whose fillers do
 // not fit its template.

@@ -391,21 +391,19 @@ func TestEquivalenceClasses(t *testing.T) {
 	}
 }
 
-// TestEquivalenceDoesNotComposeThroughMoleculeStructure records a protocol
-// finding rather than a design goal — see todos/063.
+// TestEquivalenceDoesNotComposeThroughMoleculeStructure is the worked case of
+// the rule spec/06-meta-bonds.md, "Equivalence", states: equivalence relates
+// the entities a meta-molecule names, and no equivalence between two molecules
+// is derived from an equivalence between their bonds or their fillers.
 //
 // gazetteer publishes two molecules of exactly the same shape: its own bond,
 // its own atom for one filler, and atlas's atom for the other. For the Lisboa
-// one it also publishes a molecule equivalence; for the Amsterdam one it does
-// not, relying on the fact that its bond is equivalent to atlas's bond and its
-// "Holland" atom is equivalent to atlas's "Netherlands" atom.
-//
-// spec/06-meta-bonds.md's bond-equivalence example says "molecules using either
-// bond template are treated as expressing the same relationship", which reads
-// as though the second case should be equivalent too. It is not: equivalence
-// is a closure over declared pairs, and no rule derives a molecule equivalence
-// from the equivalence of a molecule's parts. This test pins the behaviour so
-// that the finding stays visible while the specification decides.
+// one it also publishes a molecule equivalence, and L3 unifies that pair; for
+// the Amsterdam one it does not, relying on the fact that its bond is
+// equivalent to atlas's bond and its "Holland" atom is equivalent to atlas's
+// "Netherlands" atom — and that pair stays two classes. The difference is the
+// cost of the rule and the reason the demo keeps both shapes side by side
+// (todos/063).
 func TestEquivalenceDoesNotComposeThroughMoleculeStructure(t *testing.T) {
 	n := load(t)
 	v := view(t, n, content.Authors...)
@@ -424,7 +422,7 @@ func TestEquivalenceDoesNotComposeThroughMoleculeStructure(t *testing.T) {
 	}
 	// ...and the molecules built from them are not.
 	if v.Equivalent(gazetteers, atlases) {
-		t.Errorf("the two Amsterdam molecules are equivalent; todos/063 says the reference implementation does not derive that, so either the implementation changed or the specification was settled — update this test and the todo together")
+		t.Errorf("the two Amsterdam molecules are equivalent; spec/06-meta-bonds.md, \"Equivalence\", says an equivalence between molecules is declared and never derived from their parts")
 	}
 	if got := v.EquivalenceClass(gazetteers); !slices.Equal(got, []cid.Digest{gazetteers}) {
 		t.Errorf("gazetteer's Amsterdam molecule is in a class of %v, want just itself", got)

@@ -116,6 +116,7 @@ The following are explicitly deferred to future protocol versions:
 - **Key compromise handling.** KERI-style pre-rotation is the leading candidate.
 - **L2 scalability.** Pruning rules may be needed as graphs grow.
 - **Bond schema evolution.** Edge cases in cross-application schema bridging.
+- **Equivalence composition.** Whether an equivalence between two molecules can be derived from equivalences between their bonds and fillers, rather than only declared (see [06-meta-bonds.md](06-meta-bonds.md), "Equivalence").
 
 ## Document index
 

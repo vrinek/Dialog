@@ -243,6 +243,14 @@ func Build(g *graph.Graph, src block.Source, subs *Subscriptions) (*View, error)
 //
 // A pair whose two fillers are of different types is not an equivalence the
 // specification defines, and read has already refused it.
+//
+// The closure is over the declared pairs and over nothing else. No equivalence
+// between two molecules is derived from an equivalence between their bonds or
+// between the entities filling them: "Two molecules whose bonds are declared
+// equivalent, and whose fillers are declared equivalent position by position,
+// are therefore two classes and not one" (spec/06-meta-bonds.md,
+// "Equivalence"). An author who means two molecules to be one statement
+// publishes a molecule-level equivalence.
 func (v *View) closeEquivalences(c claims) {
 	uf := newUnionFind()
 	for _, cl := range c.equivalences {
@@ -391,6 +399,12 @@ func (v *View) Assertions(d cid.Digest) []Assertion {
 // both) is implementation-scoped" (spec/06-meta-bonds.md, "Equivalence"). This
 // implementation shows both: nothing is merged away, every member keeps its own
 // digest and its own authorship, and the class is what carries a truth state.
+//
+// A class holds what subscribed authors declared equivalent, transitively, and
+// nothing more. Equivalence does not compose through a molecule's parts
+// (spec/06-meta-bonds.md, "Equivalence"), so two molecules built from
+// equivalent bonds and equivalent fillers are in two classes until somebody
+// declares the molecules themselves equivalent.
 func (v *View) EquivalenceClass(d cid.Digest) []cid.Digest {
 	if !v.Has(d) {
 		return nil
