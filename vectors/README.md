@@ -16,7 +16,7 @@ specification is ambiguous where it looked clear, which is worth reporting.
 | File | Area | Specification | Sections (cases) |
 |------|------|---------------|------------------|
 | [`dcbor.json`](dcbor.json) | Deterministic CBOR profile | [03-encoding.md](../spec/03-encoding.md) | `encoding_reference` (10), `canonical` (26), `decimal_fractions` (6), `invalid` (54) |
-| [`entities.json`](entities.json) | Atoms, bonds, molecules, fillers | [01-data-model.md](../spec/01-data-model.md), [06-meta-bonds.md](../spec/06-meta-bonds.md) | `atoms` (5), `bonds` (2), `meta_bonds` (5), `molecules` (3), `fillers` (11) |
+| [`entities.json`](entities.json) | Atoms, bonds, molecules, fillers | [01-data-model.md](../spec/01-data-model.md), [06-meta-bonds.md](../spec/06-meta-bonds.md) | `atoms` (5), `bonds` (2), `meta_bonds` (5), `molecules` (4), `fillers` (12), `invalid` (38) |
 | [`blocks.json`](blocks.json) | Blocks, chains, signatures | [02-block-format.md](../spec/02-block-format.md), [04-cryptography.md](../spec/04-cryptography.md) | `chain` (5), `forks` (1), `fork_block` (1), `invalid` (23) |
 | [`privacy.json`](privacy.json) | Private blocks, key wrapping | [04-cryptography.md](../spec/04-cryptography.md) | `payload` (1), `aead` (4), `x25519` (3), `key_wrap` (2), `private_block` (1) |
 
@@ -100,7 +100,12 @@ it finds produces canonical bytes without sorting anything.
   which is what `digest` hashes).
 - **Invalid cases** (`invalid` sections): `bytes` plus the `rule` they violate,
   named as the specification numbers it, and a `reason`. Your decoder must
-  reject every one of them.
+  reject every one of them. In `entities.json` each case also carries a `kind`
+  — `atom`, `bond`, `molecule` or `filler` — naming the decoder the bytes are
+  handed to, because the entity layer has one decoder per kind and a case is a
+  rejection by *its* decoder. Those bytes are well-formed dCBOR that the *data
+  model* refuses, so they exercise a layer above `dcbor.json`'s; the one
+  exception says so in its `reason`.
 - **Privacy** (`privacy.json`): named `hex` byte strings for the plaintext
   payload, the AAD and the ciphertext; the Ed25519-to-X25519 conversions; and
   the per-recipient wrap, with its shared secret, wrapping key and 72-byte
@@ -116,7 +121,13 @@ A reasonable order to work through, each step depending on the last:
    identifiers for structures other implementations refuse.
 2. **`entities.json`** — build an atom, a bond and a molecule; check the bytes,
    then the digest, then both forms of the CID. The `cid_text` values are the
-   ones users and APIs see.
+   ones users and APIs see. Then the `invalid` section, which is the half that
+   decides which entities exist at all: an implementation that accepts an empty
+   description, a template with no variable, a filler whose value does not
+   match its type tag, or a timestamp its platform's date library likes and
+   Dialog does not, mints digests for structures another implementation refuses
+   to parse. The timestamp cases are where a stock date parser will quietly
+   disagree with the specification.
 3. **`blocks.json`** — reproduce `signing_bytes` before worrying about the
    signature: if those bytes are right and the signature is not, the problem is
    in the signing procedure, not the encoding. Then replay the `chain` section

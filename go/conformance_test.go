@@ -223,6 +223,32 @@ func TestEntityVectors(t *testing.T) {
 		}
 	}
 
+	// Every case of the invalid section must be refused by the decoder its kind
+	// names. These are the bytes the data model forbids: a decoder that accepts
+	// one holds entities its peers cannot read, and mints digests for them.
+	for _, tc := range cases[vectorfile.InvalidCase](t, doc, "invalid") {
+		t.Run("invalid/"+tc.Name, func(t *testing.T) {
+			b := mustHex(t, tc.Name, tc.Bytes)
+			var err error
+			switch tc.Kind {
+			case "atom":
+				_, err = entity.DecodeAtom(b)
+			case "bond":
+				_, err = entity.DecodeBond(b)
+			case "molecule":
+				_, err = entity.DecodeMolecule(b)
+			case "filler":
+				_, err = entity.DecodeFiller(b)
+			default:
+				t.Fatalf("unknown kind %q; an entity invalid case names the decoder that must refuse it", tc.Kind)
+			}
+			if err == nil {
+				t.Fatalf("decoding %s as a%s succeeded, want a rejection: %s (%s)",
+					tc.Bytes, articled(tc.Kind), tc.Reason, tc.Rule)
+			}
+		})
+	}
+
 	for _, tc := range cases[vectorfile.FillerCase](t, doc, "fillers") {
 		t.Run("fillers/"+tc.Name, func(t *testing.T) {
 			f, err := entity.DecodeFiller(mustHex(t, tc.Name, tc.DCBOR))
@@ -447,6 +473,15 @@ func valueOf(v vectorfile.Value) (dcbor.Value, error) {
 	default:
 		return nil, errors.New("unknown value type " + strconv.Quote(v.Type))
 	}
+}
+
+// articled renders an entity kind with its indefinite article, for the one
+// failure message that names it.
+func articled(kind string) string {
+	if kind == "atom" {
+		return "n " + kind
+	}
+	return " " + kind
 }
 
 func equalStrings(a, b []string) bool {

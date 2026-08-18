@@ -535,6 +535,54 @@
           "digest": "7597a123dda5bc68e448c9e070b4ee62e50b963c627672feb7a44ef96aa000ed",
           "cid": "017112207597a123dda5bc68e448c9e070b4ee62e50b963c627672feb7a44ef96aa000ed",
           "cid_text": "bafyreidvs6qshxnfxruoisgj4bylj3tc4ufzmpdcozzp5n5ej34wviaa5u"
+        },
+        {
+          "name": "truth_of_an_atom",
+          "kind": "molecule",
+          "note": "\"_A_ is true\" filled with an atom, where the meta-bond declares a molecule. It is a valid molecule and MUST be accepted: a meta-bond's Fillers line is a recognition criterion applied at L2→L3, not a validity rule (spec/06-meta-bonds.md, \"Meta-molecules are regular molecules\"). L3 reads no truth assertion from it and surfaces it as a plain molecule.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "bond",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be3"
+                }
+              },
+              {
+                "key": "fillers",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "type",
+                          "value": {
+                            "type": "uint",
+                            "number": "0"
+                          }
+                        },
+                        {
+                          "key": "value",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "6545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a264626f6e645820d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be36766696c6c65727381a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fd",
+          "digest": "4ea8928b5cd4b7190ae3ee148edc584ef0945e9fb79b15dd7d8d023bb4613f84",
+          "cid": "017112204ea8928b5cd4b7190ae3ee148edc584ef0945e9fb79b15dd7d8d023bb4613f84",
+          "cid_text": "bafyreicovcjiwxguw4mqvy7ocshnywco6ckf5h5xtmk527mnai53iyj7qq"
         }
       ]
     },
@@ -902,6 +950,318 @@
             ]
           },
           "dcbor": "a26474797065046576616c7565a262746f74323032342d30322d32305431353a33303a30305a6466726f6d74323032342d30322d32305431353a33303a30305a"
+        },
+        {
+          "name": "scalar_datetime_leap_day",
+          "type": 4,
+          "note": "29 February 1600, a whole day. The calendar is the proleptic Gregorian one (spec/01-data-model.md, \"Datetime ranges\" rule 6), so this date exists although the Julian calendar in civil use in 1600 numbered its days differently; the invalid section's timestamp_julian_leap_day is the other half of the pair the specification works out.",
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "type",
+                "value": {
+                  "type": "uint",
+                  "number": "4"
+                }
+              },
+              {
+                "key": "value",
+                "value": {
+                  "type": "map",
+                  "entries": [
+                    {
+                      "key": "to",
+                      "value": {
+                        "type": "text",
+                        "text": "1600-02-29T23:59:59Z"
+                      }
+                    },
+                    {
+                      "key": "from",
+                      "value": {
+                        "type": "text",
+                        "text": "1600-02-29T00:00:00Z"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "dcbor": "a26474797065046576616c7565a262746f74313630302d30322d32395432333a35393a35395a6466726f6d74313630302d30322d32395430303a30303a30305a"
+        }
+      ]
+    },
+    {
+      "name": "invalid",
+      "description": "Encodings the data model refuses. Every case is well-formed dCBOR — except where it says otherwise — that spec/01-data-model.md rejects, so a decoder that accepts one has entities its peers cannot read. The \"kind\" field names the decoder the bytes are handed to (atom, bond, molecule or filler); each case must be rejected by that decoder.",
+      "cases": [
+        {
+          "name": "atom_empty_description",
+          "kind": "atom",
+          "rule": "spec/01-data-model.md, Atoms",
+          "reason": "An atom whose description is the empty string. \"The description MUST be a non-empty UTF-8 string\".",
+          "bytes": "a16b6465736372697074696f6e60"
+        },
+        {
+          "name": "atom_description_not_text",
+          "kind": "atom",
+          "rule": "spec/01-data-model.md, Atoms",
+          "reason": "An atom whose description is the integer 1. The CDDL binds it to tstr.",
+          "bytes": "a16b6465736372697074696f6e01"
+        },
+        {
+          "name": "atom_unknown_key",
+          "kind": "atom",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)",
+          "reason": "An atom map carrying a \"lang\" key its definition does not declare. An unknown key is a rejection, never something to ignore: the digest is taken over these bytes.",
+          "bytes": "a2646c616e676266726b6465736372697074696f6e664672616e6365"
+        },
+        {
+          "name": "atom_missing_description",
+          "kind": "atom",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)",
+          "reason": "The empty map: the one key an atom's definition requires is absent.",
+          "bytes": "a0"
+        },
+        {
+          "name": "bond_empty_template",
+          "kind": "bond",
+          "rule": "spec/01-data-model.md, Bonds",
+          "reason": "A bond whose template is the empty string.",
+          "bytes": "a16874656d706c61746560"
+        },
+        {
+          "name": "bond_template_without_a_variable",
+          "kind": "bond",
+          "rule": "spec/01-data-model.md, Bonds",
+          "reason": "\"is the capital of\" declares no variable, and \"The template MUST be a non-empty UTF-8 string containing one or more variables\".",
+          "bytes": "a16874656d706c61746571697320746865206361706974616c206f66"
+        },
+        {
+          "name": "bond_template_lowercase_variables",
+          "kind": "bond",
+          "rule": "spec/01-data-model.md, Bonds",
+          "reason": "\"_a_ is the same as _b_\" looks like a two-variable template and is not one: UCALPHA is %x41-5A, so lowercase letters match no variable and this template declares none.",
+          "bytes": "a16874656d706c617465765f615f206973207468652073616d65206173205f625f"
+        },
+        {
+          "name": "bond_template_repeats_a_variable",
+          "kind": "bond",
+          "rule": "spec/01-data-model.md, Bonds",
+          "reason": "\"_A_ is the capital of _A_\" uses the name A twice. \"Variable names MUST be unique within a bond template\", since fillers are matched to variables positionally.",
+          "bytes": "a16874656d706c61746578195f415f20697320746865206361706974616c206f66205f415f"
+        },
+        {
+          "name": "molecule_missing_fillers",
+          "kind": "molecule",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)",
+          "reason": "A molecule map with a bond and no fillers key.",
+          "bytes": "a164626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d307811340"
+        },
+        {
+          "name": "molecule_unknown_key",
+          "kind": "molecule",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)",
+          "reason": "A molecule map carrying a \"ts\" key. A molecule states a relationship and records no time; the block does that.",
+          "bytes": "a36274730064626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727381a26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "molecule_empty_fillers",
+          "kind": "molecule",
+          "rule": "spec/01-data-model.md, Molecules",
+          "reason": "An empty fillers array. The CDDL says [+ filler]: one or more.",
+          "bytes": "a264626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727380"
+        },
+        {
+          "name": "molecule_bond_is_a_cid",
+          "kind": "molecule",
+          "rule": "spec/03-encoding.md, Internal references",
+          "reason": "The bond field carries the 36-byte CIDv1 of the bond instead of its raw 32-byte digest. Inside a Dialog structure every reference is a digest.",
+          "bytes": "a264626f6e64582401711220e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426766696c6c65727381a26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "filler_type_out_of_range",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A filler of type 5. The v1 vocabulary is types 0 to 4, and \"implementations MUST reject any type tag other than 0 to 4\".",
+          "bytes": "a26474797065056576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "filler_type_not_an_integer",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A filler whose type tag is the text string \"0\".",
+          "bytes": "a2647479706561306576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "filler_reference_wrong_size",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A type 0 filler whose value is 31 bytes. Types 0, 1 and 2 carry bstr .size 32.",
+          "bytes": "a26474797065006576616c7565581fe57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8"
+        },
+        {
+          "name": "filler_reference_is_a_cid",
+          "kind": "filler",
+          "rule": "spec/03-encoding.md, Internal references",
+          "reason": "A type 1 filler carrying a 36-byte CIDv1. The CID appears at the API boundary, never inside an entity.",
+          "bytes": "a26474797065016576616c7565582401711220e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "filler_reference_is_text",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A type 2 filler whose value is a text string. The tag names the value shape, and molecule references are byte strings.",
+          "bytes": "a26474797065026576616c7565664672616e6365"
+        },
+        {
+          "name": "filler_ipfs_uri_empty",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A type 3 filler carrying the empty string. \"An empty content identifier addresses nothing, and implementations MUST reject it.\"",
+          "bytes": "a26474797065036576616c756560"
+        },
+        {
+          "name": "filler_ipfs_uri_is_bytes",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A type 3 filler carrying a byte string. An IPFS URI is tstr — type 3 is not an internal reference.",
+          "bytes": "a26474797065036576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "filler_scalar_is_an_integer",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Filler types",
+          "reason": "A type 4 filler whose value is the bare integer 330. A scalar filler's value is the scalar-value map, even for a unitless number.",
+          "bytes": "a26474797065046576616c756519014a"
+        },
+        {
+          "name": "filler_unknown_key",
+          "kind": "filler",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)",
+          "reason": "A filler map carrying a \"unit\" key. The unit belongs inside a scalar filler's value, and a filler map declares exactly type and value.",
+          "bytes": "a364747970650064756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e176576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b842"
+        },
+        {
+          "name": "filler_missing_value",
+          "kind": "filler",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)",
+          "reason": "A filler map with a type and no value.",
+          "bytes": "a1647479706500"
+        },
+        {
+          "name": "scalar_unit_without_value",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Scalars",
+          "reason": "A scalar value carrying a unit and no value. The unit is optional in the CDDL; the value is not.",
+          "bytes": "a26474797065046576616c7565a164756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17"
+        },
+        {
+          "name": "scalar_unit_wrong_size",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Scalars",
+          "reason": "A scalar whose unit is 31 bytes. A unit is the SHA-256 digest of the atom naming it: bstr .size 32.",
+          "bytes": "a26474797065046576616c7565a264756e6974581fe57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b86576616c756519014a"
+        },
+        {
+          "name": "scalar_value_is_text",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Scalars",
+          "reason": "A scalar whose value is the text string \"330\". A scalar is an integer or a tag 4 decimal fraction.",
+          "bytes": "a26474797065046576616c7565a16576616c756563333330"
+        },
+        {
+          "name": "scalar_unknown_key",
+          "kind": "filler",
+          "rule": "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)",
+          "reason": "A scalar value carrying a \"scale\" key its definition does not declare.",
+          "bytes": "a26474797065046576616c7565a2657363616c650a6576616c756519014a"
+        },
+        {
+          "name": "scalar_non_canonical_decimal",
+          "kind": "filler",
+          "rule": "spec/03-encoding.md, Decimal fractions",
+          "reason": "A scalar carrying #6.4([0, 314]). The exponent MUST be negative — a whole number is a plain integer — so these bytes are refused at the dCBOR layer, before the entity layer sees them.",
+          "bytes": "a26474797065046576616c7565a16576616c7565c4820019013a"
+        },
+        {
+          "name": "scalar_range_missing_endpoint",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Scalars",
+          "reason": "A datetime range with a from and no to. Both endpoints are required.",
+          "bytes": "a26474797065046576616c7565a16466726f6d74323032342d30322d32305431353a33303a30305a"
+        },
+        {
+          "name": "scalar_range_with_a_unit",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Scalars",
+          "reason": "A datetime range carrying a unit. The two shapes of scalar-value are exclusive: a range is not a quantity.",
+          "bytes": "a26474797065046576616c7565a362746f74323032342d30322d32315431353a33303a30305a6466726f6d74323032342d30322d32305431353a33303a30305a64756e69745820d00e4a9b3ffc198ebaff343be17c1feab2253a89fb38f3b6ceacb8eea2740e17"
+        },
+        {
+          "name": "timestamp_plain_date",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 1 (form). \"2024-02-20\" is a date, and there are no plain dates in Dialog: a day is the range from 00:00:00Z to 23:59:59Z.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d6a323032342d30322d3230"
+        },
+        {
+          "name": "timestamp_numeric_offset",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 2 (UTC only). The offset +00:00 denotes the same instant as Z and MUST NOT be used; a second spelling would be a second digest for one statement.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d7819323032342d30322d32305431353a33303a30302b30303a3030"
+        },
+        {
+          "name": "timestamp_lowercase_separator",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 3 (uppercase). The date-time separator is a lowercase t, which RFC 3339 permits and Dialog does not.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d74323032342d30322d32307431353a33303a30305a"
+        },
+        {
+          "name": "timestamp_lowercase_designator",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 3 (uppercase), in the to endpoint: the offset designator is a lowercase z.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30307a6466726f6d74323032342d30322d32305431353a33303a30305a"
+        },
+        {
+          "name": "timestamp_fractional_seconds",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 4 (second precision). A fractional-second part MUST NOT be present, not even the zero one written here.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d7818323032342d30322d32305431353a33303a30302e3030305a"
+        },
+        {
+          "name": "timestamp_leap_second",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 5 (no leap second). The seconds value 60 that RFC 3339 permits is not a Dialog timestamp.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d74323032342d30322d32305432333a35393a36305a"
+        },
+        {
+          "name": "timestamp_not_a_real_date",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 6 (a real date). February 2024 has 29 days, so 2024-02-30 denotes no instant. A parser that rolls it forward to 1 March mints a digest for a statement no other implementation holds.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d74323032342d30322d33305430303a30303a30305a"
+        },
+        {
+          "name": "timestamp_julian_leap_day",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "Rule 6 (a real date), in the proleptic Gregorian calendar: 1500 is divisible by 100 and not by 400, so 29 February 1500 does not exist, though the Julian calendar then in civil use had it. Its counterpart, 1600-02-29, is the valid scalar_datetime_leap_day case.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32315431353a33303a30305a6466726f6d74313530302d30322d32395430303a30303a30305a"
+        },
+        {
+          "name": "range_from_after_to",
+          "kind": "filler",
+          "rule": "spec/01-data-model.md, Datetime ranges",
+          "reason": "A range running backwards: \"from\" MUST NOT be later than \"to\". Timestamps are fixed-width and most-significant-first, so this is a string comparison and needs no date parsing.",
+          "bytes": "a26474797065046576616c7565a262746f74323032342d30322d32305431353a33303a30305a6466726f6d74323032342d30322d32315431353a33303a30305a"
         }
       ]
     }

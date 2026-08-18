@@ -186,10 +186,16 @@ type DCBORCase struct {
 }
 
 // An InvalidCase is a byte string an implementation MUST reject, together
-// with the rule it violates. It is used for both dCBOR input and whole
-// blocks.
+// with the rule it violates. It is used for dCBOR input, for entities and
+// for whole blocks.
+//
+// Kind is set only in the entities file, where it names the decoder the bytes
+// are handed to — atom, bond, molecule or filler — because the entity layer
+// has one decoder per kind and a case is a rejection by *its* decoder. The
+// dCBOR and block files have a single decoder each and leave it empty.
 type InvalidCase struct {
 	Name   string `json:"name"`
+	Kind   string `json:"kind,omitempty"`
 	Rule   string `json:"rule"`
 	Reason string `json:"reason"`
 	Bytes  string `json:"bytes"`
