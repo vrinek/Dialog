@@ -83,7 +83,7 @@ A range operation returns a **contiguous prefix** of what the client asked for, 
 
 A client expresses "give me the rest" by issuing the range operation again with its position set to the digest of the last block it received. This is the only continuation mechanism, and it needs no cursor, no session and no server-side state: the position *is* the digest of a block the client holds, so a client that stops and resumes a week later on a different machine resumes correctly.
 
-A client learns whether a range ended at the tip by comparing the last block it received with the tip the source reports (`tip`, or the tip statement carried alongside a range response in a binding that has one). That comparison tells the client where the *source* says the chain ends. It is not evidence about where the chain actually ends — see "What a source does not guarantee".
+A client learns whether a range ended at the tip by comparing the last block it received with the tip the source reports (`tip`, or the tip statement carried alongside a range response in a binding that has one). That comparison tells the client where the *source* says the chain ends. It is not evidence about where the chain actually ends — see "What a server does not guarantee".
 
 #### As a file
 
@@ -109,13 +109,13 @@ Common rules:
 - **A source answers only about what it holds.** "I do not have it" is the answer to every question a source cannot answer from its own store. It is never evidence that the thing does not exist, and a client MUST NOT treat it as such.
 - **Every operation is independent.** No operation establishes state that a later one depends on, no operation requires an identifier for the client, and the same request repeated returns the same answer or a later one. `announce` is the only operation that changes a source.
 - **Every operation is safe to answer for anyone.** This profile defines no authorization; see "Server rules" for what a deployment may put in front of it.
-- A source MUST implement `tip`, `range`, `block`, `blocks` and `siblings` to be a conforming server. `announce` is OPTIONAL: a read-only mirror is conforming.
+- A **conforming server** MUST implement `tip`, `range`, `block`, `blocks` and `siblings`. `announce` is OPTIONAL: a read-only mirror is conforming.
 
 #### tip
 
 *Request:* an author key. *Response:* one block — the block that occupies the tip position of that author's chain in the source's store — or "I do not have it" when the source holds no block from that author.
 
-The response is the **block itself**, not a statement of its digest. A client computes the digest and the CID from the bytes it received, which means the source cannot misreport the tip's identity; it can only choose which tip to show, which is the freshness gap and is not fixable here (see "What a source does not guarantee").
+The response is the **block itself**, not a statement of its digest. A client computes the digest and the CID from the bytes it received, which means the source cannot misreport the tip's identity; it can only choose which tip to show, which is the freshness gap and is not fixable here (see "What a server does not guarantee").
 
 A source that holds a fork has more than one candidate for the tip position. It MUST answer `tip` with exactly one of them — the choice is source policy — and it MUST answer `siblings` honestly about the divergence. A client that cares about forks does not learn about them from `tip`.
 
@@ -179,6 +179,14 @@ A block digest inside a `refs` or `prev` field is 32 raw bytes and has no text f
 - `after` and `prev` **omitted** denote the genesis position. The literal string `null` MUST NOT be used and MUST be rejected with 400; exactly one spelling of a position is admitted, for the same reason exactly one spelling of a CID is.
 - `limit` is a positive decimal integer. A server MAY cap it and MUST NOT exceed it. Absent, the server chooses.
 - `HEAD` MUST be supported wherever `GET` is. Any other method on a defined path MUST return 405 with an `Allow` header.
+
+A response to `tip` or `range` MUST carry a `Dialog-Tip` header whose value is the CID text form of the tip the server holds for that author at the moment of the response:
+
+```
+Dialog-Tip: bafyreifvr7u624ffnnmymo5cvo4ipzx26l6bwmxcnlsmwijqgmcododv4e
+```
+
+It is what lets a client tell a range that ended at the tip from one the server truncated, without a second request per page: when the last block of a range hashes to the `Dialog-Tip` value, the client is caught up as far as this server goes. The header is a **claim, not evidence** — a server that withholds its newest blocks reports the older tip here too, and nothing detects that (see "What a server does not guarantee" and todo 075). A client MUST NOT act on the value except to decide whether to ask for more; the identity of every block it stores comes from re-hashing the block.
 
 #### Bodies and content types
 
@@ -368,6 +376,7 @@ Accept: application/dialog-blocks+cbor-seq
 Content-Type: application/dialog-blocks+cbor-seq
 Content-Length: 334
 ETag: "bafyreifvr7u624ffnnmymo5cvo4ipzx26l6bwmxcnlsmwijqgmcododv4e"
+Dialog-Tip: bafyreifvr7u624ffnnmymo5cvo4ipzx26l6bwmxcnlsmwijqgmcododv4e
 Cache-Control: no-cache
 
 <334 bytes: atlas's tip block>
@@ -385,8 +394,14 @@ Accept: application/dialog-blocks+cbor-seq
 200 OK
 Content-Type: application/dialog-blocks+cbor-seq
 Content-Length: 8661
+Dialog-Tip: bafyreifvr7u624ffnnmymo5cvo4ipzx26l6bwmxcnlsmwijqgmcododv4e
 
 <6 blocks concatenated: 395 + 965 + 1964 + 2855 + 2148 + 334 bytes>
+
+  The last block hashes to the Dialog-Tip value, so the range ended at the
+  tip rather than at a limit and there is nothing to continue. Had it not,
+  the client would repeat the request with
+  after=<CID of the last block it received> and no other state.
 
 3. Validation — the client's own work, on every block, in order
 
