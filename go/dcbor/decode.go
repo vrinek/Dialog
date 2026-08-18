@@ -43,6 +43,24 @@ func Decode(b []byte) (Value, error) {
 	return v, nil
 }
 
+// DecodePrefix parses the first dCBOR value in b and reports how many bytes it
+// occupied, leaving b[n:] unread.
+//
+// It is Decode without the trailing-bytes check, and it exists for exactly one
+// caller: a CBOR sequence (RFC 8742), which is items concatenated with no
+// framing, so the only thing that says where one item ends is decoding it.
+// Every other rule of the profile still applies to the item, and a truncated
+// item is an error rather than an end of input — a reader of a sequence must
+// not mistake the two (spec/07-transport.md, "The block sequence", rule 3).
+func DecodePrefix(b []byte) (v Value, n int, err error) {
+	d := &decoder{data: b}
+	v, err = d.value(0)
+	if err != nil {
+		return nil, 0, err
+	}
+	return v, d.pos, nil
+}
+
 type decoder struct {
 	data []byte
 	pos  int
