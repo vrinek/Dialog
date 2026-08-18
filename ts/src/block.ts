@@ -1462,8 +1462,18 @@ export interface ValidationReport {
   /** Present when this block is the genesis block of a chain succeeding a
    * rotation the node holds. */
   readonly succession?: Succession;
-  /** `refs` entries the node does not hold, for which rules 6 and 10 are
-   * reported as unchecked (spec/05, "Public/private reference rules"). */
+  /**
+   * `refs` entries the node does not hold, for which rules 6 and 10 are
+   * reported as unchecked (spec/05, "Public/private reference rules").
+   *
+   * Informational, and nothing more: it names what this verdict does not cover
+   * so that an application can ask for those blocks if it cares. The block is
+   * valid. An entry no validation of the block resolved is outside its validity
+   * for good — a node that later holds one and finds it private, or of the
+   * author's own chain, MUST NOT re-open a verdict it has accepted (spec/02,
+   * "Validation", "A verdict moves in one direction"), which is why
+   * {@link BlockStore} never re-validates a block it has stored as valid.
+   */
   readonly uncheckedRefs: readonly Uint8Array[];
   /** How many distinct foreign blocks reference resolution scanned — the unit
    * of spec/05, "Scan limit". */
@@ -1555,6 +1565,11 @@ export function validateBlock(
     // purpose of reading its type. Reading a block's type here is not scanning
     // it: no operation is read, so it costs no unit of the scan limit until
     // resolution reaches it below.
+    //
+    // What is left unchecked stays outside this block's validity: the rules
+    // bind for the entries this validation resolved, and a block accepted
+    // without one of them is not re-opened when it arrives later (spec/02,
+    // "Validation", "A verdict moves in one direction").
     for (const ref of block.refs) {
       const held = source.get(ref);
       if (held === undefined) {

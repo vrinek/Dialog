@@ -839,6 +839,48 @@ test("rule 6: an entry the node does not hold leaves the rule unchecked", () => 
   assert.deepEqual(report.uncheckedRefs.map(bytesToHex), [bytesToHex(unknown)]);
 });
 
+test("rules 6 and 10: an unchecked entry never invalidates the block afterwards", () => {
+  // The rules bind for the entries a validation resolved. This one was not
+  // held, so it is outside the verdict for good: the block is valid, reaches
+  // L2 and is served, and the node learning later that the entry names a
+  // private block MUST NOT re-open what it accepted (spec/02, "Validation",
+  // "A verdict moves in one direction"). Unchecked says what the verdict does
+  // not cover; it is not a reservation on it.
+  const CAROL = seedOfKey("carol");
+  const secret = privateBlock(CAROL);
+  const dependent = publicBlock(ALICE, { refs: [blockDigest(secret)], ops: [PARIS] });
+
+  const store = new BlockStore();
+  const accepted = store.add(dependent);
+  assert.equal(accepted.status, "accepted");
+  assert.deepEqual(accepted.report?.uncheckedRefs.map(bytesToHex), [
+    bytesToHex(blockDigest(secret)),
+  ]);
+
+  // Carol's block arrives — fetched while validating something else, or
+  // because the node subscribed to her chain.
+  assert.equal(store.add(secret).status, "accepted");
+  assert.equal(
+    store.get(blockDigest(dependent))?.valid,
+    true,
+    "a block once valid stays valid",
+  );
+  // The store carries the verdict and never re-validates what it accepted, so
+  // the same block offered again is a duplicate rather than a second opinion.
+  assert.equal(store.add(dependent).status, "duplicate");
+
+  // The rule itself is undiminished: a node that holds the private block when
+  // it first meets the public one resolves the entry and rejects it. What
+  // differs is only when the node looked, which is what an evaluation point
+  // means.
+  const informed = new BlockStore();
+  informed.add(secret);
+  assert.throws(
+    () => informed.add(dependent),
+    (error: unknown) => error instanceof BlockError && error.code === "reference-visibility",
+  );
+});
+
 test("rule 10: refs MUST NOT name a block of the author's own chain", () => {
   const store = new BlockStore();
   const genesis = publicBlock(ALICE, { ops: [PARIS, FRANCE, CAPITAL_OF] });
