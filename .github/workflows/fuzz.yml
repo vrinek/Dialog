@@ -6,8 +6,14 @@ name: Fuzz
 # night, where finding a new input is worth the wall-clock time.
 #
 # A crasher fails the job and is uploaded as an artifact. It belongs in
-# go/<pkg>/testdata/fuzz/<Target>/ afterwards, committed with a comment naming
-# the rule it violates, so that every later run replays it in seconds.
+# <module>/<pkg>/testdata/fuzz/<Target>/ afterwards, committed with a comment
+# naming the rule it violates, so that every later run replays it in seconds.
+#
+# The matrix spans two modules: the library, and the differential-fuzzing
+# module under go/internal/difftest, whose two agreement targets compare
+# go/dcbor against an independent CBOR implementation. A crasher there is read
+# differently from one in the library — it is a *disagreement*, and the failure
+# message says which of the two codecs is being accused.
 on:
   schedule:
     # 03:17 UTC — an odd minute, because everything scheduled on the hour
@@ -22,37 +28,57 @@ concurrency:
 permissions:
   contents: read
 
-defaults:
-  run:
-    working-directory: go
-
 jobs:
   fuzz:
-    name: ${{ matrix.package }} ${{ matrix.target }}
+    # Target names are unique across the whole matrix, so they name the job on
+    # their own — and a red job then names the function to reproduce.
+    name: ${{ matrix.target }}
     runs-on: ubuntu-24.04
     # Ten minutes of fuzzing, plus the toolchain and the build.
     timeout-minutes: 25
     strategy:
       # One target crashing is a reason to look at that target, not a reason
-      # to stop fuzzing the other five.
+      # to stop fuzzing the other seven.
       fail-fast: false
       matrix:
-        # `go test -fuzz` takes a pattern that must match exactly one target,
-        # so the targets are enumerated rather than discovered. A new
-        # FuzzXxx function has to be added here to be fuzzed nightly.
+        # `go test -fuzz` takes a pattern that must match exactly one target
+        # in exactly one package, so both are enumerated rather than
+        # discovered. A new FuzzXxx function has to be added here to be fuzzed
+        # nightly.
+        #
+        # module is the directory holding the go.mod the target belongs to, and
+        # package is the target's package relative to it. Most targets are in
+        # the library; the two agreement targets are in the differential-fuzzing
+        # module, which is a module of its own so that the library keeps its
+        # single dependency (go/internal/difftest/doc.go).
         include:
-          - package: dcbor
+          - module: go
+            package: dcbor
             target: FuzzRoundTrip
-          - package: entity
+          - module: go
+            package: entity
             target: FuzzDecodeMolecule
-          - package: entity
+          - module: go
+            package: entity
             target: FuzzDecodeAtomAndBond
-          - package: block
+          - module: go
+            package: block
             target: FuzzDecodeBlock
-          - package: privacy
+          - module: go
+            package: privacy
             target: FuzzOpen
-          - package: privacy
+          - module: go
+            package: privacy
             target: FuzzOpenPlaintext
+          - module: go/internal/difftest
+            package: .
+            target: FuzzEncodeAgreement
+          - module: go/internal/difftest
+            package: .
+            target: FuzzDecodeAgreement
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -62,8 +88,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
+          # Both modules pin the same toolchain, and go/go.mod is the one the
+          # library releases from, so it stays the single source of truth here.
           go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
+          cache-dependency-path: |
+            go/go.sum
+            go/internal/difftest/go.sum
 
       - name: Fuzz
         env:
@@ -72,7 +102,7 @@ jobs:
         # -run '^$' skips the ordinary tests: this job is here to fuzz, and a
         # unit-test failure would be reported by the Go workflow anyway. A
         # crasher makes this step, and the job, fail.
-        run: go test -run '^$' -fuzz "^${TARGET}\$" -fuzztime=10m "./${PKG}/"
+        run: go test -run '^$' -fuzz "^${TARGET}\$" -fuzztime=10m "./${PKG}"
 
       - name: Upload the crasher
         # Only on failure, and only the inputs the fuzzer wrote: the generated
@@ -82,7 +112,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: fuzz-crasher-${{ matrix.package }}-${{ matrix.target }}
-          path: go/${{ matrix.package }}/testdata/fuzz/
+          name: fuzz-crasher-${{ matrix.target }}
+          path: ${{ matrix.module }}/${{ matrix.package }}/testdata/fuzz/
           if-no-files-found: warn
           retention-days: 30

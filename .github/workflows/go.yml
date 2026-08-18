@@ -36,7 +36,7 @@ defaults:
 
 jobs:
   check:
-    name: Build, vet, lint, test, vectors
+    name: Build, vet, lint, test, difftest, vectors
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -55,7 +55,9 @@ jobs:
           # GOTOOLCHAIN=auto would make the go command switch to it. Nothing
           # here has to be updated to move the version.
           go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
+          cache-dependency-path: |
+            go/go.sum
+            go/internal/difftest/go.sum
 
       - name: Check formatting
         # gofmt -l exits 0 whether or not it found anything, so the file list
@@ -93,6 +95,34 @@ jobs:
         run: go tool -modfile=tools.go.mod govulncheck ./...
 
       - name: Check go.mod tidiness
+        run: go mod tidy -diff
+
+      # The differential-fuzzing module (go/internal/difftest). It is a module
+      # of its own — it carries a second CBOR implementation as an oracle,
+      # which is exactly the dependency the library must not have — so `go
+      # build ./...` and `go vet ./...` above do not reach it: a directory with
+      # its own go.mod is excluded from the parent module's package patterns.
+      # `gofmt -l .` above does reach it, since gofmt walks directories and
+      # knows nothing about modules, so there is no formatting step here.
+      #
+      # Only the seed corpus is replayed. That is not a token run: both targets
+      # are seeded from vectors/dcbor.json, so every conformance byte string
+      # goes through both comparisons in a second or two. Actual fuzzing is
+      # fuzz.yml's job, ten minutes per target, once a night.
+      - name: Build the differential-fuzzing module
+        working-directory: go/internal/difftest
+        run: go build ./...
+
+      - name: Vet the differential-fuzzing module
+        working-directory: go/internal/difftest
+        run: go vet ./...
+
+      - name: Test the differential-fuzzing module
+        working-directory: go/internal/difftest
+        run: go test -count=1 -shuffle=on ./...
+
+      - name: Check the differential-fuzzing module's go.mod tidiness
+        working-directory: go/internal/difftest
         run: go mod tidy -diff
 
       - name: Regenerate the conformance vectors

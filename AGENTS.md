@@ -20,6 +20,7 @@ go/                      # Go reference implementation (module github.com/vrinek
   transport/             # the optional spec/07 profile: block sequence, server, sync client
   cmd/genvectors/        # writes the conformance vectors to vectors/
   internal/              # the vector generator and its JSON schema
+  internal/difftest/     # differential fuzzing of dcbor, its own module (see below)
   conformance_test.go    # checks the implementation against committed vectors/
 ts/                      # TypeScript implementation, wire format only (package dialog-protocol)
   src/                   # dcbor.ts cid.ts entity.ts block.ts privacy.ts — clean-room, see below
@@ -53,6 +54,10 @@ nix shell nixpkgs#go --command go test -count=1 ./...
 nix shell nixpkgs#go --command go tool -modfile=tools.go.mod golangci-lint run
 ```
 
+`go/internal/difftest` is a module of its own, so none of the four reach it
+except `gofmt`, which walks directories and knows nothing about modules. It has
+its own short battery; see [Differential fuzzing](#differential-fuzzing).
+
 Go is not installed system-wide; `nix shell nixpkgs#go --command` is how it is
 invoked. nixpkgs supplies whatever Go it has; the version the build actually
 runs on comes from `go/go.mod`, whose `toolchain go1.26.6` directive makes the
@@ -73,11 +78,13 @@ with `./build-html.sh`; both take an optional `--version vX.Y.Z`.
 
 ### Fuzzing
 
-Six fuzz targets cover the decoders — `dcbor`, `entity` (two), `block` and
-`privacy` (two). A plain `go test` replays their committed corpus in
-milliseconds and nothing more; actual fuzzing happens nightly in
-`.github/workflows/fuzz.yml`, ten minutes per target. To fuzz one locally
-(`-fuzz` takes a pattern that must match exactly one target):
+Eight fuzz targets. Six cover the decoders — `dcbor`, `entity` (two), `block`
+and `privacy` (two) — and two more compare `dcbor` against a second CBOR
+implementation (see [Differential fuzzing](#differential-fuzzing)). A plain
+`go test` replays their committed corpus in milliseconds and nothing more;
+actual fuzzing happens nightly in `.github/workflows/fuzz.yml`, ten minutes per
+target. To fuzz one locally (`-fuzz` takes a pattern that must match exactly
+one target):
 
 ```bash
 nix shell nixpkgs#go --command go test -run '^$' -fuzz '^FuzzRoundTrip$' -fuzztime=3m ./dcbor/
@@ -90,6 +97,54 @@ head-size boundary — and always when the fuzzer finds a crasher: commit the
 minimised input under that directory with a name saying which rule it broke, so
 every later run replays it as a regression test. The generated corpus in the
 build cache is not committed and is not interesting.
+
+### Differential fuzzing
+
+`go/dcbor` is hand-rolled, and a codec that only ever agrees with itself proves
+nothing about interop. `go/internal/difftest` compares it against an
+independent implementation, `github.com/fxamacker/cbor/v2`, configured as
+strictly as its options allow. It is **its own module** — a second CBOR codec
+is exactly the dependency the library must not have — with a `replace` onto
+`../..`, so `go build ./...` in `go/` does not reach it and neither does the
+zip a `go/vX.Y.Z` tag publishes. Run it from `go/internal/difftest`:
+
+```bash
+nix shell nixpkgs#go --command go test -count=1 ./...
+nix shell nixpkgs#go --command go test -run '^$' -fuzz '^FuzzDecodeAgreement$' -fuzztime=10m .
+```
+
+`FuzzEncodeAgreement` builds a random `dcbor.Value` and asserts both encoders
+write the same bytes. `FuzzDecodeAgreement` offers arbitrary bytes to both
+decoders and asserts the shape of their disagreement. Both are seeded from
+`vectors/dcbor.json`, read at test time and never copied, so the plain
+`go test` above already replays every conformance byte string through both
+comparisons — which is all CI's `go.yml` does; the ten-minute runs are
+`fuzz.yml`'s.
+
+**The allowlist is the deliverable.** Dialog's profile is RFC 8949 §4.2.1 plus
+restrictions (`spec/03-encoding.md`), so the two decoders are *expected* to
+disagree, and `divergence.go` enumerates exactly where: five classes — a
+finite float, a tag other than 4, a non-canonical tag 4, a non-text map key,
+and nesting past depth 64 — each citing the rule that makes Dialog stricter and
+saying why no oracle option expresses it. Reading that file is the fastest way
+to learn how Dialog's profile differs from generic deterministic CBOR, and it
+cannot go stale: a disagreement outside the list fails the target.
+
+Two failures need different responses, and the messages say which is which. An
+*unexplained divergence* — the oracle accepts, `dcbor` rejects, no class
+applies — is either a `dcbor` bug (fix it in `go/dcbor`, with a regression test
+and, if bytes moved, a `vectors/dcbor.json` case and a `genvectors` run) or a
+question about the specification (file a todo). `dcbor` accepting what the
+oracle rejects is always a bug on our side or a weakened oracle: Dialog cannot
+admit anything deterministic CBOR does not. Adding an allowlist entry to make a
+failure go away is a claim about the protocol, not a test fix.
+
+The complement is asserted too. `TestOracleAgreesWhereItCan` pins some thirty
+byte strings that *both* implementations reject — non-shortest arguments,
+unsorted and duplicate keys, indefinite lengths, invalid UTF-8, NaN, the simple
+values that are not null — so that weakening the oracle's configuration shows
+up as a failing test rather than as a comparison that quietly stopped
+comparing.
 
 ### Development tools
 
