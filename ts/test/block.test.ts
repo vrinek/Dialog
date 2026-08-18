@@ -558,6 +558,100 @@ test("rule 4: an operation may only use entities earlier operations created", ()
   );
 });
 
+test("rule 4: a refs entry the store does not hold leaves the verdict undecided", () => {
+  // spec/02, rule 4, third outcome: resolution needed a block the node does
+  // not hold, so it has not decided. The block is stored but unvalidated —
+  // never invalid, because a source that withheld one foreign block would
+  // otherwise be able to reject a block that is in fact valid.
+  const provider = publicBlock(ALICE, { ops: [CAPITAL_OF] });
+  const dependent = publicBlock(BOB, {
+    refs: [blockDigest(provider)],
+    ops: [PARIS, FRANCE, createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+
+  const store = new BlockStore();
+  const held = store.add(dependent);
+  assert.equal(held.status, "unvalidated");
+  assert.equal(held.pending?.code, "unvalidated");
+  assert.deepEqual(held.pending?.awaiting, blockDigest(provider));
+  assert.equal(store.get(blockDigest(dependent))?.valid, false);
+
+  // The missing block arrives; nothing about the held block changes; it is
+  // valid.
+  assert.equal(store.add(provider).status, "accepted");
+  assert.equal(
+    store.get(blockDigest(dependent))?.valid,
+    true,
+    "the held block validates once the block its refs name arrives",
+  );
+});
+
+test("rule 4: a block reached transitively through refs is the same undecided verdict", () => {
+  // Carol defines the bond, Alice's block names Carol's, Bob's names Alice's.
+  // Bob's own refs entry is held; the block it leads to is not.
+  const CAROL = seedOfKey("carol");
+  const carol = publicBlock(CAROL, { ops: [CAPITAL_OF] });
+  const alice = publicBlock(ALICE, { refs: [blockDigest(carol)], ops: [PARIS, FRANCE] });
+  const bob = publicBlock(BOB, {
+    refs: [blockDigest(alice)],
+    ops: [createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+
+  const store = new BlockStore();
+  store.add(alice);
+  const held = store.add(bob);
+  assert.equal(held.status, "unvalidated");
+  assert.deepEqual(held.pending?.awaiting, blockDigest(carol));
+
+  store.add(carol);
+  assert.equal(store.get(blockDigest(bob))?.valid, true);
+});
+
+test("rule 4: a digest nothing defines stays invalid when nothing was missing", () => {
+  // The other failing outcome: resolution read every block it asked for — the
+  // block itself, which has neither ancestors nor refs — so the digest is
+  // provably absent and the rejection is definitive.
+  const orphan = publicBlock(ALICE, {
+    ops: [PARIS, FRANCE, createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+  const store = new BlockStore();
+  assert.throws(
+    () => store.add(orphan),
+    (error: unknown) => error instanceof BlockError && error.code === "reachability",
+  );
+  assert.equal(store.get(blockDigest(orphan)), undefined, "an invalid block is not held");
+});
+
+test("rule 4: a refs entry resolution never needed does not make the block undecided", () => {
+  // Every digest resolves from the block's own operations, so the entry it
+  // also names is never fetched. Outcome 3 is reached only when the missing
+  // block could have mattered (spec/05, "Resolution procedure").
+  const unrelated = publicBlock(ALICE, { ops: [createAtom("an entity nobody needs")] });
+  const b = publicBlock(BOB, {
+    refs: [blockDigest(unrelated)],
+    ops: [CAPITAL_OF, PARIS, FRANCE, createMolecule(operationDigest(CAPITAL_OF), [
+      atomFiller(operationDigest(PARIS)),
+      atomFiller(operationDigest(FRANCE)),
+    ])],
+  });
+  const store = new BlockStore();
+  const result = store.add(b);
+  assert.equal(result.status, "accepted");
+  assert.equal(result.report?.scanned, 0);
+  assert.deepEqual(result.report?.uncheckedRefs.map(bytesToHex), [
+    bytesToHex(blockDigest(unrelated)),
+  ]);
+});
+
 test("a non-monotonic ts is warned about, never rejected", () => {
   const store = new BlockStore();
   const genesis = publicBlock(ALICE, { ts: 1740000060, ops: [PARIS] });

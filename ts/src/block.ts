@@ -128,9 +128,12 @@ export type BlockErrorCode =
   /** rule 3: chain integrity — a `pub` that differs from the chain's, a block
    * appended after the chain's rotation block. */
   | "chain"
-  /** neither valid nor invalid: the block's predecessor is not held, or is
-   * itself unvalidated (spec/05, "Block reception"). The block may be kept as
-   * **stored but unvalidated** and re-checked when its ancestry arrives. */
+  /** neither valid nor invalid: a block validating this one requires is not
+   * held — its predecessor (rule 3), or a block reference resolution must read
+   * to decide rule 4 (spec/05, "Block reception"). The block may be kept as
+   * **stored but unvalidated** and re-checked when the missing block arrives.
+   * The absence of a block is never evidence that the block naming it is
+   * invalid. */
   | "unvalidated"
   /** rule 4: an entity digest an operation carries is not reachable. */
   | "reachability"
@@ -148,14 +151,27 @@ export type BlockErrorCode =
    * that is not public, or an ambiguous succession. */
   | "succession";
 
+/** Options for a {@link BlockError}: the standard `cause`, plus the digest an
+ * `unvalidated` verdict is waiting for. */
+export interface BlockErrorOptions extends ErrorOptions {
+  /** The block whose absence left the verdict undecided. Only an `unvalidated`
+   * error carries one, and it is what a store keys its held blocks by so that
+   * they can be re-validated when it arrives. */
+  readonly awaiting?: Uint8Array;
+}
+
 /** A rejection by a block constructor, decoder or validator. */
 export class BlockError extends Error {
   readonly code: BlockErrorCode;
+  /** For an `unvalidated` verdict, the digest of the block that has not
+   * arrived; `undefined` for every other code. */
+  readonly awaiting?: Uint8Array;
 
-  constructor(code: BlockErrorCode, message: string, options?: ErrorOptions) {
+  constructor(code: BlockErrorCode, message: string, options?: BlockErrorOptions) {
     super(message, options);
     this.name = "BlockError";
     this.code = code;
+    if (options?.awaiting !== undefined) this.awaiting = options.awaiting;
   }
 }
 
@@ -1242,6 +1258,7 @@ class Resolver {
   private queue: Uint8Array[] = [];
   private readonly queued = new Set<string>();
   private scanned = 0;
+  private gap: Uint8Array | undefined;
 
   constructor(block: PlaintextBlock, source: BlockSource, limit: number) {
     this.block = block;
@@ -1259,6 +1276,23 @@ class Resolver {
    */
   get scanCount(): number {
     return this.scanned;
+  }
+
+  /**
+   * The first block resolution needed and the source did not hold — an
+   * ancestor of the author's own chain, a `refs` entry, or a block reached
+   * transitively through one — or `undefined` when resolution read everything
+   * it asked for.
+   *
+   * It is what separates the two failing outcomes of spec/05, "Resolution
+   * procedure": with no gap, an unresolved digest is *provably absent* from the
+   * reachable set and the block is invalid; with a gap, the node has not been
+   * able to decide and the block is stored but unvalidated. The distinction is
+   * only consulted when a digest fails to resolve, so a block that resolves
+   * everything before reaching the missing block is unaffected.
+   */
+  get missingBlock(): Uint8Array | undefined {
+    return this.gap;
   }
 
   /** Record an entity created by an earlier operation of the same block. */
@@ -1296,7 +1330,13 @@ class Resolver {
       if (visited.has(key)) return;
       visited.add(key);
       const held = this.source.get(prev);
-      if (held === undefined) return;
+      if (held === undefined) {
+        // The chain stops here as far as this source is concerned. Rule 3 has
+        // already checked the immediate predecessor, so this is a gap deeper
+        // in, and it matters only if a digest fails to resolve.
+        this.gap ??= prev;
+        return;
+      }
       this.indexBlock(held.block);
       prev = held.block.prev;
     }
@@ -1307,7 +1347,14 @@ class Resolver {
     const next = this.queue.shift();
     if (next === undefined) return;
     const held = this.source.get(next);
-    if (held === undefined) return; // Not held: nothing to scan, nothing to learn.
+    if (held === undefined) {
+      // Not held: nothing to scan, nothing counted against the limit, and
+      // nothing learned. Another entry may still define the digest; if none
+      // does, this gap is what makes the verdict undecided instead of a
+      // rejection.
+      this.gap ??= next;
+      return;
+    }
     this.scanned++;
     if (this.scanned > this.limit) {
       throw new BlockError(
@@ -1410,9 +1457,13 @@ export interface ValidateOptions {
  * "Validation", in the order the specification numbers them.
  *
  * Throws {@link BlockError} on an invalid block. The one code that does not
- * mean "invalid" is `unvalidated`: a block whose predecessor the node does not
- * hold, or holds without having validated, is neither valid nor invalid and
- * may be kept as **stored but unvalidated** (spec/05, "Block reception").
+ * mean "invalid" is `unvalidated`: a block validating this one requires has not
+ * arrived, so the node has not been able to decide, and the block may be kept
+ * as **stored but unvalidated** (spec/05, "Block reception"). Two rules reach
+ * that verdict — rule 3, when the predecessor is missing or is itself
+ * unvalidated, and rule 4, when reference resolution needs a block the source
+ * does not hold — and the error's `awaiting` names the block whose arrival
+ * would settle it. Nothing a source withholds can make a block invalid.
  *
  * A fork (rule 9) and a chain succession are *surfaced*, not rejected: the
  * specification requires detection and leaves the handling to the
@@ -1491,6 +1542,20 @@ export function validateBlock(
       for (const reference of operationReferences(op)) {
         const entity = resolver.resolve(reference.digest);
         if (entity === undefined) {
+          // Rule 4's verdict is three-valued (spec/02, "Validation" rule 4).
+          // A digest that fails to resolve is *unresolvable* only when
+          // resolution read every block it asked for; if a block it needed is
+          // not held, the node has not decided, and the block is stored but
+          // unvalidated rather than invalid. The absence of a block is not
+          // evidence about the validity of the block that names it.
+          const missing = resolver.missingBlock;
+          if (missing !== undefined) {
+            throw new BlockError(
+              "unvalidated",
+              `ops[${index}]: ${reference.what} names ${bytesToHex(reference.digest)}, which did not resolve because the block ${bytesToHex(missing)} is not held: the block is neither valid nor invalid, and is stored but unvalidated until that block arrives`,
+              { awaiting: missing },
+            );
+          }
           throw new BlockError(
             "reachability",
             `ops[${index}]: ${reference.what} names ${bytesToHex(reference.digest)}, which is not reachable from this block — not defined here, in an ancestor of this chain, or in a block reachable through refs`,
@@ -1568,12 +1633,14 @@ function checkChainIntegrity(
     throw new BlockError(
       "unvalidated",
       `the predecessor ${bytesToHex(block.prev)} is not held: the block is neither valid nor invalid, and is stored but unvalidated until its ancestry arrives`,
+      { awaiting: block.prev },
     );
   }
   if (!predecessor.valid) {
     throw new BlockError(
       "unvalidated",
       `the predecessor ${bytesToHex(block.prev)} is itself stored but unvalidated; it MUST NOT be treated as this block's predecessor`,
+      { awaiting: block.prev },
     );
   }
   if (!bytesEqual(predecessor.block.pub, block.pub)) {
@@ -1650,7 +1717,8 @@ function detectSuccession(
 export type AcceptStatus =
   /** Validated and stored; its operations may reach L2. */
   | "accepted"
-  /** Held, but neither valid nor invalid: its ancestry has not arrived. */
+  /** Held, but neither valid nor invalid: a block validating it requires — its
+   * ancestry, or one its references resolve through — has not arrived. */
   | "unvalidated"
   /** Already held, byte for byte; nothing changed. */
   | "duplicate";
@@ -1661,8 +1729,8 @@ export interface AcceptResult {
   readonly digest: Uint8Array;
   /** Present when the block was validated. */
   readonly report?: ValidationReport;
-  /** Present when the block was held unvalidated, saying which ancestor is
-   * missing. */
+  /** Present when the block was held unvalidated; its `awaiting` names the
+   * block whose arrival would settle the verdict. */
   readonly pending?: BlockError;
 }
 
@@ -1688,8 +1756,12 @@ export interface BlockStoreOptions {
  *
  * The store carries the induction of spec/02, "Validation": a block is
  * validated when it is offered, and its `valid` flag is what rule 3 reads when
- * the next block arrives. A block whose predecessor has not arrived is kept as
- * **stored but unvalidated** and re-validated when it does.
+ * the next block arrives. A block the store could not decide about — because
+ * its predecessor has not arrived, or because reference resolution needed a
+ * block the store does not hold — is kept as **stored but unvalidated** and
+ * re-validated when that block arrives. Neither cause is ever recorded as a
+ * rejection: a block the store does not have says nothing about the validity
+ * of one that names it.
  */
 export class BlockStore implements BlockSource {
   private readonly blocks = new Map<string, StoredBlock>();
@@ -1699,7 +1771,9 @@ export class BlockStore implements BlockSource {
   private readonly rotations = new Map<string, Uint8Array>();
   /** rotation digest → the genesis blocks claiming to succeed it. */
   private readonly successors = new Map<string, Uint8Array[]>();
-  /** prev digest → blocks held unvalidated awaiting it. */
+  /** digest of a block that has not arrived → blocks held unvalidated awaiting
+   * it, whether as their predecessor (rule 3) or as a block their reference
+   * resolution needs (rule 4). */
   private readonly pending = new Map<string, Uint8Array[]>();
   private readonly detectedForks: ForkDetection[] = [];
   private readonly detectedSuccessions: Succession[] = [];
@@ -1784,9 +1858,10 @@ export class BlockStore implements BlockSource {
   /**
    * Offer a block to the store: validate it and, if it is valid, keep it.
    *
-   * Invalid blocks throw. A block whose ancestry has not arrived is kept as
-   * stored but unvalidated and re-validated when the missing predecessor is
-   * added.
+   * Invalid blocks throw. A block the store cannot decide about — its ancestry
+   * has not arrived, or reference resolution needs a block it does not hold —
+   * is kept as stored but unvalidated and re-validated when the missing block
+   * is added.
    */
   add(input: Uint8Array | Block): AcceptResult {
     const block = input instanceof Uint8Array ? decodeBlock(input) : input;
@@ -1813,7 +1888,7 @@ export class BlockStore implements BlockSource {
       report = validateBlock(block, this, { scanLimit: this.scanLimit });
     } catch (error) {
       if (error instanceof BlockError && error.code === "unvalidated") {
-        this.hold(selfDigest, bytes, block);
+        this.hold(selfDigest, bytes, block, error.awaiting);
         return { status: "unvalidated", digest: selfDigest, pending: error };
       }
       throw error;
@@ -1841,11 +1916,22 @@ export class BlockStore implements BlockSource {
     return { status: "accepted", digest: selfDigest, report };
   }
 
-  /** Hold a block whose ancestry has not arrived. */
-  private hold(selfDigest: Uint8Array, bytes: Uint8Array, block: Block): void {
+  /**
+   * Hold a block the store could not decide about, filed under the block it is
+   * waiting for: its predecessor when rule 3 could not be evaluated, or the
+   * block reference resolution could not read when rule 4 could not. Both are
+   * the same **stored but unvalidated** state, so both are held the same way
+   * and re-validated by the same arrival.
+   */
+  private hold(
+    selfDigest: Uint8Array,
+    bytes: Uint8Array,
+    block: Block,
+    awaiting: Uint8Array | undefined,
+  ): void {
     this.store(selfDigest, bytes, block, false);
-    if (block.prev === null) return;
-    const key = bytesToHex(block.prev);
+    if (awaiting === undefined) return;
+    const key = bytesToHex(awaiting);
     const waiting = this.pending.get(key) ?? [];
     if (!waiting.some((held) => bytesEqual(held, selfDigest))) waiting.push(selfDigest);
     this.pending.set(key, waiting);
