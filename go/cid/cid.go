@@ -18,6 +18,13 @@
 // Digest.String, ParseDigestHex) render byte dumps, matching the
 // illustrations in the specification, and are not an interchange format.
 //
+// The package also carries the one other identifier the specification renders
+// as text with the same alphabet: an author's Ed25519 public key, in the
+// multicodec-prefixed multibase base32 form of spec/03-encoding.md, "Text
+// representation of author keys" (AuthorKeyText and ParseAuthorKeyText, in
+// authorkey.go). A key is not a content identifier, but its text form is the
+// CID text form's sibling and shares its codec.
+//
 // This package depends on the standard library only. Callers encode an entity
 // with the dcbor package and pass the resulting bytes to SumDigest or SumCID.
 package cid
