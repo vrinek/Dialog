@@ -20,9 +20,9 @@ const vectors = loadVectors("dcbor.json");
  * to the interop contract, not a cosmetic one. */
 const EXPECTED_CASE_COUNTS: Record<string, number> = {
   encoding_reference: 10,
-  canonical: 25,
+  canonical: 26,
   decimal_fractions: 6,
-  invalid: 51,
+  invalid: 54,
 };
 
 test("the vector file is the one this suite was written against", () => {
@@ -88,6 +88,8 @@ test("vectors/dcbor.json: invalid", async (t) => {
 /** The error class a vector's `rule` string calls for. */
 function expectedCode(rule: string): DcborErrorCode {
   if (rule.includes("Decimal fractions")) return "decimal";
+  // Rule 10 is matched before rule 1, which is a prefix of it.
+  if (rule.includes("rule 10")) return "depth";
   if (rule.includes("rule 1")) return "shortest";
   if (rule.includes("rule 2")) return "map-key-order";
   if (rule.includes("rule 3")) return "duplicate-key";

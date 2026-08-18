@@ -126,23 +126,53 @@ test("Decimal enforces the canonicalization rules at construction", () => {
 });
 
 test("nesting is bounded rather than exhausting the stack", () => {
-  // A deep but accepted structure round-trips.
-  let deep: DcborValue = 0n;
-  for (let i = 0; i < MAX_NESTING_DEPTH - 1; i++) deep = [deep];
-  assert.deepEqual(decode(encode(deep)), deep);
+  // Rule 10 counts containers, the outermost at depth 1, so n wrappings of a
+  // non-container put the innermost container at depth n.
+  const wrap = (inner: DcborValue, n: number): DcborValue => {
+    let value = inner;
+    for (let i = 0; i < n; i++) value = [value];
+    return value;
+  };
+  const arrayHeads = (n: number): Uint8Array => new Uint8Array(n).fill(0x81);
 
-  // One level too many is a rejection on both sides.
-  let tooDeep: DcborValue = 0n;
-  for (let i = 0; i < MAX_NESTING_DEPTH + 8; i++) tooDeep = [tooDeep];
-  assert.throws(
-    () => encode(tooDeep),
-    (e: unknown) => e instanceof DcborError && e.code === "depth",
+  // At the bound, both directions work — with an array, a map and a decimal
+  // fraction as the deepest container, since all three are one level. An
+  // integer is not a container, so it takes one more wrapping to reach 64.
+  const atTheLimit: DcborValue[] = [
+    wrap(0n, MAX_NESTING_DEPTH),
+    wrap(new Map<string, DcborValue>([["a", 1n]]), MAX_NESTING_DEPTH - 1),
+    wrap(new Decimal(-2, 314n), MAX_NESTING_DEPTH - 1),
+  ];
+  for (const value of atTheLimit) {
+    assert.deepEqual(decode(encode(value)), value);
+  }
+
+  // One container too many is a rejection on both sides.
+  for (const tooDeep of [
+    wrap(0n, MAX_NESTING_DEPTH + 1),
+    wrap(new Map<string, DcborValue>([["a", 1n]]), MAX_NESTING_DEPTH),
+    wrap(new Decimal(-2, 314n), MAX_NESTING_DEPTH),
+  ]) {
+    assert.throws(
+      () => encode(tooDeep),
+      (e: unknown) => e instanceof DcborError && e.code === "depth",
+    );
+  }
+
+  // And on decode, at the boundary and far past it.
+  assert.deepEqual(
+    decode(new Uint8Array([...arrayHeads(MAX_NESTING_DEPTH - 1), 0x80])),
+    wrap([], MAX_NESTING_DEPTH - 1),
   );
-  const nested = new Uint8Array(MAX_NESTING_DEPTH + 8).fill(0x81);
-  assert.throws(
-    () => decode(nested),
-    (e: unknown) => e instanceof DcborError && e.code === "depth",
-  );
+  for (const bytes of [
+    new Uint8Array([...arrayHeads(MAX_NESTING_DEPTH), 0x80]),
+    arrayHeads(MAX_NESTING_DEPTH * 100),
+  ]) {
+    assert.throws(
+      () => decode(bytes),
+      (e: unknown) => e instanceof DcborError && e.code === "depth",
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------

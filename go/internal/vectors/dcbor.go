@@ -19,11 +19,33 @@ const (
 	ruleOnlyTag4     = "spec/03-encoding.md, Deterministic CBOR rule 6 (no tags, with one exception)"
 	ruleOnlyNull     = "spec/03-encoding.md, Deterministic CBOR rule 7 (null is the only simple value)"
 	ruleTextKeys     = "spec/03-encoding.md, Deterministic CBOR rule 9 (text map keys)"
+	ruleDepth        = "spec/03-encoding.md, Deterministic CBOR rule 10 (bounded nesting depth)"
 	ruleUTF8         = "spec/03-encoding.md, Text strings and Unicode (text strings MUST be well-formed UTF-8)"
 	ruleDecimal      = "spec/03-encoding.md, Decimal fractions"
 	ruleDecimalRange = "spec/03-encoding.md, Decimal fractions (both components lie in -2^63 … 2^63-1)"
 	ruleWellFormed   = "RFC 8949 §3 (a Dialog document is exactly one well-formed data item)"
 )
+
+// maxNestingDepth is the bound of spec/03-encoding.md, "Deterministic CBOR"
+// rule 10, counted as that rule counts: the outermost container is at depth 1.
+// It is written out here rather than read from dcbor.MaxDepth, because these
+// vectors pin the specification's number and not this implementation's
+// constant.
+const maxNestingDepth = 64
+
+// nestedArrays puts v inside n arrays, so that v's own depth is n+1.
+func nestedArrays(v dcbor.Value, n int) dcbor.Value {
+	for i := 0; i < n; i++ {
+		v = dcbor.Array{v}
+	}
+	return v
+}
+
+// deepArrayHex is the encoding of n nested arrays whose innermost is empty:
+// n-1 one-byte array heads and an empty array, the innermost at depth n. It
+// builds the bytes directly because the cases past the bound are ones this
+// implementation's encoder refuses to produce.
+func deepArrayHex(n int) string { return strings.Repeat("81", n-1) + "80" }
 
 // dcborDocument builds vectors/dcbor.json.
 func dcborDocument() Document {
@@ -156,6 +178,8 @@ func canonicalCases() []DCBORCase {
 				{Key: "ts", Value: dcbor.Uint(1740067200)},
 				{Key: "v", Value: dcbor.Uint(1)},
 			}),
+		dcase("nesting_depth_64", "The deepest structure the profile admits: 63 arrays around an empty one, so the innermost container is at nesting depth 64 (spec/03-encoding.md, \"Deterministic CBOR\" rule 10, which counts the outermost container as depth 1). One level deeper is in the invalid section.",
+			nestedArrays(dcbor.Array{}, maxNestingDepth-1)),
 		dcase("nested_structure", "Arrays and maps nest; a molecule's fillers list is an array of maps.",
 			dcbor.Map{
 				{Key: "fillers", Value: dcbor.Array{
@@ -237,6 +261,12 @@ func invalidDCBORCases() []InvalidCase {
 		// Map keys.
 		{"map_key_uint", ruleTextKeys, "A map keyed by an integer.", "a10102"},
 		{"map_key_bytes", ruleTextKeys, "A map keyed by a byte string.", "a1410102"},
+
+		// Rule 10 — bounded nesting depth. The accepted boundary case is
+		// canonical/nesting_depth_64.
+		{"nesting_depth_65", ruleDepth, "65 nested arrays: one container past the bound. The outermost array is at depth 1, so the innermost is at depth 65.", deepArrayHex(maxNestingDepth + 1)},
+		{"nesting_depth_65_decimal", ruleDepth, "A decimal fraction inside 64 arrays. Tag 4 and its content array are one container, so the decimal fraction is at depth 65.", strings.Repeat("81", maxNestingDepth) + "c4822119013a"},
+		{"nesting_far_beyond_the_bound", ruleDepth, "256 nested arrays, four times the bound. A decoder MUST reject this as malformed input rather than exhaust its stack on it.", deepArrayHex(4 * maxNestingDepth)},
 
 		// UTF-8.
 		{"text_invalid_utf8", ruleUTF8, "A one-byte text string holding 0x80, a bare continuation byte.", "6180"},

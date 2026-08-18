@@ -67,7 +67,7 @@ export type DcborErrorCode =
   | "malformed"
   /** the value handed to the encoder is not part of the profile at all. */
   | "unsupported-type"
-  /** nesting deeper than this decoder accepts (see {@link MAX_NESTING_DEPTH}). */
+  /** rule 10: nesting deeper than {@link MAX_NESTING_DEPTH} containers. */
   | "depth";
 
 /** A rejection by the dCBOR encoder or decoder. */
@@ -87,11 +87,18 @@ const INT64_MAX = (1n << 63n) - 1n;
 const MAX_ARGUMENT = (1n << 64n) - 1n;
 
 /**
- * The deepest nesting this codec accepts. The specification fixes no bound;
- * every recursive decoder needs one so that hostile input fails as a rejection
- * rather than as a stack overflow. See todos/057.
+ * The deepest nesting a Dialog document may reach: spec/03-encoding.md,
+ * "Deterministic CBOR" rule 10.
+ *
+ * The rule counts containers — arrays and maps — and nothing else: the
+ * outermost container is at depth 1, an item that is not a container carries
+ * the depth of the container holding it, and a decimal fraction (tag 4 and its
+ * two-element content array) is one container, not two. Dialog's own
+ * structures nest about six levels; the bound exists so that hostile input
+ * fails as a rejection rather than as a stack overflow, and it is fixed by the
+ * specification so that two implementations reject the same bytes.
  */
-export const MAX_NESTING_DEPTH = 1024;
+export const MAX_NESTING_DEPTH = 64;
 
 /**
  * A decimal fraction: `mantissa × 10^exponent`, CBOR tag 4, the only tag the
@@ -205,10 +212,12 @@ export function encode(value: DcborValue): Uint8Array {
   return w.take();
 }
 
+/**
+ * Write one value. `depth` is the nesting depth of the container holding it —
+ * 0 at the top level, where nothing holds it — so a container written here is
+ * itself at `depth + 1` (rule 10; see {@link enter}).
+ */
 function encodeInto(w: ByteWriter, value: DcborValue, depth: number): void {
-  if (depth > MAX_NESTING_DEPTH) {
-    throw new DcborError("depth", `nesting deeper than ${MAX_NESTING_DEPTH} items`);
-  }
   if (value === null) {
     w.byte(0xf6);
     return;
@@ -245,6 +254,9 @@ function encodeInto(w: ByteWriter, value: DcborValue, depth: number): void {
     return;
   }
   if (value instanceof Decimal) {
+    // The tag and its content array are one container, holding two integers,
+    // which are not containers: one level, no recursion.
+    enter(depth);
     w.byte(0xc4);
     w.byte(0x82);
     encodeInteger(w, value.exponent);
@@ -252,8 +264,9 @@ function encodeInto(w: ByteWriter, value: DcborValue, depth: number): void {
     return;
   }
   if (Array.isArray(value)) {
+    const level = enter(depth);
     writeHead(w, 4, BigInt(value.length));
-    for (const item of value) encodeInto(w, item, depth + 1);
+    for (const item of value) encodeInto(w, item, level);
     return;
   }
   if (value instanceof Map) {
@@ -273,6 +286,7 @@ function describe(value: unknown): string {
 }
 
 function encodeMap(w: ByteWriter, map: Map<string, DcborValue>, depth: number): void {
+  const level = enter(depth);
   const entries: Array<{ key: Uint8Array; value: DcborValue }> = [];
   for (const [key, value] of map) {
     if (typeof key !== "string") {
@@ -294,8 +308,24 @@ function encodeMap(w: ByteWriter, map: Map<string, DcborValue>, depth: number): 
   writeHead(w, 5, BigInt(entries.length));
   for (const entry of entries) {
     w.write(entry.key);
-    encodeInto(w, entry.value, depth + 1);
+    encodeInto(w, entry.value, level);
   }
+}
+
+/**
+ * Account for a container found inside a container of depth `depth`, returning
+ * the new container's own depth. Rule 10 puts the outermost container at
+ * depth 1 and refuses anything past {@link MAX_NESTING_DEPTH}.
+ */
+function enter(depth: number): number {
+  const level = depth + 1;
+  if (level > MAX_NESTING_DEPTH) {
+    throw new DcborError(
+      "depth",
+      `nesting deeper than ${MAX_NESTING_DEPTH} containers`,
+    );
+  }
+  return level;
 }
 
 function encodeInteger(w: ByteWriter, value: bigint): void {
@@ -404,10 +434,12 @@ export function decode(bytes: Uint8Array): DcborValue {
   return value;
 }
 
+/**
+ * Decode one item. `depth` is the nesting depth of the container holding it —
+ * 0 at the top level — so a container found here is itself at `depth + 1`
+ * (rule 10; see {@link enter}).
+ */
 function decodeItem(c: Cursor, depth: number): DcborValue {
-  if (depth > MAX_NESTING_DEPTH) {
-    throw new DcborError("depth", `nesting deeper than ${MAX_NESTING_DEPTH} items`);
-  }
   if (c.pos >= c.buf.length) {
     throw new DcborError("malformed", "unexpected end of input: no data item");
   }
@@ -435,13 +467,16 @@ function decodeItem(c: Cursor, depth: number): DcborValue {
       return decodeText(bytes);
     }
     case 4: {
+      const level = enter(depth);
       const n = countLength(c, head.argument, "array");
       const items: DcborValue[] = [];
-      for (let i = 0; i < n; i++) items.push(decodeItem(c, depth + 1));
+      for (let i = 0; i < n; i++) items.push(decodeItem(c, level));
       return items;
     }
-    case 5:
-      return decodeMap(c, countLength(c, head.argument, "map"), depth);
+    case 5: {
+      const level = enter(depth);
+      return decodeMap(c, countLength(c, head.argument, "map"), level);
+    }
     default:
       // Major type 6: tags. Rule 6 admits tag 4 and nothing else.
       if (head.argument !== 4n) {
@@ -450,6 +485,8 @@ function decodeItem(c: Cursor, depth: number): DcborValue {
           `tag ${head.argument} is not permitted; tag 4 (decimal fraction) is the only tag in the profile`,
         );
       }
+      // The tag and its content array are one container holding two integers.
+      enter(depth);
       return decodeDecimal(c);
   }
 }
@@ -538,6 +575,8 @@ function decodeText(bytes: Uint8Array): string {
   }
 }
 
+/** Decode a map's entries. `depth` is the map's own nesting depth, so its keys
+ * and values are decoded at that depth. */
 function decodeMap(c: Cursor, entries: number, depth: number): Map<string, DcborValue> {
   const map = new Map<string, DcborValue>();
   let previousKey: Uint8Array | null = null;
@@ -552,7 +591,7 @@ function decodeMap(c: Cursor, entries: number, depth: number): Map<string, Dcbor
       );
     }
     const keyStart = c.pos;
-    const key = decodeItem(c, depth + 1) as string;
+    const key = decodeItem(c, depth) as string;
     const keyBytes = c.buf.subarray(keyStart, c.pos);
     if (previousKey !== null) {
       const order = compareBytes(previousKey, keyBytes);
@@ -566,7 +605,7 @@ function decodeMap(c: Cursor, entries: number, depth: number): Map<string, Dcbor
         );
       }
     }
-    map.set(key, decodeItem(c, depth + 1));
+    map.set(key, decodeItem(c, depth));
     previousKey = keyBytes;
   }
   return map;
