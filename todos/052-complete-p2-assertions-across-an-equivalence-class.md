@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "052"
 tags: [specification-gap, meta-bonds, layer-3, equivalence]
@@ -123,11 +123,11 @@ have said so about each member.
 
 ## Acceptance Criteria
 
-- [ ] Whether a truth assertion or retraction applies across an equivalence
+- [x] Whether a truth assertion or retraction applies across an equivalence
       class is stated
-- [ ] Whether supersession and contradiction apply across an equivalence class
+- [x] Whether supersession and contradiction apply across an equivalence class
       is stated
-- [ ] What an internally inconsistent equivalence class means is stated
+- [x] What an internally inconsistent equivalence class means is stated
 
 ## Work Log
 
@@ -142,6 +142,45 @@ molecule makes an equivalence a display hint. The implementation picked the
 first for truth and the second for supersession and contradiction, and says so
 in the doc comments of `applyTruth` and `applySupersession` — a reading, not a
 rule.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** the class, for all four. Equivalence means
+interchangeable, so a truth assertion, a truth retraction, a contradiction or a
+supersession naming any member of an equivalence class is a statement about the
+whole class. Entities declared the same say the same thing, and an assertion is
+about what a molecule says. The asymmetry the implementation had picked — truth
+crossing, supersession and contradiction not — is dropped: it made the answer
+depend on which meta-bond was asked about, and the "one author redirects another
+author's assertion" objection applies to truth exactly as much as to the other
+three, where the answer is subscription filtering and not a narrower reading. An
+internally inconsistent class is a conflict to surface like any other. The
+reading is the reference implementation's and not a rule: the deduplication
+strategy stays implementation-scoped, and keeping assertions on the entity named
+while exposing the class remains conformant.
+
+**Changes:**
+
+- `spec/06-meta-bonds.md`, "Equivalence": an informative paragraph stating the
+  reference reading, its reasoning, its cost — the equivalence attack the
+  Security Considerations already name — and that other strategies are
+  conformant. No new normative requirement; the four L3 semantics paragraphs are
+  untouched.
+- `go/accept`: the supersession graph and the contradiction pairs are now built
+  between equivalence classes rather than between the molecules a meta-molecule
+  names. `Supersedes`, `SupersededBy`, `IsSuperseded`, `Current` and
+  `Contradictions` widen to the class at both ends; a surfaced conflict names
+  whole classes; `Side.Molecule` became `Side.Molecules`, a side of a
+  contradiction being a class. A class of one behaves exactly as before, which
+  is every case where nobody published an equivalence.
+- `go/accept`: one new state falls out and is surfaced rather than hidden — "A
+  supersedes B" where A and B are declared the same is a class that replaces
+  itself, so no member of it can be current, which is a supersession cycle.
+- `TestSupersessionCrossesTheEquivalenceClass`,
+  `TestSupersessionWithinAnEquivalenceClassIsACycle` and
+  `TestContradictionCrossesTheEquivalenceClass` pin the three cases.
 
 ## Notes
 

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "053"
 tags: [specification-gap, processing-model, layer-3, subscriptions]
@@ -125,9 +125,9 @@ never reads L2 itself.
 
 ## Acceptance Criteria
 
-- [ ] Whether L3 filtering is transitive over an entity's references is stated
-- [ ] What an application does with a reference L3 does not hold is stated
-- [ ] The interaction with "Applications MUST NOT read directly from L1 or L2"
+- [x] Whether L3 filtering is transitive over an entity's references is stated
+- [x] What an application does with a reference L3 does not hold is stated
+- [x] The interaction with "Applications MUST NOT read directly from L1 or L2"
       is resolved
 
 ## Work Log
@@ -141,6 +141,32 @@ lines. The question surfaced when a test subscribed to Bob alone and got back a
 molecule whose bond was not in the view — valid under every sentence in the
 specification, and useless to an application. The implementation keeps the rule
 as written and documents the consequence.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. Filtering is strictly per entity and the
+existing normative rule stands unchanged — no transitive closure, no cascading
+exclusion. A view may therefore hold a molecule whose bond or fillers it does
+not hold, and that is expected rather than an error: closing over references
+would admit unsubscribed authors' entities, which "Filtering rules" already
+rules out, and dropping the molecule would discard data the user did subscribe
+to. The "Application interface" tension is resolved the way the todo's
+Recommended Action suggested: L1 validation guarantees L2 holds the referenced
+entity, so the *L3 implementation* reads the missing bond or filler from L2 on
+the application's behalf. The application still reads only L3, and the
+referenced entity is not thereby accepted — it supplies the words, not the
+truth.
+
+**Changes:**
+
+- `spec/05-processing-model.md`, "Filtering rules": an informative paragraph
+  naming the consequence, the two alternatives and why neither is taken, and the
+  rendering path through L2 that leaves "Application interface" intact.
+- `go/accept`: no behaviour change — filtering was already per entity. The
+  package doc comment now cites the specification for the consequence instead of
+  this todo, and `TestFilteringIsPerEntity` keeps pinning it.
 
 ## Notes
 

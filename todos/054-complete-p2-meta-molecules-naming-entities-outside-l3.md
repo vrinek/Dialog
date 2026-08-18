@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "054"
 tags: [specification-gap, meta-bonds, layer-3, subscriptions]
@@ -124,10 +124,10 @@ Option 1.
 
 ## Acceptance Criteria
 
-- [ ] Whether a meta-molecule takes effect when its subject is not in L3 is
+- [x] Whether a meta-molecule takes effect when its subject is not in L3 is
       stated
-- [ ] Whether a meta-molecule can admit its subject to L3 is stated
-- [ ] "Present in L3" is defined once and used consistently across the five
+- [x] Whether a meta-molecule can admit its subject to L3 is stated
+- [x] "Present in L3" is defined once and used consistently across the five
       meta-bonds
 
 ## Work Log
@@ -142,6 +142,36 @@ parenthesis was the one that could not be settled by reading harder: a MUST that
 means one thing under one parse and the opposite under the other. The
 implementation took the wider parse, because surfacing too much is recoverable
 and suppressing a required warning is not.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. Meta-molecule semantics are computed over
+the subjects a view holds. Contradiction and supersession already state that
+condition; the reading generalizes to truth assertion, truth retraction and
+equivalence, and "present in L3" means "admitted by the filtering rules" and
+nothing more — so a contradiction between two molecules nobody has asserted true
+is surfaced, the wider parse of the MUST. Two consequences are stated: a
+subscribed author's meta-molecule about an absent subject has no L3 effect while
+the subject is absent and takes effect on a later rebuild that finds it present
+(nothing is lost, the meta-molecule itself being in L2 and in the view), and a
+meta-molecule never admits its own subject, admission being the subscription's
+business alone.
+
+**Changes:**
+
+- `spec/05-processing-model.md`, "Meta-molecule application": an informative
+  paragraph stating the presence rule once, for all five meta-bonds, and stating
+  that a meta-molecule cannot admit its subject.
+- `go/accept`: no behaviour change — `applyTruth`, `applySupersession` and
+  `applyContradictions` already took these readings, and a rebuild is what makes
+  the "takes effect later" half true, a `View` being a snapshot recomputed rather
+  than maintained. The doc comments now cite the specification instead of this
+  todo. `TestAssertionsAboutOutOfViewMoleculesHaveNoEffect`,
+  `TestSupersessionOfOutOfViewMoleculesIsIgnored` and
+  `TestContradictionIsSurfaced` keep pinning all three, and the first two already
+  subscribe to the missing author afterwards to show the assertion taking effect.
 
 ## Notes
 

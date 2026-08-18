@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "055"
 tags: [specification-gap, meta-bonds, layer-3, key-rotation, subscriptions]
@@ -136,11 +136,11 @@ rotation abuse a listed threat today.
 
 ## Acceptance Criteria
 
-- [ ] Which of an author's blocks dates an assertion they published more than
+- [x] Which of an author's blocks dates an assertion they published more than
       once is stated
-- [ ] Whether a successor chain's assertions are ordered against its
+- [x] Whether a successor chain's assertions are ordered against its
       predecessor's, or conflict with them, is stated
-- [ ] Whether an author subscription follows a key succession into L3 filtering
+- [x] Whether an author subscription follows a key succession into L3 filtering
       is stated
 
 ## Work Log
@@ -155,6 +155,40 @@ author who asserts, rotates, and retracts — surfaces a conflict between a pers
 and themselves. The implementation joins the chains for ordering and refuses to
 join them for anything else, which is the narrowest choice that makes a rotation
 survivable, and it is a choice.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1, all three answers narrow.
+
+1. **Re-publication re-states.** An author's assertion is dated by the block
+   carrying its latest publication by that author, so an author who asserts,
+   retracts and publishes the assertion again holds it. It is the only reading
+   an implementation can apply without a notion of "this operation changed
+   nothing", which L2 does not have and should not grow. Dating by first
+   appearance stays conformant; an implementation must choose one, because the
+   two orders resolve the same chain differently.
+2. **Identity for ordering only.** Continuing block order across a rotation is
+   an ordering rule and not an identity rule: it does not merge the keys, does
+   not change authorship tags, and does not change filtering. Author identity
+   stays implementation-scoped, as "Chain succession" step 4 has it.
+3. **Subscription.** L3 filtering stays per key, and the question is already
+   answered at L1: the auto-subscribe SHOULD of "Chain succession" step 3 is
+   what carries a user across a rotation. Cross-referenced rather than restated,
+   and nothing new added.
+
+**Changes:**
+
+- `spec/05-processing-model.md`, "Assertion order": two informative paragraphs —
+  re-publication as re-statement, with the alternative left conformant; and the
+  ordering-not-identity point, ending in the cross-reference to step 3.
+- `go/accept`: no behaviour change. `markLatest` already dates an author's
+  position by their latest carrying block and `blockOrder` already joins a
+  verified succession for ordering alone; both doc comments now quote the
+  specification instead of citing this todo, and `order.go` names
+  `Subscriptions.Subscribe` as what a node following the L1 SHOULD calls.
+  `TestRotationContinuesAssertionOrder` keeps pinning the rotation case.
 
 ## Notes
 

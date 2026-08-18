@@ -70,6 +70,12 @@ func TestMultiAuthorTruthAgreement(t *testing.T) {
 //
 // Alice says it is true, then says it is untrue. Two assertions, one winner,
 // and the loser is kept: the protocol forbids discarding it.
+//
+// The third block is the re-publication case: it creates no entity, the
+// assertion already existing, and only adds an authorship record. It re-states
+// what it names, so Alice's position moves back — "an author's position on a
+// molecule is the one their latest block naming it holds"
+// (spec/05-processing-model.md, "Assertion order").
 func TestSameAuthorFlipIsRetraction(t *testing.T) {
 	w := newWorld(t)
 	s := newSubject()
