@@ -13,12 +13,17 @@
  * signature verified and re-derived, its identifiers recomputed, and its
  * payload opened and byte-compared against the `payload` section.
  *
- * The second half is rejection: tampering with `enc`, the nonce, or any
- * AAD-covered field breaks authentication; the wrong content key and the
- * wrong recipient both fail; a wrapped key of the wrong length is rejected
- * before any decryption is attempted; and a plaintext that authenticates but
- * decodes to something non-canonical, or to a shape a payload cannot have, is
- * still rejected, by the strict dCBOR decode and the payload's own checks.
+ * The second half is rejection, and since todos/062 that half is pinned too:
+ * the `invalid` section covers every rule spec/04-cryptography.md states in
+ * prose — both X25519 conversion refusals, the small-order agreement, the
+ * key-wrap length and tamper cases, and the AEAD/payload cases (a tampered
+ * `enc`, nonce or AAD-covered field, the enc floor, a plaintext that
+ * authenticates but is not canonical dCBOR, and a rotate_key operation inside
+ * a private payload). A case's populated fields say which function it
+ * exercises. A short "beyond the vectors" section keeps a few hand-written
+ * cases that are additional instances of a pinned rule (the AAD's other two
+ * covered fields, a wrong content key, a differently-shaped non-canonical
+ * plaintext) rather than new rules.
  */
 
 import assert from "node:assert/strict";
@@ -40,7 +45,7 @@ import {
   signingInput,
   verifyBlockSignature,
 } from "../src/block.ts";
-import { type DcborValue, encode } from "../src/dcbor.ts";
+import { encode } from "../src/dcbor.ts";
 import { bytesToHex, hexToBytes } from "../src/hex.ts";
 import {
   CONTENT_KEY_SIZE,
@@ -73,6 +78,7 @@ const EXPECTED_CASE_COUNTS: Record<string, number> = {
   x25519: 3,
   key_wrap: 2,
   private_block: 1,
+  invalid: 13,
 };
 
 test("the vector file is the one vectors/README.md describes", () => {
@@ -307,28 +313,74 @@ test("the private block case reproduces every byte the vectors pin, and opens", 
 });
 
 // ---------------------------------------------------------------------------
-// Rejections
+// invalid
+//
+// Every rejection rule spec/04-cryptography.md states in prose (plus the two
+// that in fact live in spec/02-block-format.md: the enc floor and the
+// rotate_key scoping), pinned as bytes since todos/062 settled the gap
+// entities.json and blocks.json had already closed at their own layers. A
+// case's populated fields say which function it exercises — see
+// vectors/README.md, "Privacy rejections", and vectorfile.PrivacyInvalidCase's
+// doc comment in the Go reference implementation for the four shapes.
 // ---------------------------------------------------------------------------
 
-test("flipping a bit in enc breaks authentication", () => {
-  const block = pinnedBlock();
-  const enc = block.enc.slice();
-  enc[0] ^= 0x01;
-  assert.throws(
-    () => openPrivateBlock({ ...block, enc }, contentKey),
-    (error: unknown) => error instanceof PrivacyError && error.code === "aead",
-  );
-});
+for (const c of section(vectors, "invalid").cases) {
+  test(`invalid/${c.name} is rejected under its named rule`, () => {
+    if (c.public_key !== undefined) {
+      assert.throws(
+        () => ed25519PublicKeyToX25519(hexToBytes(c.public_key!)),
+        (error: unknown) => error instanceof PrivacyError && error.code === "conversion",
+        c.reason,
+      );
+      return;
+    }
+    if (c.peer_public_key !== undefined) {
+      assert.throws(
+        () => wrappingKeyBetween(seedOfKey(c.own!), hexToBytes(c.peer_public_key!)),
+        (error: unknown) => error instanceof PrivacyError && error.code === "agreement",
+        c.reason,
+      );
+      return;
+    }
+    if (c.wrapped_key !== undefined) {
+      const wrapped = hexToBytes(c.wrapped_key);
+      assert.throws(
+        () => unwrapContentKey(seedOfKey(c.peer!), publicKeyOf(c.own!), wrapped),
+        (error: unknown) => {
+          if (!(error instanceof PrivacyError)) return false;
+          return c.rule!.includes("authentication") ? error.code === "aead" : error.code === "wrap-length";
+        },
+        c.reason,
+      );
+      return;
+    }
+    if (c.content_key !== undefined && c.block !== undefined) {
+      const key = hexToBytes(c.content_key);
+      let block: PrivateBlock;
+      try {
+        block = decodeBlock(hexToBytes(c.block)) as PrivateBlock;
+      } catch {
+        // Rejected before openPrivateBlock is ever reached — the enc-floor
+        // case, which is structural (spec/02-block-format.md, "Private
+        // block") and needs no key.
+        return;
+      }
+      assert.throws(() => openPrivateBlock(block, key), c.reason);
+      return;
+    }
+    assert.fail(`case ${c.name} names none of the shapes this test knows how to check`);
+  });
+}
 
-test("flipping a bit in the nonce breaks authentication", () => {
-  const block = pinnedBlock();
-  const nonce = block.nonce.slice();
-  nonce[0] ^= 0x01;
-  assert.throws(
-    () => openPrivateBlock({ ...block, nonce }, contentKey),
-    (error: unknown) => error instanceof PrivacyError && error.code === "aead",
-  );
-});
+// ---------------------------------------------------------------------------
+// Rejections beyond the vectors
+//
+// The AAD covers three fields (v, pub, prev); the invalid section pins only
+// prev. changing_pub and changing_v below are the same rule, exercised on the
+// other two, so that the AAD binds all three and not just the one the vectors
+// happen to pin. The wrong-content-key and non-shortest-integer cases are
+// likewise additional instances of rules the vectors already pin once each.
+// ---------------------------------------------------------------------------
 
 test("changing v, an AAD-covered field, breaks authentication", () => {
   const block = pinnedBlock();
@@ -347,15 +399,6 @@ test("changing pub, an AAD-covered field, breaks authentication", () => {
   );
 });
 
-test("changing prev, an AAD-covered field, breaks authentication", () => {
-  const block = pinnedBlock();
-  const prev = new Uint8Array(32).fill(0x01);
-  assert.throws(
-    () => openPrivateBlock({ ...block, prev }, contentKey),
-    (error: unknown) => error instanceof PrivacyError && error.code === "aead",
-  );
-});
-
 test("the wrong content key fails to open the block", () => {
   const block = pinnedBlock();
   const wrongKey = new Uint8Array(32).fill(0xaa);
@@ -365,26 +408,14 @@ test("the wrong content key fails to open the block", () => {
   );
 });
 
-test("a wrapped key of the wrong length is rejected before any decryption", () => {
-  const wrap = section(vectors, "key_wrap").cases[0]!;
-  const wrappingKey = hexToBytes(wrap.wrapping_key!);
-  const properlyWrapped = hexToBytes(wrap.wrapped_key!);
-
-  for (const bad of [properlyWrapped.slice(0, -1), new Uint8Array([...properlyWrapped, 0x00])]) {
-    assert.throws(
-      () => unwrapContentKeyWithKey(wrappingKey, bad),
-      (error: unknown) => error instanceof PrivacyError && error.code === "wrap-length",
-      `length ${bad.length}`,
-    );
-  }
-});
-
-test("strict decode rejects a decrypted plaintext that is not canonical dCBOR", () => {
+test("strict decode rejects a decrypted plaintext that is not canonical dCBOR (a non-shortest integer)", () => {
   // A payload whose ts is encoded in a non-shortest form: major type 0,
   // additional info 24 (a following 1-byte argument) for the value 5, where
   // the shortest encoding is the single byte 0x05. The map's key order (ts,
   // ops, refs) and every other byte stay canonical, so this is exactly one
-  // rule 1 ("shortest") violation and nothing else.
+  // rule 1 ("shortest") violation and nothing else — a different violation of
+  // the same "strict decode after authentication" rule the invalid section's
+  // non_canonical_plaintext case pins with an unsorted key order.
   const good = encodePrivatePayload({ refs: [], ts: 5n, ops: [createAtom("x")] });
   // "ts" is a 2-byte-length text-string key (3 bytes: 0x62 0x74 0x73) right
   // after the 1-byte map header, so its value starts at offset 4.
@@ -402,70 +433,5 @@ test("strict decode rejects a decrypted plaintext that is not canonical dCBOR", 
   assert.throws(
     () => openPrivateBlock({ ...block, enc, nonce: blockNonce }, contentKey),
     (error: unknown) => error instanceof PrivacyError && error.code === "payload",
-  );
-});
-
-test("a private block's payload rejects a rotate_key operation", () => {
-  const opMap = new Map<string, DcborValue>();
-  opMap.set("op", "rotate_key");
-  opMap.set("new_pub", new Uint8Array(32).fill(0x09));
-  const map = new Map<string, DcborValue>();
-  map.set("refs", []);
-  map.set("ts", 1n);
-  map.set("ops", [opMap]);
-  const plaintext = encode(map);
-
-  const block = pinnedBlock();
-  const aad = blockAad(block);
-  const enc = xchacha20poly1305(contentKey, blockNonce, aad).encrypt(plaintext);
-  assert.throws(
-    () => openPrivateBlock({ ...block, enc, nonce: blockNonce }, contentKey),
-    (error: unknown) => error instanceof PrivacyError && error.code === "payload",
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Ed25519-to-X25519 conversion rejections
-//
-// vectors/privacy.json pins no invalid case for any of the three rejection
-// rules spec/04, "Ed25519-to-X25519 conversion" states (non-canonical y,
-// y = 1, and the all-zero agreement result of a small-order key) — see
-// todos/062. These are hand-built from the prose, the way
-// vectors/entities.json's rejection rules were before entities.json grew an
-// `invalid` section (todos/058).
-// ---------------------------------------------------------------------------
-
-test("a non-canonical y (y >= p) is rejected before the division", () => {
-  // p = 2^255 - 19. Encode y = p itself, little-endian, sign bit (byte 31's
-  // MSB) left clear: p's low 255 bits are all that step 2 reads.
-  const p = (1n << 255n) - 19n;
-  const bytes = new Uint8Array(32);
-  let v = p;
-  for (let i = 0; i < 32; i++) {
-    bytes[i] = Number(v & 0xffn);
-    v >>= 8n;
-  }
-  assert.throws(
-    () => ed25519PublicKeyToX25519(bytes),
-    (error: unknown) => error instanceof PrivacyError && error.code === "conversion",
-  );
-});
-
-test("y = 1 (the identity point) is rejected", () => {
-  const bytes = new Uint8Array(32);
-  bytes[0] = 1;
-  assert.throws(
-    () => ed25519PublicKeyToX25519(bytes),
-    (error: unknown) => error instanceof PrivacyError && error.code === "conversion",
-  );
-});
-
-test("an all-zero X25519 agreement (a small-order key) is rejected", () => {
-  const privateKey = ed25519PrivateKeyToX25519(seedOfKey("author"));
-  // u = 0 is one of RFC 7748 §5.2's low-order points; the agreement with it is
-  // all-zero however the private scalar is chosen.
-  assert.throws(
-    () => x25519SharedSecret(privateKey, new Uint8Array(32)),
-    (error: unknown) => error instanceof PrivacyError && error.code === "agreement",
   );
 });

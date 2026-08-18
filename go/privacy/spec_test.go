@@ -596,3 +596,70 @@ func TestX25519Conversion(t *testing.T) {
 		}
 	})
 }
+
+// TestPrivacyInvalidVectors holds this package to every rejection
+// vectors/privacy.json's `invalid` section pins (todo 062): the two X25519
+// conversion rejections, the small-order agreement, the four key-wrap
+// rejections and the six AEAD/payload rejections — three tampered inputs, the
+// enc floor, a non-canonical decrypted plaintext and a rotate_key operation
+// inside a private payload.
+//
+// A case's populated fields say which of this package's functions it
+// exercises; PrivacyInvalidCase's doc comment names the four shapes. Each
+// case must still be rejected under the rule it names, not merely rejected —
+// an authentication failure and a length failure are not interchangeable, and
+// the case's rule label says which one the vector pins.
+func TestPrivacyInvalidVectors(t *testing.T) {
+	v := loadSpecVectors(t)
+	doc, err := vectorfile.Read(vectorsPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", vectorsPath, err)
+	}
+
+	for _, tc := range sectionCases[vectorfile.PrivacyInvalidCase](t, doc, "invalid") {
+		t.Run(tc.Name, func(t *testing.T) {
+			switch {
+			case tc.PublicKey != "":
+				pub := ed25519.PublicKey(decodeHex(t, tc.PublicKey))
+				if _, err := X25519PublicFromEd25519(pub); err == nil {
+					t.Fatalf("X25519PublicFromEd25519 accepted the public key, want a rejection: %s (%s)", tc.Reason, tc.Rule)
+				}
+			case tc.PeerPublicKey != "":
+				peer := ed25519.PublicKey(decodeHex(t, tc.PeerPublicKey))
+				if _, err := WrappingKey(v.keyNamed(t, tc.Own), peer); err == nil {
+					t.Fatalf("WrappingKey derived a key for a small-order peer, want a rejection: %s (%s)", tc.Reason, tc.Rule)
+				}
+			case tc.WrappedKey != nil:
+				wrapped := decodeHex(t, *tc.WrappedKey)
+				_, err := Unwrap(wrapped, v.keyNamed(t, tc.Peer), v.pubNamed(t, tc.Own))
+				if err == nil {
+					t.Fatalf("Unwrap accepted a %d-byte wrapped key, want a rejection: %s (%s)", len(wrapped), tc.Reason, tc.Rule)
+				}
+				authRule := strings.Contains(tc.Rule, "authentication")
+				if authRule && !errors.Is(err, ErrAuthentication) {
+					t.Errorf("Unwrap = %v, want an authentication failure (%s)", err, tc.Rule)
+				}
+				if !authRule && errors.Is(err, ErrAuthentication) {
+					t.Errorf("Unwrap was rejected by authentication, want a rejection on length alone (%s): %v", tc.Rule, err)
+				}
+			case tc.ContentKey != "" && tc.Block != "":
+				key, err := ParseKey(decodeHex(t, tc.ContentKey))
+				if err != nil {
+					t.Fatalf("ParseKey: %v", err)
+				}
+				b, err := block.Decode(decodeHex(t, tc.Block))
+				if err != nil {
+					// Rejected before Open is ever reached — the enc-floor
+					// case, which is structural (spec/02-block-format.md,
+					// "Private block") and needs no key.
+					return
+				}
+				if _, err := Open(b, key); err == nil {
+					t.Fatalf("Open accepted the block, want a rejection: %s (%s)", tc.Reason, tc.Rule)
+				}
+			default:
+				t.Fatalf("case %q names none of the shapes PrivacyInvalidCase documents", tc.Name)
+			}
+		})
+	}
+}

@@ -46,10 +46,11 @@ type (
 	BlockCase          = vectorfile.BlockCase
 	ForkCase           = vectorfile.ForkCase
 
-	PrivacyInputs = vectorfile.PrivacyInputs
-	PrivacyCase   = vectorfile.PrivacyCase
-	X25519Case    = vectorfile.X25519Case
-	WrapCase      = vectorfile.WrapCase
+	PrivacyInputs      = vectorfile.PrivacyInputs
+	PrivacyCase        = vectorfile.PrivacyCase
+	X25519Case         = vectorfile.X25519Case
+	WrapCase           = vectorfile.WrapCase
+	PrivacyInvalidCase = vectorfile.PrivacyInvalidCase
 )
 
 // Build derives the whole vector set. The order of the returned files is

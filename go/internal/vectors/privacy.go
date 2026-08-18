@@ -102,6 +102,10 @@ func privacyDocument() (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
+	invalid, err := privacyInvalidCases(key)
+	if err != nil {
+		return Document{}, err
+	}
 
 	return Document{
 		Vectors: Format,
@@ -163,6 +167,11 @@ func privacyDocument() (Document, error) {
 				Name:        "private_block",
 				Description: "The whole thing assembled: a private genesis block carrying the ciphertext above, signed by the author. Only v, type, pub, sig and prev are in the clear.",
 				Cases:       []BlockCase{sealed},
+			},
+			{
+				Name:        "invalid",
+				Description: "Every rejection rule spec/04-cryptography.md states in prose, pinned as bytes: both of the X25519 conversion's own refusals, the small-order agreement, four key-wrap rejections, three AEAD tamper cases, and two payloads that authenticate but must still be refused — one on strict decoding, one on the rotate_key scoping rule that in fact lives in spec/02-block-format.md, which the enc-floor case also reaches down to.",
+				Cases:       invalid,
 			},
 		},
 	}, nil

@@ -368,3 +368,49 @@ type WrapCase struct {
 	Nonce      string `json:"nonce"`
 	WrappedKey string `json:"wrapped_key"`
 }
+
+// A PrivacyInvalidCase is one input the privacy layer MUST reject, at one of
+// its three points of failure: the Ed25519-to-X25519 conversion, a
+// per-recipient key unwrap, or the AEAD open of a private block's payload.
+// Which fields are populated says which:
+//
+//   - PublicKey alone: a raw 32-byte Ed25519 public key the birational map
+//     itself MUST refuse (a non-canonical y, or y = 1).
+//   - Own and PeerPublicKey: Own names a key in the file's inputs, whose
+//     private half is the author side of an agreement with PeerPublicKey, a
+//     small-order public key the agreement MUST reject before any wrapping
+//     key is derived.
+//   - Own, Peer and WrappedKey: Own wrapped, Peer (by their private key)
+//     attempts to unwrap WrappedKey — of the wrong length, or the right
+//     length but tampered.
+//   - ContentKey and Block: Block is a complete, decodable private block (not
+//     necessarily one whose signature is meant to matter — see Reason) whose
+//     enc, nonce or AAD-covered fields make it fail to open under
+//     ContentKey, or whose enc is structurally too short to be a ciphertext
+//     at all.
+type PrivacyInvalidCase struct {
+	Name   string `json:"name"`
+	Rule   string `json:"rule"`
+	Reason string `json:"reason"`
+
+	// PublicKey is a raw Ed25519 public key the X25519 conversion MUST
+	// refuse.
+	PublicKey string `json:"public_key,omitempty"`
+	// PeerPublicKey is a public key of small order, paired with Own for a
+	// key-agreement case.
+	PeerPublicKey string `json:"peer_public_key,omitempty"`
+	// Own and Peer name keys in the file's inputs, the same convention as a
+	// WrapCase's fields of the same name.
+	Own  string `json:"own,omitempty"`
+	Peer string `json:"peer,omitempty"`
+	// WrappedKey is the bytes offered to Unwrap, hex-encoded. It is a pointer
+	// so that a zero-length case — one of the lengths this section pins —
+	// can be told apart from a case this field does not apply to at all:
+	// omitempty on a string would drop an empty one exactly like an absent
+	// one, and "" is itself one of the wrapped-key-length cases.
+	WrappedKey *string `json:"wrapped_key,omitempty"`
+	// ContentKey is the chain's symmetric key and Block a private block to
+	// attempt opening under it.
+	ContentKey string `json:"content_key,omitempty"`
+	Block      string `json:"block,omitempty"`
+}

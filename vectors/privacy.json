@@ -312,6 +312,105 @@
           "cid_text": "bafyreifolzbjaarq3cwtb43vyog6jmmmpsbin3qw4ngrpyrwd55nhwq26m"
         }
       ]
+    },
+    {
+      "name": "invalid",
+      "description": "Every rejection rule spec/04-cryptography.md states in prose, pinned as bytes: both of the X25519 conversion's own refusals, the small-order agreement, four key-wrap rejections, three AEAD tamper cases, and two payloads that authenticate but must still be refused — one on strict decoding, one on the rotate_key scoping rule that in fact lives in spec/02-block-format.md, which the enc-floor case also reaches down to.",
+      "cases": [
+        {
+          "name": "y_not_canonical",
+          "rule": "spec/04-cryptography.md, Ed25519-to-X25519 conversion, public keys, step 2",
+          "reason": "y = 2^255 - 19, the field modulus: not reduced modulo p, so no Ed25519 public key produces this encoding.",
+          "public_key": "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+        },
+        {
+          "name": "y_equals_one",
+          "rule": "spec/04-cryptography.md, Ed25519-to-X25519 conversion, public keys, step 3",
+          "reason": "y = 1 is the identity point; 1 - y has no inverse mod p, so its Montgomery image is the point at infinity, which has no u coordinate to encode.",
+          "public_key": "0100000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "name": "small_order_agreement",
+          "rule": "spec/04-cryptography.md, Ed25519-to-X25519 conversion, public keys (small-order agreement)",
+          "reason": "peer_public_key is the Edwards point of order 2 (y = p - 1); its Montgomery image is u = 0, so every X25519 agreement with it is all-zero. spec/04 permits rejecting this at conversion time or at the agreement, but never deriving a wrapping key from it either way.",
+          "peer_public_key": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+          "own": "author"
+        },
+        {
+          "name": "wrapped_key_length_71",
+          "rule": "spec/04-cryptography.md, Wrapped key format",
+          "reason": "71 bytes; every conforming wrap is exactly the fixed 72, so this MUST be rejected on length before any decryption is attempted.",
+          "own": "author",
+          "peer": "recipient",
+          "wrapped_key": "222222222222222222222222222222222222222222222222bdafc49fb94819665a9993f60272336caf98fd5fd4fb1b302e94cc2b5a8ccbd61b25f1def2b48d225f13e64d5f0ffa"
+        },
+        {
+          "name": "wrapped_key_length_73",
+          "rule": "spec/04-cryptography.md, Wrapped key format",
+          "reason": "73 bytes; every conforming wrap is exactly the fixed 72, so this MUST be rejected on length before any decryption is attempted.",
+          "own": "author",
+          "peer": "recipient",
+          "wrapped_key": "222222222222222222222222222222222222222222222222bdafc49fb94819665a9993f60272336caf98fd5fd4fb1b302e94cc2b5a8ccbd61b25f1def2b48d225f13e64d5f0ffa9000"
+        },
+        {
+          "name": "wrapped_key_length_0",
+          "rule": "spec/04-cryptography.md, Wrapped key format",
+          "reason": "0 bytes; every conforming wrap is exactly the fixed 72, so this MUST be rejected on length before any decryption is attempted.",
+          "own": "author",
+          "peer": "recipient",
+          "wrapped_key": ""
+        },
+        {
+          "name": "wrapped_key_tampered",
+          "rule": "spec/04-cryptography.md, Wrapped key format (authentication)",
+          "reason": "The 72-byte wrap of author_to_recipient with one bit of its ciphertext flipped. The length is right; the tag no longer authenticates.",
+          "own": "author",
+          "peer": "recipient",
+          "wrapped_key": "222222222222222222222222222222222222222222222222bdafc49fb94819665a9993f60272336cae98fd5fd4fb1b302e94cc2b5a8ccbd61b25f1def2b48d225f13e64d5f0ffa90"
+        },
+        {
+          "name": "tampered_enc",
+          "rule": "spec/04-cryptography.md, Decryption procedure",
+          "reason": "private_genesis with one bit of enc flipped, re-signed by the author so the block still decodes and verifies; the ciphertext no longer authenticates under the unchanged AAD.",
+          "content_key": "1111111111111111111111111111111111111111111111111111111111111111",
+          "block": "a761760163656e63585018c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584042527180cfc9996d54b6752ae259b0b171511148307b81093b033bf862b45de70dd1c26b312e6effc78d59fe1e8344490b00614968751f61446f0f4d33a6500a6470726576f664747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333"
+        },
+        {
+          "name": "tampered_nonce",
+          "rule": "spec/04-cryptography.md, Decryption procedure",
+          "reason": "private_genesis with one bit of nonce flipped, re-signed by the author; the same enc opened under a different nonce does not authenticate.",
+          "content_key": "1111111111111111111111111111111111111111111111111111111111111111",
+          "block": "a761760163656e63585019c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c63736967584067c8d925dd48851558da58e2eeaa8fdc903f638f7df60ed4e1a44d8c262537e17c8cdb2ad7bfac7cb52adc26c8695bee9a11cab8fa5723805793f9780f9eb0066470726576f664747970656770726976617465656e6f6e63655818323333333333333333333333333333333333333333333333"
+        },
+        {
+          "name": "tampered_aad_field",
+          "rule": "spec/04-cryptography.md, Decryption procedure",
+          "reason": "private_genesis re-signed with prev changed from null to a 32-byte digest; enc and nonce are unchanged, so the AAD computed at open time no longer matches the one enc was sealed under.",
+          "content_key": "1111111111111111111111111111111111111111111111111111111111111111",
+          "block": "a761760163656e63585019c603fa620cb46602f747d4bd6c5cb4e437179d3ed615f88e3bf70eff7a9425ca95bbbcc0bff62dae2db0201b49ce295064f97994eda3731bc7ebeefa011841d9559fbcf77be720fe02305ea226863a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758409cf7629bb58ab2931ba3abb815e8d0f8e82d30a329e63509edf2ce2442eef5619aec106395e50a4020ef3f5c5de60018e83088dbeee8f4e717d9fb1044e55e0064707265765820f1deac9d3f383e2236bdad4b60111441b89c74fafba5b1f5d22c6351b5fb999b64747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333"
+        },
+        {
+          "name": "enc_below_floor",
+          "rule": "spec/02-block-format.md, Private block",
+          "reason": "An 8-byte enc field, shorter than the 16-byte Poly1305 tag every XChaCha20-Poly1305 ciphertext carries; it cannot be the AEAD's output and is rejected without attempting decryption.",
+          "content_key": "1111111111111111111111111111111111111111111111111111111111111111",
+          "block": "a761760163656e6348aaaaaaaaaaaaaaaa6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840419a40090baecde36398842d850ffe16d8ba94b54f6ac93cbf8eff3f1496efe57d81c639a6b987be0ee1b9764d9a34ba534078b8f620de7b2ca67c85a9523a0c6470726576f664747970656770726976617465656e6f6e63655818333333333333333333333333333333333333333333333333"
+        },
+        {
+          "name": "non_canonical_plaintext",
+          "rule": "spec/04-cryptography.md, Decryption procedure (payload), spec/03-encoding.md Deterministic CBOR",
+          "reason": "The ciphertext authenticates: its plaintext is the payload's three fields keyed refs, ops, ts instead of the canonical ts, ops, refs order. Decryption succeeds; the strict dCBOR decode of the plaintext is what rejects it, which pins that the check happens after authentication and not before.",
+          "content_key": "1111111111111111111111111111111111111111111111111111111111111111",
+          "block": "a761760163656e6358507c76f37d7e51400ad8e6ad1e7c5a68dc22d0fba87b097f1bbef34b830931e431dbf9c8629512d316c2651378fbaa08e85b2f435a0354d04821301f724bdae5c435904cf2e749b19dbe48a1089b7d323a6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840f85f8c59de81bcac46417eea1ba16c9d03ce9e6e6b2ae16c7c75fb817ff126722224d437fb6703c9801ef60c217a3640fafdee8d478983d2510135fca6aa7b096470726576f664747970656770726976617465656e6f6e63655818444444444444444444444444444444444444444444444444"
+        },
+        {
+          "name": "rotate_key_payload",
+          "rule": "spec/02-block-format.md, Validation dispatch",
+          "reason": "The ciphertext authenticates to a well-formed payload whose one operation is rotate_key. A private chain's key never rotates inside a ciphertext: the rule confining rotate_key to a rotation block applies here exactly as spec/02-block-format.md states it for a party that decrypts the payload.",
+          "content_key": "1111111111111111111111111111111111111111111111111111111111111111",
+          "block": "a761760163656e63585df8c5aafc0e2d01fa01794cc84988fa74aa7564557483b202a7eaf7b3d4317edd3441b9193b2e1871f59d0070f80d008fc83bc5894d283eec27e8601476d809c735af298bf1de44dc1b91cdd4b5c4423e891e84883843503eedc33ca7ba6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758402bed39f3a256e76d922fc4fa251f95e2b226ff7e807c9379de92a76898d7e76d887e00297e6834d28967b3cb2b3cab8b72d8777fe3ec087c6241ba81fbc1760b6470726576f664747970656770726976617465656e6f6e63655818555555555555555555555555555555555555555555555555"
+        }
+      ]
     }
   ]
 }

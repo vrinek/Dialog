@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p2
 issue_id: "062"
 tags: [conformance-vectors, cryptography, privacy, validation, interoperability]
@@ -154,13 +154,87 @@ call site rather than just on "throws".
 
 ## Acceptance Criteria
 
-- [ ] `vectors/privacy.json` pins at least one rejection case per rule: the two
+- [x] `vectors/privacy.json` pins at least one rejection case per rule: the two
       X25519-conversion rejections, the small-order agreement, the wrapped-key
       length check, and AEAD tamper/wrong-key rejection
-- [ ] `vectors/README.md` records the new section, its shape and its case
+- [x] `vectors/README.md` records the new section, its shape and its case
       count
-- [ ] Both implementations replay each case and reject it, reporting the rule
+- [x] Both implementations replay each case and reject it, reporting the rule
       class the case names
+
+## Work Log
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1. `vectors/privacy.json` gains an
+`invalid` section, extended past the todo's minimum five to the fuller
+coverage the ratified plan called for: the wrapped-key length check split
+into its three distinct lengths (71, 73, 0 bytes) plus a separate tamper case,
+and the AEAD half split into `enc`, nonce and one AAD-covered field, each
+its own case, plus the enc floor and the two payload-shape rejections
+(non-canonical plaintext, `rotate_key` scoping) the todo's discussion flagged
+but did not put in the minimum count. Thirteen cases in total.
+
+**Changes:**
+
+- `go/internal/vectorfile/vectorfile.go`: `PrivacyInvalidCase`, a new case
+  shape whose populated fields say which of four functions it exercises —
+  `public_key` alone (an X25519 conversion rejection), `own` with
+  `peer_public_key` (the small-order agreement), `own`/`peer`/`wrapped_key`
+  (a key unwrap), or `content_key`/`block` (an AEAD open) — because the five
+  rules span three different functions and the existing generic `InvalidCase`
+  (`bytes`, `rule`, `reason`) fits none of them alone. `WrappedKey` is a
+  pointer so that the zero-length case can be told apart in JSON from a case
+  the field does not apply to at all — `omitempty` on a plain string would
+  have dropped both alike.
+- `go/internal/vectors/privacy_invalid.go` (new): the thirteen cases —
+  `y_not_canonical`, `y_equals_one`, `small_order_agreement`,
+  `wrapped_key_length_71`/`_73`/`_0`, `wrapped_key_tampered`, `tampered_enc`,
+  `tampered_nonce`, `tampered_aad_field` (`prev`, re-signed by the author so
+  the block still verifies and only the AEAD rejects it), `enc_below_floor`
+  (built by hand, bypassing `Content.Validate`, the way `blocks.go`'s
+  `private_block_short_enc` is), `non_canonical_plaintext` (the payload's
+  three fields sealed in `refs`/`ops`/`ts` order instead of the canonical
+  `ts`/`ops`/`refs`, hand-assembled since `dcbor.Encode` always sorts) and
+  `rotate_key_payload` (a `rotate_key` operation sealed into an otherwise
+  well-formed payload, built from `Payload.Value()` directly since
+  `Payload.Encode` itself refuses to produce it). Every case is checked
+  against this package's own functions before it is emitted — `X25519PublicFromEd25519`,
+  `WrappingKey`, `Unwrap`, `privacy.Open` — the same discipline
+  `invalidBlockCases` and `invalidInChainCases` hold themselves to; a vector
+  may never pin a rejection this implementation does not itself make.
+- `go/privacy/spec_test.go`: `TestPrivacyInvalidVectors`, dispatching on the
+  same four field shapes, checked against `errors.Is(err, ErrAuthentication)`
+  where the case's `rule` says authentication is or is not the failure mode
+  (the length cases MUST NOT be authentication failures; the tamper cases
+  MUST be). Added here rather than to `go/conformance_test.go`: the privacy
+  area was already verified in this file, not the root one, precisely so that
+  "the package holding the keys reads the vectors directly" (its own header
+  comment) — these cases need the same access, for the same reason.
+- `ts/test/privacy.test.ts`: the same dispatch, consuming every case; the
+  hand-written rejection tests that the new vectors now pin exactly
+  (`enc`/nonce/`prev` tamper, wrapped-key length, the `rotate_key` payload, all
+  three X25519 rejections) were removed, and a short "beyond the vectors"
+  section keeps only the hand-written cases that are additional instances of
+  an already-pinned rule (`v` and `pub`, the AAD's other two covered fields; a
+  wrong content key; a non-shortest-integer non-canonical plaintext,
+  distinct from the vector's unsorted-key-order one) — matching the precedent
+  `ts/test/entity.test.ts` set after todo 058. `ts/test/vectors.ts`'s
+  `VectorCase` interface gained `public_key`, `peer_public_key` and
+  `content_key`. All thirteen cases pass against the clean-room TypeScript
+  implementation unmodified — no case needed for a code change on that side.
+- `vectors/README.md`: the privacy row's case count, a new "Privacy
+  rejections" paragraph in "Case shapes" naming the four field shapes, and a
+  paragraph in the walkthrough on the order to work through them (the X25519
+  layer before the key wrap, since a wrapping key derived from a rejected
+  input is wrong however the rest of the section behaves).
+
+Verified: `gofmt -l`, `go vet`, `go test -count=1 ./...`, `golangci-lint run`
+(0 issues) and `go run ./cmd/genvectors` reproducing exactly this diff, all
+clean; `npx tsc --noEmit` and `node --test` (344 passing) clean on the
+TypeScript side.
 
 ## Notes
 

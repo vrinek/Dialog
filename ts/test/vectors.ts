@@ -64,6 +64,10 @@ export interface VectorCase {
   info?: string;
   wrapping_key?: string;
   wrapped_key?: string;
+  // Privacy rejections (`privacy.json`, `invalid`).
+  public_key?: string;
+  peer_public_key?: string;
+  content_key?: string;
 }
 
 export interface VectorSection {

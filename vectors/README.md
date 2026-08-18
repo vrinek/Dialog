@@ -18,7 +18,7 @@ specification is ambiguous where it looked clear, which is worth reporting.
 | [`dcbor.json`](dcbor.json) | Deterministic CBOR profile | [03-encoding.md](../spec/03-encoding.md) | `encoding_reference` (10), `canonical` (26), `decimal_fractions` (6), `invalid` (54) |
 | [`entities.json`](entities.json) | Atoms, bonds, molecules, fillers | [01-data-model.md](../spec/01-data-model.md), [06-meta-bonds.md](../spec/06-meta-bonds.md) | `atoms` (5), `bonds` (2), `meta_bonds` (5), `molecules` (4), `fillers` (12), `invalid` (38) |
 | [`blocks.json`](blocks.json) | Blocks, chains, signatures | [02-block-format.md](../spec/02-block-format.md), [04-cryptography.md](../spec/04-cryptography.md), [05-processing-model.md](../spec/05-processing-model.md) | `chain` (5), `forks` (1), `fork_block` (1), `invalid` (23), `invalid_in_chain` (12) |
-| [`privacy.json`](privacy.json) | Private blocks, key wrapping | [04-cryptography.md](../spec/04-cryptography.md) | `payload` (1), `aead` (4), `x25519` (3), `key_wrap` (2), `private_block` (1) |
+| [`privacy.json`](privacy.json) | Private blocks, key wrapping | [04-cryptography.md](../spec/04-cryptography.md) | `payload` (1), `aead` (4), `x25519` (3), `key_wrap` (2), `private_block` (1), `invalid` (13) |
 
 ## How they are produced
 
@@ -121,6 +121,20 @@ it finds produces canonical bytes without sorting anything.
   payload, the AAD and the ciphertext; the Ed25519-to-X25519 conversions; and
   the per-recipient wrap, with its shared secret, wrapping key and 72-byte
   wrapped key.
+- **Privacy rejections** (`invalid` in `privacy.json`): every rejection rule
+  spec/04-cryptography.md states in prose, plus the two of them that in fact
+  live in spec/02-block-format.md (the enc floor and the rotate_key scoping).
+  A case's populated fields say which function it exercises, since the four
+  shapes this section holds are not interchangeable: `public_key` alone is an
+  Ed25519 public key the X25519 conversion itself MUST refuse; `own` with
+  `peer_public_key` is a small-order peer the key agreement MUST refuse before
+  any wrapping key is derived; `own`, `peer` and `wrapped_key` is a wrap to
+  attempt unwrapping, of the wrong length or the right length but tampered;
+  `content_key` with `block` is a complete, decodable private block to attempt
+  opening, whose enc, nonce or AAD-covered fields make the AEAD reject it, or
+  whose enc is too short to be a ciphertext at all. Every case still names the
+  `rule` it violates and a `reason`, exactly as the other three files'
+  `invalid` sections do.
 
 ## Using them in a new implementation
 
@@ -152,7 +166,14 @@ A reasonable order to work through, each step depending on the last:
 4. **`privacy.json`** — the AAD binds a ciphertext to its block, so check it
    before the ciphertext. The X25519 private half is derived by hashing the
    Ed25519 seed with SHA-512, not from the seed directly; that is the single
-   most common place to go wrong, and the `x25519` section isolates it.
+   most common place to go wrong, and the `x25519` section isolates it. Then
+   the `invalid` section: the two X25519 conversion rejections and the
+   small-order agreement first, since a wrapping key derived from a rejected
+   input is wrong however the rest of the section behaves; then the key-wrap
+   length and tamper cases; then the AEAD and payload cases, which is where an
+   implementation that authenticates correctly can still differ on *when* it
+   applies strict dCBOR decoding and the rotate_key scoping rule to what
+   comes out of the AEAD.
 
 All keys in these files are test keys with published private material. They
 exist so that signatures and ciphertexts are reproducible. Never use them for
