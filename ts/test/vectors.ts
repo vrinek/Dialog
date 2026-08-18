@@ -36,6 +36,7 @@ export interface VectorCase {
   type?: number;
   description?: string;
   template?: string;
+  variables?: string[];
 }
 
 export interface VectorSection {
