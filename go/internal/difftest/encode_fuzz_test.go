@@ -22,7 +22,9 @@ import (
 // compares the encoders on the value that byte string decodes to. The second
 // is what makes a conformance vector a meaningful seed: the vector's own value
 // goes through the comparison, not just its bytes reinterpreted as random
-// numbers.
+// numbers. It is also why testdata/fuzz/FuzzEncodeAgreement/ holds a document
+// nested exactly at MaxDepth: as entropy it is unremarkable, but as a decodable
+// input it puts the deepest tree Dialog permits through both encoders.
 func FuzzEncodeAgreement(f *testing.F) {
 	addVectorSeeds(f)
 

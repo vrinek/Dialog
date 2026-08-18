@@ -35,7 +35,11 @@ import (
 //
 // The seed corpus is vectors/dcbor.json, valid and invalid sections both, so
 // `go test` with no fuzzing budget still runs every conformance byte string
-// through all four branches.
+// through all four branches. testdata/fuzz/FuzzDecodeAgreement/ holds the two
+// inputs no amount of mutation would assemble — a chain of array heads nested
+// exactly at MaxDepth, and one past it, which are the two sides of the depth
+// divergence. Anything a nightly run finds belongs there too, named for the
+// class it fell outside of.
 func FuzzDecodeAgreement(f *testing.F) {
 	addVectorSeeds(f)
 

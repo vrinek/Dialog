@@ -127,6 +127,17 @@ var Allowlist = []Divergence{
 // CBOR decoder inside the harness that verifies the other two, which is one
 // decoder too many; the oracle has already parsed the input, and every class
 // above is visible in what it parsed it into.
+//
+// One limitation is worth stating rather than discovering. This reports the
+// classes an input *exhibits*, not the reason dcbor gave, so an input that
+// contains a float somewhere and is also rejected for a reason nobody
+// anticipated would be attributed to the float and pass. Narrowing that would
+// mean matching against dcbor's error text, which would make the harness
+// depend on the wording of messages rather than on behaviour. What keeps the
+// blind spot small is that the classes are structural and rare: an input
+// carrying one is an input the fuzzer built around that feature, and a dcbor
+// bug hiding behind one would have to co-occur with it on every input the
+// fuzzer found.
 func Divergences(v any) []Divergence {
 	found := map[string]bool{}
 	if dialogDepth(v) > dcbor.MaxDepth {
