@@ -7,9 +7,11 @@
  * then encoded and compared byte for byte, hashed, turned into a CID and its
  * text form, and decoded back from the canonical bytes.
  *
- * The rejection tests below are hand-written, because `entities.json` carries
- * no `invalid` section (see todos/058). They follow the MUSTs of
- * spec/01-data-model.md one by one.
+ * The `invalid` section is the other half: bytes the data model refuses, each
+ * handed to the decoder its `kind` names. The hand-written rejection tests
+ * further down go beyond it, case by case through the MUSTs of
+ * spec/01-data-model.md, but every rule the vectors pin is now pinned for both
+ * implementations at once.
  */
 
 import assert from "node:assert/strict";
@@ -26,6 +28,7 @@ import {
   type Quantity,
   type ScalarValue,
   EntityError,
+  type EntityErrorCode,
   META_BOND_TEMPLATES,
   SUPERSESSION,
   STANDARD_META_BONDS,
@@ -71,8 +74,9 @@ const EXPECTED_CASE_COUNTS: Record<string, number> = {
   atoms: 5,
   bonds: 2,
   meta_bonds: 5,
-  molecules: 3,
-  fillers: 11,
+  molecules: 4,
+  fillers: 12,
+  invalid: 38,
 };
 
 test("vectors/entities.json is the file this suite was written against", () => {
@@ -265,6 +269,13 @@ test("the meta-molecule is recognized by its bond digest alone", () => {
   assert.equal(metaBondOf(byName("paris_equivalence")), EQUIVALENCE);
   assert.equal(metaBondOf(byName("paris_is_the_capital_of_france")), undefined);
   assert.equal(metaBondOf(byName("eiffel_tower_is_330_metres_tall")), undefined);
+  // "_A_ is true" over an atom, where the meta-bond's Fillers line declares a
+  // molecule. It is recognized as a meta-molecule — the bond digest is all the
+  // recognition there is — and it is a valid entity: the Fillers lines are
+  // criteria applied at L2→L3, not validity rules (spec/06-meta-bonds.md,
+  // "Meta-molecules are regular molecules"). This implementation has no L3, so
+  // building and encoding it is the whole of what it owes the rule.
+  assert.equal(metaBondOf(byName("truth_of_an_atom")), TRUTH_ASSERTION);
 });
 
 test("the molecules of the vectors rebuild from their atoms and bonds", () => {
@@ -320,6 +331,80 @@ test("vectors/entities.json: fillers", async (t) => {
       assert.equal(bytesToHex(encodeFiller(filler)), vector.dcbor, "encode");
       assert.equal(bytesToHex(encode(buildValue(vector.value!))), vector.dcbor, "value model");
       assert.deepEqual(decodeFiller(hexToBytes(vector.dcbor)), filler, "decode");
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The invalid section: bytes the data model refuses
+// ---------------------------------------------------------------------------
+
+/** The decoder each `kind` names. The entity layer has one per kind, and a
+ * case is a rejection by its own. */
+const DECODERS: Record<string, (bytes: Uint8Array) => unknown> = {
+  atom: decodeAtom,
+  bond: decodeBond,
+  molecule: decodeMolecule,
+  filler: decodeFiller,
+};
+
+/** The {@link EntityErrorCode}s each `rule` label may produce here. The map is
+ * exhaustive over the labels the file uses, so a case citing a rule this suite
+ * has never seen fails rather than passing on the throw alone. */
+const CODES_BY_RULE: Record<string, readonly EntityErrorCode[]> = {
+  "spec/01-data-model.md, Atoms": ["description"],
+  "spec/01-data-model.md, Bonds": ["template"],
+  "spec/01-data-model.md, Molecules": ["fillers", "digest"],
+  "spec/01-data-model.md, Filler types": [
+    "filler-type",
+    "filler-value",
+    "ipfs-uri",
+    "digest",
+    "shape",
+  ],
+  "spec/01-data-model.md, Scalars": ["scalar", "digest", "shape"],
+  "spec/01-data-model.md, Datetime ranges": ["timestamp", "range"],
+  "spec/03-encoding.md, Internal references": ["digest"],
+  "spec/03-encoding.md, Deterministic CBOR rule 8 (closed maps)": ["shape"],
+};
+
+/** Rules whose cases are refused below the entity layer, by the dCBOR decoder,
+ * so no `EntityError` reaches the caller. */
+const DCBOR_LAYER_RULES = new Set(["spec/03-encoding.md, Decimal fractions"]);
+
+function thrownBy(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
+test("vectors/entities.json: invalid", async (t) => {
+  for (const vector of section(entities, "invalid").cases) {
+    await t.test(vector.name, () => {
+      assert.ok(vector.bytes !== undefined, "an invalid case carries bytes");
+      assert.ok(vector.kind !== undefined && vector.rule !== undefined);
+      const decode = DECODERS[vector.kind];
+      assert.ok(decode !== undefined, `unknown kind ${JSON.stringify(vector.kind)}`);
+
+      const error = thrownBy(() => decode(hexToBytes(vector.bytes!)));
+      assert.ok(error !== undefined, `these bytes MUST be rejected: ${vector.reason}`);
+
+      const codes = CODES_BY_RULE[vector.rule];
+      if (codes === undefined) {
+        assert.ok(
+          DCBOR_LAYER_RULES.has(vector.rule),
+          `no expected error code for the rule ${JSON.stringify(vector.rule)}`,
+        );
+        return;
+      }
+      assert.ok(error instanceof EntityError, `rejected with ${String(error)}, want an EntityError`);
+      assert.ok(
+        codes.includes(error.code),
+        `rejected with the code ${JSON.stringify(error.code)}; ${vector.rule} produces ${codes.join(", ")}`,
+      );
     });
   }
 });

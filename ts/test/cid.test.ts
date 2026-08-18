@@ -35,8 +35,9 @@ const EXPECTED_CASE_COUNTS: Record<string, number> = {
   atoms: 5,
   bonds: 2,
   meta_bonds: 5,
-  molecules: 3,
-  fillers: 11,
+  molecules: 4,
+  fillers: 12,
+  invalid: 38,
 };
 
 test("the vector file is the one this suite was written against", () => {
@@ -49,7 +50,10 @@ test("the vector file is the one this suite was written against", () => {
   }
 });
 
-for (const entitySection of entities.sections) {
+// The invalid section holds no value model and no encoding — its bytes are
+// what a decoder must refuse, which is the entity layer's business
+// (test/entity.test.ts), not the CID layer's.
+for (const entitySection of entities.sections.filter((s) => s.name !== "invalid")) {
   test(`vectors/entities.json: ${entitySection.name}`, async (t) => {
     for (const vector of entitySection.cases) {
       await t.test(vector.name, () => {
