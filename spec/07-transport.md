@@ -191,7 +191,8 @@ A block digest inside a `refs` or `prev` field is 32 raw bytes and has no text f
 | `announce` | `POST /dialog/v1/announce` |
 
 - `after` and `prev` **omitted** denote the genesis position. The literal string `null` MUST NOT be used and MUST be rejected with 400; exactly one spelling of a position is admitted, for the same reason exactly one spelling of a CID is.
-- `limit` is a positive decimal integer. A server MAY cap it and MUST NOT exceed it. Absent, the server chooses.
+- `limit` is a positive decimal integer, and has exactly one spelling: one or more ASCII digits, the first of which is not `0`, with no sign, no decimal point, no whitespace and no percent-encoded variant of any of those. `01`, `+1`, `1.0`, `%201` and `1e3` are malformed and MUST be rejected with 400. A server MAY cap the value it honours and MUST NOT exceed its own cap, and MAY reject with 400 a value too large to be a plausible count of blocks. Absent, the server chooses.
+- **A query parameter given more than once is malformed** and MUST be rejected with 400. `after` twice is two positions and this profile does not say which would win; `prev` and `limit` are refused on the same ground, and a server that picked one of the values would be defining a rule that is written nowhere.
 - `HEAD` MUST be supported wherever `GET` is. Any other method on a defined path MUST return 405 with an `Allow` header.
 
 A 200 response to `tip` or `range` MUST carry a `Dialog-Tip` header whose value is the CID text form of the tip the server holds for that author at the moment of the response, as `tip` above defines a tip:
@@ -249,7 +250,7 @@ An `announce` receipt is one JSON object mapping each submitted block's CID to w
 | 200 | Here is the answer. For a range or a sibling set the answer may be an empty sequence, and an empty range from a source holding no tip for that author carries no `Dialog-Tip`. |
 | 202 | The announce was taken for later processing; the receipt is incomplete or absent. |
 | 304 | The `tip` is unchanged from the `If-None-Match` the client sent. |
-| 400 | The request was malformed: a bad author key, a bad CID, a non-canonical spelling of either, a bad `limit`. |
+| 400 | The request was malformed: a bad author key, a bad CID, a non-canonical spelling of either, a bad `limit`, a query parameter given more than once. |
 | 404 | **I do not have it.** Never "it does not exist." A `tip` for an author this source holds no tip for; a `block` it does not hold; the path of an OPTIONAL operation this server does not offer. |
 | 405 | Wrong method for a defined path. |
 | 406 | The client's `Accept` excludes the only type this server can send. |
@@ -379,13 +380,7 @@ This draft deliberately settles none of the following. Each has a todo, each is 
 | [074](../todos/074-pending-p3-where-is-the-successor-chain-served.md) | Where is the successor chain served? | "Chain succession" |
 | [075](../todos/075-pending-p3-freshness-has-no-signal.md) | Freshness has no signal | `tip`; "What a server does not guarantee" |
 
-### Gaps the first implementation found
-
-The questions above were left open on purpose. The ones below were not: they are places where this draft is silent, or says two things, and an implementation had to choose. They were found by writing one (`go/transport`, the Go reference implementation of this profile), and each names the choice that implementation made so that a second implementation can match it or dispute it.
-
-| Todo | Question | Where it bites |
-|------|----------|----------------|
-| [089](../todos/089-pending-p3-limit-has-one-spelling-or-several.md) | Does `limit` have one spelling, and what does a repeated query parameter mean? | "HTTP binding", the bullets under the method-and-path table |
+The questions above were left open on purpose. A second set was not: five places where this draft was silent, or said two things, and the first implementation (`go/transport`) had to choose. Each is now settled in the text above, and the reasoning is in [todos 085 to 089](../todos/) — `Dialog-Tip` where there is no tip, the tip of a store with a hole and the stability of a fork's branch choice, the status of an OPTIONAL operation a server does not offer, when an announce receipt's dispositions are decided, and the spelling of `limit` and of a repeated query parameter.
 
 ## Security Considerations
 

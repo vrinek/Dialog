@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "089"
 tags: [transport, specification-gap, http-binding]
@@ -65,8 +65,8 @@ than once is a 400. The sentence costs a line and closes three cases.
 
 ## Acceptance Criteria
 
-- [ ] The specification says which spellings of `limit` are admitted
-- [ ] The specification says what a repeated query parameter means
+- [x] The specification says which spellings of `limit` are admitted
+- [x] The specification says what a repeated query parameter means
 
 ## Work Log
 
@@ -76,6 +76,31 @@ than once is a 400. The sentence costs a line and closes three cases.
 
 Found writing the query parsing: the profile is exact about every identifier in
 a URL and silent about the one number.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, extended to every query parameter, as recommended.
+
+- `spec/07-transport.md`, "HTTP binding": `limit` has exactly one spelling — one
+  or more ASCII digits, the first not `0`, with no sign, no decimal point, no
+  whitespace and no percent-encoded variant of any of those. `01`, `+1`, `1.0`,
+  `%201` and `1e3` are named as malformed and MUST be 400. A server MAY cap the
+  value it honours, MUST NOT exceed its cap, and MAY reject a value too large to
+  be a plausible count of blocks.
+- A second bullet: **a query parameter given more than once is malformed** and
+  MUST be 400, because `after` twice is two positions and no rule says which
+  wins; `prev` and `limit` go the same way. The 400 row of the status table now
+  names it.
+- `go/transport` already rejected exactly this set. The conformance test
+  `TestNonCanonicalSpellingsAreRejected` grew the cases that were missing: the
+  sign, the decimal point, the leading whitespace, exponent notation, an
+  out-of-range value, an empty value, and `limit`, `after` and `prev` each given
+  twice. The leading zero was already covered. `limit`'s doc comment cites the
+  rule.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

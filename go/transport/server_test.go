@@ -449,6 +449,18 @@ func TestNonCanonicalSpellingsAreRejected(t *testing.T) {
 		{"a negative limit", DefaultPrefix + "/chains/" + author + "/blocks?limit=-1"},
 		{"a non-numeric limit", DefaultPrefix + "/chains/" + author + "/blocks?limit=many"},
 		{"a limit with a leading zero", DefaultPrefix + "/chains/" + author + "/blocks?limit=01"},
+		{"a signed limit", DefaultPrefix + "/chains/" + author + "/blocks?limit=%2B1"},
+		{"a decimal limit", DefaultPrefix + "/chains/" + author + "/blocks?limit=1.0"},
+		{"a limit with whitespace around it", DefaultPrefix + "/chains/" + author + "/blocks?limit=%201"},
+		{"a limit in exponent notation", DefaultPrefix + "/chains/" + author + "/blocks?limit=1e3"},
+		{"a limit too large to be a count of blocks", DefaultPrefix + "/chains/" + author + "/blocks?limit=99999999999999999999"},
+		{"an empty limit", DefaultPrefix + "/chains/" + author + "/blocks?limit="},
+		// A query parameter given more than once is malformed: two values, and
+		// no rule saying which wins (spec/07-transport.md, "HTTP binding";
+		// todos/089).
+		{"limit given twice", DefaultPrefix + "/chains/" + author + "/blocks?limit=1&limit=2"},
+		{"after given twice", DefaultPrefix + "/chains/" + author + "/blocks?after=" + blockCID + "&after=" + blockCID},
+		{"prev given twice", DefaultPrefix + "/chains/" + author + "/siblings?prev=" + blockCID + "&prev=" + blockCID},
 	}
 	for _, c := range cases {
 		resp := get(t, ts, http.MethodGet, c.path, nil)

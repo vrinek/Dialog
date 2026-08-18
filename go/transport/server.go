@@ -273,6 +273,13 @@ func (s *Server) position(w http.ResponseWriter, r *http.Request, param string) 
 
 // limit reads the optional maximum block count of a range. A server MAY cap it
 // and MUST NOT exceed it.
+//
+// It has exactly one spelling — one or more ASCII digits, the first not zero,
+// with no sign, no decimal point and no whitespace — and every other is 400,
+// including a value too large to be a plausible count of blocks, which the round
+// trip through strconv catches. A parameter given more than once is malformed
+// for the same reason `after` given twice is: two values, and no rule anywhere
+// saying which wins (spec/07-transport.md, "HTTP binding"; todos/089).
 func (s *Server) limit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	values, present := r.URL.Query()["limit"]
 	if !present {

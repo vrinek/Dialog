@@ -133,4 +133,4 @@ The following are explicitly deferred to future protocol versions:
 
 Documents 00–06 are the protocol. Document 07 is an optional profile: normative for an implementation that chooses to speak it, and binding on nothing else.
 
-Document 07 remains **Draft**. It now has one implementation — `go/transport`, which serves and syncs the grounding demo's committed chains over HTTP — and writing it surfaced five places where the draft is silent or says two things; they are listed in that document's "Gaps the first implementation found" and are what has to be settled before the profile leaves Draft.
+Document 07 remains **Draft**. It has one implementation — `go/transport`, which serves and syncs the grounding demo's committed chains over HTTP — and the five places where writing it found the draft silent or saying two things are now settled in the text (todos 085 to 089). What keeps the profile in Draft is the seven questions of its "Open questions" table, each of which would move normative text if it were settled the other way, and the fact that one implementation is not yet interoperability.
