@@ -20,6 +20,9 @@ go/                      # Go reference implementation (module github.com/vrinek
   cmd/genvectors/        # writes the conformance vectors to vectors/
   internal/              # the vector generator and its JSON schema
   conformance_test.go    # checks the implementation against committed vectors/
+ts/                      # TypeScript implementation, wire format only (package dialog-protocol)
+  src/                   # dcbor.ts cid.ts entity.ts block.ts privacy.ts — clean-room, see below
+  test/                  # one *.test.ts per vectors/*.json, plus vectors.ts (the loader)
 vectors/                 # Conformance test vectors (generated, language-agnostic)
 docs/
   brainstorms/           # Design decision records
@@ -122,15 +125,69 @@ was not meant to move any byte and the diff is non-empty, the change is a bug,
 not the vectors. `go test ./...` fails when the two drift apart, and so does
 CI.
 
+### TypeScript implementation
+
+`ts/` implements the wire format only — `dcbor`, `cid`, `entity`, `block` and
+`privacy`, the four vector files' worth of the protocol; L2 and L3 are not
+part of it. Run both commands from `ts/`, and both before every commit:
+
+```bash
+nix shell nixpkgs#nodejs_24 --command npx tsc --noEmit
+nix shell nixpkgs#nodejs_24 --command node --test
+```
+
+Node is not installed system-wide, the same convention as Go above; `npm ci`
+first if `node_modules/` is missing or `package-lock.json` changed. There is
+no build step: Node 24 strips TypeScript types natively, so `node --test`
+runs `test/*.test.ts` directly.
+
+**The clean-room rule applies to all future work on `ts/`.** An agent
+implementing or extending it MUST NOT read anything under `go/` — not the
+package layout, not a helper's name, not a comment explaining a rule. Allowed
+inputs are `spec/*.md`, `vectors/*.json` and
+`docs/plans/2026-08-18-typescript-implementation.md`. The one exception is
+running `go/`, never reading it: `go test`, `go run ./cmd/genvectors` and
+`go run ./cmd/genvectors -check` may be executed for cross-validation. The
+point is not secrecy — both implementations are in the
+same repository — but to keep the two independent: if the TypeScript code
+happens to read like the Go code, that is either the specification leaving
+only one reasonable design, or a leak, and the only way to tell them apart is
+to never let one see the other's source while it is being written. Where
+`spec/` and `vectors/` disagree, or a rule is stated in prose only, file a
+`todos/` entry rather than resolving the gap by inference — see the plan's
+"Rules for implementing agents" for the running count of what past phases
+found.
+
+**Vector consumption convention.** Each `ts/test/<area>.test.ts` loads the
+matching `vectors/<area>.json` (via `test/vectors.ts`'s `loadVectors`), and
+opens with a case-count assertion — one entry per section, checked against
+`vectors/README.md`'s own count and against the total number of sections in
+the file. This is what turns "a case silently stopped running" into a failing
+test: a vector file that grows a section, or a test that stops iterating one,
+moves the count on one side and not the other. `invalid` sections are
+consumed by dispatching on which of a case's optional fields are populated
+(documented at each such field's declaration, both in
+`go/internal/vectorfile/vectorfile.go` and in `ts/test/vectors.ts`'s
+`VectorCase`), never by a separate `kind`/type discriminant field, because the
+shape of what is present already says which decoder or function the case
+exercises.
+
 ## Code Style Guidelines
 
 ### Language & Framework
 - Protocol is language-agnostic; the specification is normative, not the code
-- Reference implementation: Go, in `go/` (Go 1.26, module `github.com/vrinek/Dialog/go`)
-- Dependencies: standard library plus `golang.org/x/crypto`; the CBOR codec is hand-rolled on purpose
+- Reference implementation: Go, in `go/` (Go 1.26, module `github.com/vrinek/Dialog/go`),
+  the whole L1 → L2 → L3 pipeline, and the source of `vectors/`
+- Second implementation: TypeScript, in `ts/` (package `dialog-protocol`, Node 24),
+  the wire format only (`dcbor`/`cid`/`entity`/`block`/`privacy`), written
+  clean-room against `spec/` and `vectors/` — see "TypeScript implementation"
+  above before touching it
+- Dependencies (Go): standard library plus `golang.org/x/crypto`; the CBOR codec is hand-rolled on purpose
   (`go.mod` also names `github.com/quasilyte/go-ruleguard/dsl`, which nothing
   compiles: ruleguard type-checks `go/ruleguard/rules.go` against it, and the
   `ruleguard` build tag keeps the file out of every build)
+- Dependencies (TypeScript): the zero-transitive-dependency `@noble/curves`,
+  `@noble/ciphers` and `@noble/hashes`; dCBOR is hand-rolled, same rationale as Go
 - Prefer deterministic, widely-supported languages for reference code
 
 ### Specification Writing Style

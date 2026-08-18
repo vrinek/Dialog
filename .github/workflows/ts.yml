@@ -1,0 +1,59 @@
+name: TypeScript
+
+# The TypeScript implementation of the Dialog wire format
+# (docs/plans/2026-08-18-typescript-implementation.md): a second, independent
+# reading of spec/ and vectors/, with no access to go/'s source. This job
+# never reads go/, only runs `node --test` against the committed vectors/*.json
+# files it shares with the Go reference implementation.
+#
+# The cache-poisoning suppression below mirrors go.yml's: a tag-push trigger
+# next to setup-node's npm cache makes zizmor warn that a poisoned cache could
+# reach a published artifact. This job publishes nothing — it type-checks and
+# tests, and uploads no artifact and cuts no release.
+on: # zizmor: ignore[cache-poisoning]
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same ref makes the previous run's answer irrelevant.
+concurrency:
+  group: ts-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: ts
+
+jobs:
+  check:
+    name: Type-check, test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # This job only reads the repository. Keeping the token in
+          # .git/config afterwards would hand it to every later step, and to
+          # anything those steps run.
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: node --test

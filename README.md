@@ -22,12 +22,27 @@ Distributed, append-only ontology graph protocol.
 
 The full protocol specification is in [`spec/`](spec/00-overview.md).
 
-## Reference implementation
+## Implementations
 
-A Go implementation of the whole L1 → L2 → L3 pipeline lives in [`go/`](go/). It is not the protocol —
-the specification is — and it exists for two reasons: to prove the
-specification is implementable, and to produce the conformance vectors that
-every other implementation can be checked against.
+Two implementations exist. Neither is the protocol — the specification is —
+and they exist for the same reason a two-implementation project always does:
+to prove the specification (together with the conformance vectors it fixes)
+is a sufficient interop contract, not just a document one team's code happens
+to agree with itself about.
+
+**[`vectors/`](vectors/README.md) is the interop contract.** Four
+language-agnostic JSON files pin the canonical bytes, digests, CIDs, signing
+inputs, signatures and ciphertexts of a fixed set of entities and blocks, plus
+the byte strings a conforming implementation must reject. Both implementations
+below are verified against them, and the test suite of each fails if it ever
+drifts from the committed files.
+
+### Go — reference (`go/`)
+
+The whole L1 → L2 → L3 pipeline: the wire format, the block-level validation
+rules, and the two layers above them that the vectors do not cover (the
+accumulated graph and one user's filtered, meta-bond-applied view of it).
+It generates `vectors/`.
 
 | Package | What it implements |
 |---------|--------------------|
@@ -44,13 +59,6 @@ the ruleguard DSL; no build ever compiles it — it exists so the static-analysi
 rules in `go/ruleguard/` type-check.) The CBOR codec is
 hand-rolled, because Dialog's profile is a small restricted subset and writing
 it audits the specification more honestly than a general-purpose library would.
-
-**[`vectors/`](vectors/README.md) is the interop contract.** Four
-language-agnostic JSON files pin the canonical bytes, digests, CIDs, signing
-inputs, signatures and ciphertexts of a fixed set of entities and blocks, plus
-the byte strings a conforming implementation must reject. A new implementation
-in any language should be developed against them; they are generated from this
-Go code and the test suite fails if the two ever drift apart.
 
 ```bash
 cd go
@@ -75,6 +83,34 @@ go get github.com/vrinek/Dialog/go@main
 ```
 
 See [Releases](#releases) for why the tag needs the `go/` prefix.
+
+### TypeScript — wire format (`ts/`)
+
+The wire format only — `dcbor`, `cid`, `entity`, `block` and `privacy`, the
+four vector files' worth of the protocol — written **clean-room**: built
+against `spec/` and `vectors/` alone, with no access to `go/`'s source, so
+that its agreement with the Go implementation is evidence the specification
+and the vectors are sufficient on their own, not evidence that one
+implementation copied the other's design decisions. L2 and L3 are node
+behavior, not interop surface, and are not part of it.
+
+Zero-transitive-dependency runtime dependencies from the audited `@noble/*`
+family (`curves` for Ed25519 and X25519, `ciphers` for XChaCha20-Poly1305,
+`hashes` for SHA-256, SHA-512 and HKDF); dCBOR is hand-rolled, same rationale
+as the Go implementation. Runs on Node 24 with no build step (native
+TypeScript type-stripping); library code uses no Node-only APIs, so it also
+runs in a browser.
+
+```bash
+cd ts
+nix shell nixpkgs#nodejs_24 --command npm ci
+nix shell nixpkgs#nodejs_24 --command npx tsc --noEmit
+nix shell nixpkgs#nodejs_24 --command node --test
+```
+
+See [`docs/plans/2026-08-18-typescript-implementation.md`](docs/plans/2026-08-18-typescript-implementation.md)
+for the plan and the phase-by-phase account of every gap the clean-room
+process found in `spec/` and `vectors/` along the way.
 
 ## Architecture
 

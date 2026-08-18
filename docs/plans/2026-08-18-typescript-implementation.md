@@ -1,6 +1,6 @@
 # TypeScript implementation — design and plan
 
-**Status:** in-progress
+**Status:** complete
 **Date:** 2026-08-18
 
 ## Purpose
@@ -147,10 +147,32 @@ by the final cross-validation phase, never read.
    payload, wrapped-key length violations, and — since no vector pins them —
    the three Ed25519-to-X25519 rejection rules. One gap filed: 062
    (`privacy.json` pins no invalid case at all, for any of the five rejection
-   rules spec/04 states in prose).
+   rules spec/04 states in prose). Since settled: `privacy.json` grew an
+   `invalid` section of 13 cases — the two X25519-conversion rejections, the
+   small-order agreement, four key-wrap rejections (three lengths and a
+   tamper), three AEAD tamper cases, the enc floor, and the two payload cases
+   (non-canonical plaintext, a `rotate_key` op) — each verified rejected by
+   the Go reference implementation before emission and consumed by both
+   implementations unmodified; the hand-written tests that duplicated a now-
+   pinned rule were removed, and only the ones that are additional instances
+   of a pinned rule (not new rules) remain.
 5. CI workflow + docs (README implementations table, AGENTS.md) + this plan
    marked complete. Cross-validation note: both implementations green against
    the same committed vectors on the same commit.
+   — **done:** `.github/workflows/ts.yml`, mirroring `go.yml`'s conventions
+   (SHA-pinned actions, `persist-credentials: false`, the same
+   cache-poisoning suppression, one `check` job) — `npm ci`, `tsc --noEmit`,
+   `node --test`, on push/PR/dispatch. `actionlint` and `zizmor` both report no
+   findings. README's "Reference implementation" section became
+   "Implementations", with Go (reference; the full L1–L3 pipeline; source of
+   `vectors/`) and TypeScript (clean-room; wire format only; browser-safe;
+   `@noble/*` deps) each in their own subsection, both verified against
+   `vectors/`. AGENTS.md gained a "TypeScript implementation" subsection (the
+   two commands, the clean-room rule restated for future agents, and the
+   vector-consumption convention — case-count assertions, dispatch on a
+   case's populated fields rather than a `kind` discriminant) and a second
+   "Language & Framework" bullet. This plan marked complete; see "Outcome"
+   below.
 
 ## Rules for implementing agents
 
@@ -161,3 +183,64 @@ by the final cross-validation phase, never read.
   filed 060 and 061, phase 4 filed 062).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
+
+## Outcome
+
+Two independent implementations of the Dialog wire format now exist, kept
+apart in the one sense that matters here: the TypeScript implementation never
+read the Go one, only `spec/` and `vectors/`. Both are green against the same
+committed `vectors/` on the same commit, which is the test this plan set out
+to run — not "is Dialog implementable" (the Go implementation already
+answered that) but "is `spec/` plus `vectors/` *enough*, on their own, to
+reach the same bytes twice."
+
+**Vector suite growth.** Every phase that hit a place the two documents did
+not pin closed the gap by adding cases, never by trusting one implementation's
+reading over the other's:
+
+| File | Before | After | Todos |
+|------|-------:|------:|-------|
+| `dcbor.json` | 92 | 96 | 056, 057 |
+| `entities.json` | 26 | 66 | 058, 059 |
+| `blocks.json` | 30 | 42 | 060, 061 |
+| `privacy.json` | 11 | 24 | 062 |
+| **Total** | **159** | **228** | |
+
+Every added case is an acceptance or a rejection now pinned for any future
+implementation, not just these two — the whole point of a vector file over a
+pairwise agreement.
+
+**Divergences the clean-room process caught.** Two of the seven todos found a
+place where the two implementations had already, independently, made
+*different* choices — not just gaps in what the vectors tested, but instances
+of the disagreement the whole exercise exists to surface:
+
+- **The dCBOR nesting depth bound** (057): spec/03-encoding.md's rule 9
+  ("Implementations MUST support nesting to a reasonable depth") named no
+  number. The TypeScript implementation picked 1024; the Go implementation had
+  no bound at all. Settled by naming 64, counted over containers, as rule 10
+  of spec/03-encoding.md, with four new `dcbor.json` cases pinning it.
+- **The reference-resolution scan limit** (060): spec/05-processing-model.md
+  said an implementation SHOULD default it and MUST allow configuring it,
+  without saying to what or over what unit. The TypeScript implementation had
+  defaulted to 1024, counting distinct digests seen; the Go implementation to
+  256, counting foreign blocks visited — two different numbers *and* two
+  different definitions of what the number counts, both conforming to the
+  same sentence. Settled at 256, foreign blocks, named in the specification;
+  the TypeScript implementation's default changed to match.
+
+Both were invisible to each implementation's own test suite — a codec or a
+validator that only ever talks to itself has no way to notice its own
+threshold is arbitrary — and both were found by the second implementation
+existing at all, before either committed vector or hand-written test caught
+them.
+
+**Todos 056-062, all settled.** Every gap the clean-room process filed was
+resolved by adding to `spec/` or `vectors/`, never by weakening either
+implementation to match the other: 056 (map keys are text-only in the
+vectors), 057 and 060 above, 058 (`entities.json`'s rejection rules were
+unpinned), 059 (a meta-bond's `Fillers:` line is an L3 recognition criterion,
+not a validity rule), 061 (`blocks.json`'s chain-relative rejections were
+unpinned), 062 (`privacy.json`'s five rejection rules were unpinned). The
+running total is seven todos filed over five phases and seven settled; none
+remain open from this effort.
