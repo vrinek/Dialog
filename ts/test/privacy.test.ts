@@ -45,6 +45,7 @@ import {
   signingInput,
   verifyBlockSignature,
 } from "../src/block.ts";
+import { authorKeyFromText, authorKeyToText } from "../src/cid.ts";
 import { encode } from "../src/dcbor.ts";
 import { bytesToHex, hexToBytes } from "../src/hex.ts";
 import {
@@ -107,6 +108,23 @@ function publicKeyOf(name: string): Uint8Array {
   if (key === undefined) throw new Error(`no test key named ${name}`);
   return hexToBytes(key.public_key);
 }
+
+test("every test key's public_key_text is reproduced from public_key, and parses back to it", () => {
+  const keys = vectors.inputs?.keys ?? [];
+  assert.equal(keys.length, 3);
+  for (const key of keys) {
+    assert.equal(
+      authorKeyToText(hexToBytes(key.public_key)),
+      key.public_key_text,
+      `${key.name}'s public key text`,
+    );
+    assert.deepEqual(
+      authorKeyFromText(key.public_key_text),
+      hexToBytes(key.public_key),
+      `${key.name}'s public key text parses back to the key bytes`,
+    );
+  }
+});
 
 const contentKey = hexToBytes(vectors.inputs!.content_key!);
 const blockNonce = hexToBytes(vectors.inputs!.block_nonce!);

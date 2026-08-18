@@ -82,6 +82,7 @@ export interface VectorKey {
   seed: string;
   private_key: string;
   public_key: string;
+  public_key_text: string;
 }
 
 export interface VectorFile {

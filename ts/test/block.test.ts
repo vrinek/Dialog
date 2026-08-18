@@ -59,6 +59,7 @@ import {
   validateBlock,
   verifyBlockSignature,
 } from "../src/block.ts";
+import { authorKeyFromText, authorKeyToText } from "../src/cid.ts";
 import { atomFiller, moleculeFiller, quantity, scalarFiller } from "../src/entity.ts";
 import { bytesToHex, hexToBytes } from "../src/hex.ts";
 import { buildValue, loadVectors, section, type VectorCase } from "./vectors.ts";
@@ -112,6 +113,18 @@ test("every test key is the one its seed derives", () => {
     );
     // The 64-byte private key form is the seed followed by the public key.
     assert.equal(key.private_key, key.seed + key.public_key);
+    // public_key_text is derived from public_key, not independent
+    // (spec/03-encoding.md, "Text representation of author keys").
+    assert.equal(
+      authorKeyToText(hexToBytes(key.public_key)),
+      key.public_key_text,
+      `${key.name}'s public key text`,
+    );
+    assert.deepEqual(
+      authorKeyFromText(key.public_key_text),
+      hexToBytes(key.public_key),
+      `${key.name}'s public key text parses back to the key bytes`,
+    );
   }
 });
 
