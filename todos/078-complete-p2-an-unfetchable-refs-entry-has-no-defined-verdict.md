@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "078"
 tags: [transport, specification-gap, processing-model, block-format, validation]
@@ -139,11 +139,11 @@ a pointer at `spec/05`.
 
 ## Acceptance Criteria
 
-- [ ] The specification states what verdict a block gets when a `refs` target
+- [x] The specification states what verdict a block gets when a `refs` target
       cannot be obtained, and it is the same verdict on every node
-- [ ] The distinction between "resolved to nothing" and "not obtainable" is
+- [x] The distinction between "resolved to nothing" and "not obtainable" is
       explicit in rule 4 or in the text rule 4 points at
-- [ ] `spec/07-transport.md` cites the rule rather than legislating around it
+- [x] `spec/07-transport.md` cites the rule rather than legislating around it
 
 ## Work Log
 
@@ -158,6 +158,78 @@ unvalidated* is defined for a missing `prev` only, rule 4 reads as "invalid" on
 its face, and the "Validation" preamble says reachability behaves like ancestry
 without ever saying what that means. The draft states the client rule and cites
 this todo; no specification text was changed.
+
+### 2026-08-18 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1, sharpened into a three-valued verdict for
+rule 4. Resolution either resolves a digest (the rule passes), proves it absent
+from the reachable set (invalid), or cannot say because a block it needs is not
+held and not obtainable (stored but unvalidated). *Definitive* was pinned to
+mean exactly two things: a resolution that completed against the blocks the node
+holds, or the scan limit being reached — a resource bound is a definitive
+verdict by design, because the node chose it and every default-configured node
+shares it. The absence of a block is not evidence about validity, which is what
+keeps a source that withholds a foreign block from invalidating a valid one.
+
+**Changes:**
+
+- `spec/05-processing-model.md`: "Block reception" step 4 now names both causes;
+  the *stored but unvalidated* definition lists them (ancestry, reference
+  resolution) and says they are one state; a new "Absence is not evidence"
+  paragraph carries the MUST NOT and points at `spec/07`'s client rule. The
+  "Resolution procedure" gained its three outcomes, with the note that outcome 3
+  is reached only when the missing block could have mattered — a `refs` entry
+  demand-driven resolution never needed leaves the block valid. "Scan limit"
+  gained the explicit contrast between a bound reached and a block absent.
+- `spec/02-block-format.md`: the "Validation" preamble's "which is already true
+  of rule 4's reachability" is replaced by the rule itself, and states that the
+  disagreement between two nodes is between *valid* and *undecided*, never
+  *valid* and *invalid*. Rule 4 carries the three outcomes, each with what a
+  node MUST and MAY do about it.
+- `spec/07-transport.md`: "Interaction with the scan limit", point 3, cites the
+  settled rule instead of this todo, and the verification obligation (point 4)
+  names the verdict a 404 for a `refs` entry produces. The open-questions table
+  lost its 078 row.
+- `go/block/validate.go`: the resolver records the first block it needed and the
+  source did not hold — an ancestor deeper in the chain, a `refs` entry, or a
+  block reached transitively through one. A digest left unresolved with such a
+  gap open is a rule 4 error wrapping `ErrNotFound`, which is the pathway rule
+  3's missing predecessor already used; a resolution that completed reports the
+  unchanged, definitive error. New exported `IsUnvalidated(err)` names the
+  question a caller must ask before recording a rejection, and says why the scan
+  limit is the deliberate opposite.
+- `go/block/store.go`: `ErrNotFound`'s doc points at `IsUnvalidated`.
+- `go/block/validate_test.go`: new `TestUnobtainableReferenceIsUndecided` — an
+  absent `refs` entry, an absent transitively-reffed block and an ancestor gap
+  are each undecided and each validate unchanged once the block arrives; a
+  `refs` entry resolution never needed leaves the block valid with zero blocks
+  scanned; the verdict is stable across repeated validations of one store.
+  `TestReachability` now asserts that its three definitive rejections — an
+  unknown digest, an entity known to the store but not named by the block, and
+  the scan limit — are *not* the undecided verdict.
+- `ts/src/block.ts`: the same distinction, written from the specification text.
+  The resolver exposes the block it could not read; rule 4 throws the existing
+  `unvalidated` code for it. `BlockError` gained `awaiting`, the digest whose
+  arrival would settle the verdict, which rule 3's two `unvalidated` throws also
+  carry — so `BlockStore` files a held block under the missing block whatever
+  rule left it undecided, and one arrival path re-validates both.
+- `ts/test/block.test.ts`: four tests mirroring the Go ones, including that an
+  invalid block is not held while an undecided one is.
+- `vectors/README.md`: says that every rule 4 case in `invalid_in_chain` is a
+  definitive rejection — the `setup` holds every block resolution needs — so an
+  implementation answering *stored but unvalidated* for one of them has the
+  distinction the wrong way round.
+
+**Vectors: no byte moved.** No `invalid_in_chain` case relied on the old
+missing-block reading: the four rule 4 cases have empty `refs` and complete
+setups, so each is a resolution that completed and found nothing, and the
+scan-limit case is definitive by the unchanged MUST. Nothing needed
+re-expressing. `genvectors` reproduces `vectors/` byte for byte.
+
+**Filed:** `todos/079` (an undecryptable `refs` target is still two-valued) and
+`todos/080` (rules 6 and 10 stayed two-valued while rule 4 became three-valued).
 
 ## Notes
 

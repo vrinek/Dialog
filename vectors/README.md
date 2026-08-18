@@ -126,7 +126,13 @@ it finds produces canonical bytes without sorting anything.
   for a block that is wrong about itself and needs no store. A case carrying
   `scan_limit` MUST be validated with that limit configured; the same block
   against the same store is valid under the default limit of 256, so the case
-  pins the limit and nothing else. This is the half of validation no decoder can
+  pins the limit and nothing else. Every rule 4 case here is a **definitive**
+  rejection: the `setup` holds every block resolution needs, so the digest is
+  provably absent from the reachable set rather than merely unfetched, and an
+  implementation that answers *stored but unvalidated* for one of them (the
+  third outcome of rule 4, see
+  [02-block-format.md](../spec/02-block-format.md)) has the distinction the
+  wrong way round. This is the half of validation no decoder can
   perform — rules 3, 4, 5, 6 and the own-chain half of rule 10 — and the half
   two implementations are most likely to disagree about.
 - **Privacy** (`privacy.json`): named `hex` byte strings for the plaintext
