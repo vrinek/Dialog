@@ -117,6 +117,8 @@ Implementations MUST emit this form wherever a CID is rendered as text — APIs,
 
 Hexadecimal byte listings in this specification's examples illustrate the **binary** form of a CID. They are a byte dump, not a wire or text format, and implementations MUST NOT treat bare hex as a CID string.
 
+An author's public key is not a CID and has a text form of its own, built from the same multibase alphabet — see [Text representation of author keys](#text-representation-of-author-keys).
+
 ### Computing an entity's CID
 
 To compute the CID of any Dialog entity (atom, bond, molecule, or block):
@@ -156,6 +158,57 @@ multihash = varint(hash-function-code) || varint(digest-length) || digest
 
 Total multihash size: **34 bytes** (2 prefix bytes + 32 digest bytes).
 
+### Text representation of author keys
+
+An author is identified by an Ed25519 public key ([04-cryptography.md](04-cryptography.md), "Author identity"). Inside Dialog's CBOR structures that key is 32 raw bytes with no prefix — the `pub` field of a block, the `new_pub` field of a `rotate_key` operation — and it stays that way. This section defines how a key is written down **outside** them: in APIs, logs, user interfaces, configuration files, and anywhere a chain is named by its author.
+
+The canonical text representation of an author's Ed25519 public key is the **multibase base32** encoding of the key behind its multicodec prefix: the lowercase RFC 4648 base32 alphabet (`abcdefghijklmnopqrstuvwxyz234567`) without padding, prefixed with the multibase code `b`, applied to all 34 prefixed bytes. It uses the same alphabet and the same multibase code as a CID, so one text alphabet covers every identifier Dialog renders.
+
+| Parameter | Value | Multicodec |
+|-----------|-------|------------|
+| Key type | Ed25519 public key | `ed25519-pub`, `0xed` |
+| Key length | 32 bytes | — |
+| Text encoding | base32, lowercase RFC 4648, unpadded | multibase `b` |
+
+The multicodec code for `ed25519-pub` is `0xed` ([multiformats/multicodec](https://github.com/multiformats/multicodec)). It is 237, which is greater than 127, so unlike every code used in a CID it is **not** a single-byte unsigned varint: `varint(0xed) = 0xed 0x01`. The prefixed key is therefore 34 bytes:
+
+```
+key-bytes = varint(0xed) || <32 bytes: Ed25519 public key>
+          = 0xed || 0x01 || <32 bytes>
+
+text(key) = "b" || base32-lower-nopad(<34 key bytes>)
+```
+
+Implementations MUST emit this form wherever an author key is rendered as text. The encoding is 56 characters long, always begins with `b5ua` (the fixed multicodec prefix leaves the first three base32 characters constant), and is case-sensitive on input. Decoders MUST reject:
+
+- a string whose first character is not the multibase code `b`, including `B`, which is the uppercase base32 code;
+- any uppercase character in the body of the string;
+- base32 padding (`=`);
+- a string whose decoded length is not 34 bytes — equivalently, whose length is not 56 characters;
+- decoded bytes whose first two are not `0xed 0x01`.
+
+As with a CID, hexadecimal byte listings of a key are a byte dump, and implementations MUST NOT treat bare hex as a key string. The two text forms are unambiguous against each other: a CID is 59 characters and begins `bafyrei`, an author key is 56 and begins `b5ua`.
+
+*Informative.* Because the encoded bytes are exactly the `did:key` payload for Ed25519, an author key converts to a DID by re-encoding the same 34 bytes in base58btc under the multibase code `z`: `did:key:z` || base58btc(`0xed 0x01` || key), which is the familiar `did:key:z6Mk…` form. This specification defines no DID method and requires no such conversion; the property is recorded because it is free, and because it means a Dialog author key and a `did:key` identity are the same 32 bytes in two alphabets.
+
+#### Example
+
+Encoding the Ed25519 public key of the `alice` test identity of [`vectors/blocks.json`](../vectors/blocks.json):
+
+```
+public key (32 bytes, hex)
+  8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c
+
+prefixed (34 bytes, hex)
+  ed018a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c
+
+text form (56 characters)
+  b5uayvchd3v2at4mv7vjnwlj4xjoxfsthbg7r3fasdpzxjcabwqhw6xa
+
+as a DID (informative)
+  did:key:z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX
+```
+
 ## Security Considerations
 
 - Deterministic encoding is critical for content addressing. Any deviation from the rules of this document will produce different hashes for the same logical content, breaking interoperability.
@@ -163,6 +216,7 @@ Total multihash size: **34 bytes** (2 prefix bytes + 32 digest bytes).
 - Blocks arrive from the network, so decoder input is hostile by default. Rule 10's nesting bound is what keeps a run of one-byte array heads from driving a recursive decoder into a stack overflow: implementations MUST enforce it as a decoding error before recursing, so that over-deep input fails like any other malformed document.
 - SHA-256 provides 128-bit collision resistance, which is sufficient for the foreseeable future.
 - Locking down CID parameters to a single configuration eliminates a class of interoperability bugs where implementations use different hash functions or codecs.
+- The text forms of a CID and of an author key are canonical in both directions: exactly one string denotes a given identifier, and every other spelling of it MUST be rejected. This matters because these strings are compared as strings — an access list, a subscription set or a cache key that admitted a padded, uppercase or unprefixed variant would treat one identity as two, or two as one. A decoder that accepts a non-canonical form is not being lenient; it is minting aliases.
 - If SHA-256 is ever broken, the multihash and CID formats allow migration to a new hash function by changing the hash function code. This would require a new protocol version.
 
 ## Examples
@@ -232,7 +286,8 @@ Common CBOR patterns used in Dialog:
 - [RFC 8949: CBOR](https://datatracker.ietf.org/doc/html/rfc8949) — Concise Binary Object Representation, including §3.1 (text strings are UTF-8) and §4.2.1 (Core Deterministic Encoding Requirements), on which Dialog's profile is built
 - [multiformats/cid](https://github.com/multiformats/cid) — Content Identifier specification
 - [multiformats/multihash](https://github.com/multiformats/multihash) — Self-describing hash specification
-- [multiformats/multibase](https://github.com/multiformats/multibase) — Self-describing base encodings, source of the `b` (base32, lowercase, unpadded) text form of a CID
+- [multiformats/multibase](https://github.com/multiformats/multibase) — Self-describing base encodings, source of the `b` (base32, lowercase, unpadded) text form of a CID and of an author key
+- [multiformats/multicodec](https://github.com/multiformats/multicodec) — The code table, source of `dag-cbor` (`0x71`) and of `ed25519-pub` (`0xed`), the prefix of an author key's text form
 - [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648) — Base32 alphabet used by the `b` multibase encoding
 - [multiformats/unsigned-varint](https://github.com/multiformats/unsigned-varint) — Unsigned variable-length integer encoding
 - [RFC 8610: CDDL](https://datatracker.ietf.org/doc/html/rfc8610) — Concise Data Definition Language
@@ -241,3 +296,4 @@ Common CBOR patterns used in Dialog:
 - [draft-mcnally-deterministic-cbor](https://datatracker.ietf.org/doc/draft-mcnally-deterministic-cbor/) — the dCBOR application profile, which inspired Dialog's profile. Dialog's profile is narrower (no floating-point values, no booleans, one tag) and imposes no Unicode normalization, so the two are not interchangeable; this document, not the draft, is normative for Dialog.
 - [Unicode UAX #15](https://unicode.org/reports/tr15/) — Unicode normalization forms, referenced by the NFC-at-capture-time recommendation
 - [cbor.io](https://cbor.io/) — CBOR tools and implementations
+- [did:key](https://w3c-ccg.github.io/did-method-key/) — the DID method whose Ed25519 payload is byte-identical to an author key's multicodec-prefixed form, noted in "Text representation of author keys"; Dialog defines no DID method

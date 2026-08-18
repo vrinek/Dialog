@@ -35,7 +35,11 @@ Profile information (name, avatar, etc.) is expressed as molecules in the author
 | Ed25519 signature | Raw bytes | 64 bytes |
 | X25519 public key | Raw bytes (converted from Ed25519) | 32 bytes |
 
-Keys are stored as raw byte strings (`bstr`) in CBOR. No multicodec prefix is used within the protocol's internal structures. When keys need to be communicated externally (e.g., displayed to users, shared out-of-band), implementations MAY use multicodec-prefixed representations.
+Keys are stored as raw byte strings (`bstr`) in CBOR. No multicodec prefix is used within the protocol's internal structures.
+
+When an author's public key is communicated externally — displayed to users, written to a log, named in a configuration file, or used as the identifier of a chain — it MUST be written in the canonical text form defined by [03-encoding.md](03-encoding.md), "Text representation of author keys": multibase base32 (code `b`, lowercase, unpadded) over the 34 bytes `0xed 0x01 || key`, the multicodec `ed25519-pub` prefix followed by the 32 key bytes. That prefix exists in the text form only and never enters the protocol's CBOR structures.
+
+Signatures and X25519 keys have no text form of their own; where one is rendered it is a byte dump, not an identifier.
 
 ### Block signing
 
