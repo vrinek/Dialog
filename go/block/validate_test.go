@@ -347,6 +347,118 @@ func TestReachability(t *testing.T) {
 	})
 }
 
+// TestScanLimitCountingUnit pins what the scan limit counts, which
+// spec/05-processing-model.md, "Scan limit", defines normatively: one distinct
+// foreign block scanned per block validated. Two implementations that count
+// anything else — digests resolved, recursion levels, fetches including
+// repeats — reject different blocks at the same setting, which is the whole
+// reason the unit is written down.
+func TestScanLimitCountingUnit(t *testing.T) {
+	bondTemplate := "_A_ is the capital of _B_"
+	bond := entity.MustBond(bondTemplate)
+	paris := entity.MustAtom("Paris, the capital of France")
+	france := entity.MustAtom("France")
+	fillers := []entity.Filler{entity.AtomFiller(paris.Digest()), entity.AtomFiller(france.Digest())}
+
+	if DefaultScanLimit != 256 {
+		t.Errorf("DefaultScanLimit = %d, want the 256 spec/05-processing-model.md, \"Scan limit\", asks every implementation to default to", DefaultScanLimit)
+	}
+
+	t.Run("a refs entry resolution never needs is not scanned", func(t *testing.T) {
+		// The entry is still fetched — rules 6 and 10 are checked against it —
+		// but nothing reads its operations, so it costs no unit.
+		store := NewMemStore()
+		alice := mustBuilder(t, 1)
+		provider, err := alice.Public(1, nil, MustCreateAtom("an entity nobody here needs"))
+		if err != nil {
+			t.Fatalf("provider: %v", err)
+		}
+		bob := mustBuilder(t, 2)
+		b, err := bob.Public(2, []cid.Digest{provider.Digest()},
+			MustCreateBond(bondTemplate),
+			MustCreateAtom(paris.Description()),
+			MustCreateAtom(france.Description()),
+			MustCreateMolecule(bond, fillers))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		store.MustAdd(provider, b)
+		if report := mustValidate(t, b, store, nil); report.Scanned != 0 {
+			t.Errorf("scanned %d foreign block(s), want 0: every digest resolves inside the block itself", report.Scanned)
+		}
+		// The entry was still fetched and checked: that a rule 6 rejection
+		// lands on a block whose operations resolve without any scanning is
+		// what TestPublicBlockMustNotReferencePrivate pins.
+	})
+
+	t.Run("a block the graph names twice costs one unit", func(t *testing.T) {
+		// carol's block defines the bond and is named by two different blocks
+		// of the refs graph, so resolution meets it twice. It is scanned once.
+		store := NewMemStore()
+		carol := mustBuilder(t, 3)
+		provider, err := carol.Public(1, nil, MustCreateBond(bondTemplate))
+		if err != nil {
+			t.Fatalf("provider: %v", err)
+		}
+		alice := mustBuilder(t, 1)
+		first, err := alice.Public(2, []cid.Digest{provider.Digest()}, MustCreateAtom("an unrelated entity"))
+		if err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		dave := mustBuilder(t, 4)
+		second, err := dave.Public(3, []cid.Digest{provider.Digest()}, MustCreateAtom("another unrelated entity"))
+		if err != nil {
+			t.Fatalf("second: %v", err)
+		}
+		bob := mustBuilder(t, 2)
+		b, err := bob.Public(4, []cid.Digest{first.Digest(), second.Digest()},
+			MustCreateAtom(paris.Description()),
+			MustCreateAtom(france.Description()),
+			MustCreateMolecule(bond, fillers))
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		store.MustAdd(provider, first, second, b)
+
+		// first, second and provider: three distinct blocks, four names.
+		report := mustValidate(t, b, store, nil)
+		if report.Scanned != 3 {
+			t.Errorf("scanned %d foreign block(s), want 3 distinct blocks — the provider is named twice and counts once", report.Scanned)
+		}
+		if _, err := Validate(b, store, &Options{ScanLimit: 3}); err != nil {
+			t.Errorf("Validate with a scan limit of 3 = %v, want acceptance: three distinct blocks are scanned", err)
+		}
+		_, err = Validate(b, store, &Options{ScanLimit: 2})
+		if !isRule(err, 4) || !errors.Is(err, ErrScanLimit) {
+			t.Errorf("Validate with a scan limit of 2 = %v, want a rule 4 violation wrapping ErrScanLimit", err)
+		}
+	})
+
+	t.Run("an ancestor is not a foreign block", func(t *testing.T) {
+		// The author's own chain is walked through prev, which the limit does
+		// not bound: a limit of zero still admits a block that resolves from
+		// its own ancestry.
+		store := NewMemStore()
+		author := mustBuilder(t, 1)
+		genesis, err := author.Public(1, nil, MustCreateBond(bondTemplate), MustCreateAtom(paris.Description()))
+		if err != nil {
+			t.Fatalf("genesis: %v", err)
+		}
+		tip, err := author.Public(2, nil, MustCreateAtom(france.Description()), MustCreateMolecule(bond, fillers))
+		if err != nil {
+			t.Fatalf("tip: %v", err)
+		}
+		store.MustAdd(genesis, tip)
+		report, err := Validate(tip, store, &Options{ScanLimit: -1})
+		if err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+		if report.Scanned != 0 {
+			t.Errorf("scanned %d foreign block(s), want 0: ancestors are not foreign", report.Scanned)
+		}
+	})
+}
+
 // TestDataModelConformance covers rule 5: the filler count against the bond's
 // template, and the entity kind each position names.
 func TestDataModelConformance(t *testing.T) {

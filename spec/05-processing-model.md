@@ -110,7 +110,20 @@ To validate a block H:
 
 ##### Scan limit
 
-Implementations MAY set a user-configurable limit on the number of foreign blocks scanned during recursive resolution. This limit SHOULD have a safe default. If the limit is reached before all digests resolve, the block MUST be treated as invalid (unresolvable references).
+Recursive resolution is bounded by a **scan limit**: the number of foreign blocks the validation of a single block may scan.
+
+One unit of the limit is **one distinct foreign block scanned** — a block reached through the refs graph (step 4 or step 5 above) that the node fetches and whose operations it reads for the definitions they carry. What the limit counts is normative, because the same number counts differently under any other reading and two nodes would then reject different blocks at the same setting:
+
+- The unit is a **block**, not a digest resolved and not a level of recursion.
+- It is counted **once per block per validation**. A block resolution reaches twice — named by two `refs` lists, or named again from deeper in the graph — costs one unit and not two, and the count starts again at zero for the next block validated.
+- **Ancestors do not count.** Blocks of the author's own chain, reached through `prev` at step 3, are not foreign blocks.
+- A `refs` entry the node **does not hold** does not count: nothing was fetched and no operation was read. Neither does a block a node fetches only to read its type or its author, for validation rules 6 and 10, without reading its operations (see [02-block-format.md](02-block-format.md), "Validation"). Such a block counts from the moment resolution scans it.
+
+If resolution must scan a further foreign block once the limit has been reached, the block being validated MUST be treated as invalid (unresolvable references). A block whose digests all resolve within the limit is unaffected by it, however far the refs graph around it extends.
+
+Implementations SHOULD make the limit user-configurable, and the default SHOULD be **256** foreign blocks per block validated.
+
+*Informative.* The default is a SHOULD rather than a MUST because a node with unusual storage — an embedded one, or one reaching its blocks over a slow link — may reasonably want a lower one, and what a lower limit accepts is a subset of what a higher one accepts. That implementations share a default is what fixing the number buys: the same block gets the same verdict from every default-configured node, so an author can publish a refs graph knowing which side of the bound it falls on, and a node that rejects a block is not silently disagreeing with the rest of the network over a value nobody wrote down. 256 is far above what an honest block needs — the deepest resolution in the conformance vectors scans three foreign blocks — and far below what makes a deeply nested refs chain a useful attack.
 
 ##### Public/private reference rules
 
@@ -210,7 +223,7 @@ Decryption capability and subscription are orthogonal. An author MAY wrap a priv
 ## Security Considerations
 
 - **L2 growth:** L2 grows unboundedly as more blocks are processed and foreign chains are loaded. This is an accepted trade-off for v1. Pruning rules may be defined in a future protocol version.
-- **Recursive resolution depth:** A malicious author could construct deeply nested ref chains to force excessive traversal. The configurable scan limit (see Foreign chain loading) provides protection. Implementations SHOULD set a safe default and allow user configuration.
+- **Recursive resolution depth:** A malicious author could construct deeply nested ref chains to force excessive traversal. The scan limit (see Foreign chain loading) provides protection: it counts distinct foreign blocks scanned per block validated, so a graph that names the same block over and over cannot inflate the traversal, and its default is 256. Implementations SHOULD keep a limit in force and allow user configuration of it.
 - **Subscription privacy:** Author subscriptions are never published, protecting users from social graph analysis. However, the set of blockchains a node requests from the network may reveal subscription information at the transport layer. Transport implementations SHOULD consider this.
 - **Optimistic writes:** Applications using optimistic heuristics MUST handle the case where an operation fails to propagate to L3 (e.g., due to a validation failure discovered during L2 processing).
 

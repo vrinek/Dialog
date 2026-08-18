@@ -10,11 +10,12 @@ import (
 )
 
 // DefaultScanLimit is the number of foreign blocks reference resolution will
-// fetch for one block before giving up. spec/05-processing-model.md, "Scan
-// limit", makes the limit optional but asks for a safe default: a hostile
-// author can otherwise chain refs deeply enough to make one block cost an
-// unbounded traversal. A block that honestly needs more than this many
-// CID-providing blocks is pathological.
+// scan for one block before giving up: the value
+// spec/05-processing-model.md, "Scan limit", asks every implementation to
+// default to, so that a block gets the same verdict from every
+// default-configured node. A hostile author can otherwise chain refs deeply
+// enough to make one block cost an unbounded traversal, and a block that
+// honestly needs more than this many CID-providing blocks is pathological.
 const DefaultScanLimit = 256
 
 // ErrScanLimit reports that reference resolution reached the configured scan
@@ -26,9 +27,10 @@ var ErrScanLimit = errors.New("block: the foreign block scan limit")
 
 // Options tunes validation. A nil *Options means the defaults.
 type Options struct {
-	// ScanLimit caps the foreign blocks fetched through the refs graph while
-	// resolving one block's references. Zero means DefaultScanLimit; a
-	// negative value means no limit.
+	// ScanLimit caps the distinct foreign blocks reference resolution scans
+	// while resolving one block's references — the unit
+	// spec/05-processing-model.md, "Scan limit", defines. Zero means
+	// DefaultScanLimit; a negative value means no limit.
 	ScanLimit int
 	// Decrypter, when set, lets reference resolution read the operations of
 	// private blocks the caller holds keys for. Without it a private block
@@ -106,7 +108,11 @@ type Report struct {
 	// (spec/02-block-format.md, "Validation" rule 9). A non-empty Forks is not
 	// a rejection: detection is normative, handling is the caller's.
 	Forks []Fork
-	// Scanned counts the foreign blocks fetched through the refs graph.
+	// Scanned counts the distinct foreign blocks resolution scanned through
+	// the refs graph: the unit of spec/05-processing-model.md, "Scan limit". A
+	// block reached twice counts once, an ancestor of the author's own chain
+	// does not count, and neither does a refs entry the source does not hold or
+	// one fetched only to check rules 6 and 10 against it.
 	Scanned int
 	// Unchecked lists the numbered rules that could not be evaluated — rules
 	// 4, 5, 6 and 10 of a private block, whose refs and ops are inside its
@@ -351,8 +357,11 @@ func validateReferences(b *Block, refs []cid.Digest, ops []Operation, src Source
 	// list"). Both are evaluated as a referenced block is resolved; an entry
 	// the source does not hold is reported as unchecked rather than rejected,
 	// which is what demand-driven resolution leaves possible.
+	// A block fetched in this pass has not been scanned: its operations are
+	// read only if resolution reaches it below, which is where it counts
+	// against the scan limit (spec/05-processing-model.md, "Scan limit").
 	for _, ref := range refs {
-		target, err := r.fetch(ref, true)
+		target, err := r.fetch(ref)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				if b.content.Type == TypePublic {
@@ -361,9 +370,6 @@ func validateReferences(b *Block, refs []cid.Digest, ops []Operation, src Source
 					report.warn(10, b.Digest(), "referenced block %s is not held by the source, so its author could not be checked", ref)
 				}
 				continue
-			}
-			if errors.Is(err, ErrScanLimit) {
-				return &RuleError{Rule: 4, Block: b.Digest(), Err: err}
 			}
 			return err
 		}
@@ -488,7 +494,7 @@ func (r *resolver) resolve(d cid.Digest) (record, error) {
 // extendAncestors folds one more ancestor's operations into the definitions.
 func (r *resolver) extendAncestors() error {
 	d := *r.nextAncestor
-	ancestor, err := r.fetch(d, false)
+	ancestor, err := r.fetch(d)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			// The chain stops here as far as this source is concerned. Rule 3
@@ -554,17 +560,25 @@ func (r *resolver) extendRefs() error {
 	}
 	r.visited[d] = true
 
-	target, err := r.fetch(d, true)
+	target, err := r.fetch(d)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			// An unavailable CID provider is not itself a failure: another ref
 			// may still define the digest. If none does, resolve reports the
-			// unresolved digest.
+			// unresolved digest. Nothing was scanned, so nothing is counted.
 			r.report.warn(4, r.block.Digest(), "referenced block %s is not held by the source", d)
 			return nil
 		}
 		return err
 	}
+	// This block is about to be scanned — fetched and read for the definitions
+	// its operations carry — which is the unit the scan limit counts
+	// (spec/05-processing-model.md, "Scan limit"). The visited set above makes
+	// it one unit however often the refs graph names it.
+	if r.limit >= 0 && r.scanned >= r.limit {
+		return fmt.Errorf("%w of %d foreign block(s) was reached before every reference resolved", ErrScanLimit, r.limit)
+	}
+	r.scanned++
 	ops, refs := target.content.Ops, target.content.Refs
 	if target.content.Type == TypePrivate {
 		p, ok, err := r.decrypt(target)
@@ -606,24 +620,17 @@ func (r *resolver) define(op Operation) {
 	r.defs[d] = rec
 }
 
-// fetch reads a block through the source and caches it. A foreign fetch — one
-// that walks the refs graph rather than the author's own chain — counts
-// against the scan limit the first time it happens, which is the count
-// spec/05-processing-model.md, "Scan limit", bounds.
-func (r *resolver) fetch(d cid.Digest, foreign bool) (*Block, error) {
+// fetch reads a block through the source and caches it. Fetching is not
+// scanning: the scan limit counts the foreign blocks whose operations
+// resolution reads, which is counted where that happens (see extendRefs).
+func (r *resolver) fetch(d cid.Digest) (*Block, error) {
 	if b, ok := r.cache[d]; ok {
 		return b, nil
-	}
-	if foreign && r.limit >= 0 && r.scanned >= r.limit {
-		return nil, fmt.Errorf("%w of %d foreign block(s) was reached before every reference resolved", ErrScanLimit, r.limit)
 	}
 	b, err := r.src.Block(d)
 	if err != nil {
 		return nil, err
 	}
 	r.cache[d] = b
-	if foreign {
-		r.scanned++
-	}
 	return b, nil
 }
