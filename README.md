@@ -69,6 +69,7 @@ It generates `vectors/`.
 | [`privacy`](go/privacy) | Private-block encryption (XChaCha20-Poly1305 with AAD) and per-recipient key wrapping (X25519 + HKDF-SHA-256) |
 | [`graph`](go/graph) | Layer 2: the append-only ontology graph, accumulating validated blocks' entities with their authorship tags and answering provenance queries |
 | [`accept`](go/accept) | Layer 3: one user's view of L2 — filtered by subscription, with the five standard meta-bonds applied and every conflict surfaced and none resolved |
+| [`transport`](go/transport) | The optional [transport profile](spec/07-transport.md): the block sequence that is both a wire body and a file, an HTTP server over any block store, and a sync client that validates on receipt and obtains each chain from more than one source |
 
 One third-party dependency, `golang.org/x/crypto`. (`go.mod` names a second,
 the ruleguard DSL; no build ever compiles it — it exists so the static-analysis
