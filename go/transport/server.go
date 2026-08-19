@@ -610,14 +610,22 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 	if !s.postMethod(w, r) {
 		return
 	}
+	// An announce body is a block sequence, and the two types a block sequence
+	// travels under are equivalent in this direction as in the other: a chain
+	// file offered to a server is a valid announce body, and the type on that
+	// file is whatever the file server that handed it over attached. Anything
+	// else — including no type at all — is 415 (spec/07-transport.md, "Bodies
+	// and content types"; todos/094).
 	if !isBlockSeqType(r.Header.Get("Content-Type")) {
-		writeProblem(w, r, http.StatusUnsupportedMediaType, "an announce body is "+MediaTypeBlocks)
+		writeProblem(w, r, http.StatusUnsupportedMediaType, "an announce body is "+MediaTypeBlocks+" or "+MediaTypeCBORSeq)
 		return
 	}
-	if !acceptsJSON(r.Header.Get("Accept")) {
-		writeProblem(w, r, http.StatusNotAcceptable, "an announce receipt is "+MediaTypeJSON)
-		return
-	}
+	// Accept is not evaluated here. This operation's only response bodies are
+	// JSON — a receipt, or problem details — and the server produces them
+	// whatever the request asked for, so there is nothing for a 406 to protect;
+	// a client of this profile carries Accept: application/dialog-blocks+cbor-seq
+	// in its standing headers, and refusing a write over a header naming a type
+	// the response was never going to have would cost the announce for nothing.
 	raw, ok := s.body(w, r)
 	if !ok {
 		return

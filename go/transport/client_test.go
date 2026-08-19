@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -311,6 +312,70 @@ func TestAnnounceDispositionsAreDecidedAfterTheSequence(t *testing.T) {
 	if !slices.Equal(again.Accepted, receipt.Accepted) || len(again.Held) != 0 || len(again.Rejected) != 0 {
 		t.Errorf("re-announcing the same sequence = %+v, want the first receipt %+v", again, receipt)
 	}
+}
+
+// TestAnnounceMediaTypes: an announce body is a block sequence, and the two
+// types a block sequence travels under are equivalent in a request as in a
+// response — anything else is 415. Accept is not evaluated here at all, because
+// the only body this operation answers with is JSON and the server produces it
+// whatever the request asked for (spec/07-transport.md, "Bodies and content
+// types"; todos/094).
+func TestAnnounceMediaTypes(t *testing.T) {
+	_, blocks := testChain(t, 61, 2)
+	store := block.NewValidatingStore(nil)
+	_, ts := serve(t, ServerConfig{Store: store, Announce: StoreAnnouncer(store)})
+	path := DefaultPrefix + "/announce"
+	body := EncodeSeq(blocks[:1])
+
+	t.Run("the generic RFC 8742 type is admitted", func(t *testing.T) {
+		// This is the chain file a plain file server handed over, offered as an
+		// announce body under the type that file server gave it.
+		resp := post(t, ts, path, MediaTypeCBORSeq, body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); ct != MediaTypeJSON {
+			t.Errorf("receipt Content-Type = %q, want %q", ct, MediaTypeJSON)
+		}
+	})
+
+	t.Run("the profile's own type is admitted", func(t *testing.T) {
+		if resp := post(t, ts, path, MediaTypeBlocks, body); resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want 200", resp.StatusCode)
+		}
+	})
+
+	for _, contentType := range []string{MediaTypeJSON, "application/octet-stream", "text/plain", ""} {
+		resp := post(t, ts, path, contentType, body)
+		if resp.StatusCode != http.StatusUnsupportedMediaType {
+			t.Errorf("Content-Type: %q = %d, want 415", contentType, resp.StatusCode)
+			continue
+		}
+		assertProblem(t, resp, http.StatusUnsupportedMediaType)
+	}
+
+	t.Run("Accept is not evaluated", func(t *testing.T) {
+		// The standing Accept header of a client that speaks this profile names
+		// the block-sequence type, which no announce response ever carries. A
+		// server enforcing 406 uniformly would refuse a write it would
+		// otherwise take.
+		for _, accept := range []string{MediaTypeBlocks + ", " + MediaTypeCBORSeq, "text/plain", "image/png"} {
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+path, bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			req.Header.Set("Content-Type", MediaTypeBlocks)
+			req.Header.Set("Accept", accept)
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("POST %s: %v", path, err)
+			}
+			t.Cleanup(func() { _ = resp.Body.Close() })
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("Accept: %q = %d, want 200", accept, resp.StatusCode)
+			}
+		}
+	})
 }
 
 // invalidBlock builds a block that is invalid on its own terms: a molecule whose
