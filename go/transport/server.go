@@ -638,8 +638,18 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 	receipt, err := s.announce.Announce(r.Context(), blocks)
 	if err != nil {
 		// A source MAY refuse an announce entirely, for reasons that are its
-		// own policy. It is a refusal of the request, not a finding about any
-		// block in it.
+		// own policy — quota, acquaintance, disk. It is a refusal of the
+		// request and not a finding about any block in it, so the answer is
+		// 403 under the type that says so, and there is no receipt: nothing was
+		// judged, and answering 200 with every block rejected would be
+		// reporting a verdict this source never reached (spec/07-transport.md,
+		// "announce"; todos/092).
+		if errors.Is(err, ErrAnnounceRefused) {
+			writeTypedProblem(w, r, http.StatusForbidden, ProblemAnnounceRefused, err.Error())
+			return
+		}
+		// Anything else is this source being unable rather than unwilling, and
+		// a client may try again.
 		writeProblem(w, r, http.StatusServiceUnavailable, err.Error())
 		return
 	}

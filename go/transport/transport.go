@@ -38,6 +38,7 @@
 package transport
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -113,6 +114,23 @@ const (
 // validation produces the undecided verdict rather than a rejection.
 var ErrNotHeld = fmt.Errorf("%w: the source does not hold it", block.ErrNotFound)
 
+// ErrAnnounceRefused reports that a source takes announces and refused this one
+// by a policy of its own: quota, acquaintance, disk, or anything else that is
+// the source's business and not the protocol's.
+//
+// It runs in both directions. An [Announcer] returns it, or an error wrapping
+// it, to refuse a request rather than to judge a block; a [Server] answers such
+// an error with 403 and [ProblemAnnounceRefused] and no receipt; and a client's
+// error for that 403 satisfies errors.Is against it, so the same test spells the
+// same fact on either side.
+//
+// Nothing about the blocks follows from it. They were not judged, because the
+// request was refused before they could be — another source may take them, and
+// this one may take them later, which is what makes it a different answer from
+// the 404 of a server that does not implement announce at all
+// (spec/07-transport.md, "announce"; "Status codes"; todos/092).
+var ErrAnnounceRefused = errors.New("transport: the source refuses this announce by its own policy")
+
 // A StatusError is an HTTP response a client could not use: any status other
 // than the one the operation expects.
 //
@@ -136,9 +154,15 @@ type StatusError struct {
 // source cannot answer from its own store, and the validator already knows what
 // to do with a block it could not fetch — hold the block that named it as
 // stored but unvalidated, and never call it invalid.
+//
+// A 403 becomes [ErrAnnounceRefused] on the same principle: it is a fact about
+// the source's policy and about nothing in the request's body.
 func (e *StatusError) Unwrap() error {
-	if e.Status == http.StatusNotFound {
+	switch e.Status {
+	case http.StatusNotFound:
 		return ErrNotHeld
+	case http.StatusForbidden:
+		return ErrAnnounceRefused
 	}
 	return nil
 }

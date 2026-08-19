@@ -853,8 +853,8 @@ func assertProblem(t *testing.T, resp *http.Response, status int) Problem {
 	if p.Status != status {
 		t.Errorf("problem status member = %d, want %d", p.Status, status)
 	}
-	if p.Type != ProblemTypeBlank && p.Type != ProblemNotHeld && p.Type != ProblemOperationNotOffered {
-		t.Errorf("problem type = %q, want about:blank or one of the two the profile defines", p.Type)
+	if p.Type != ProblemTypeBlank && p.Type != ProblemNotHeld && p.Type != ProblemOperationNotOffered && p.Type != ProblemAnnounceRefused {
+		t.Errorf("problem type = %q, want about:blank or one of the three the profile defines", p.Type)
 	}
 	if p.Title == "" {
 		t.Error("the problem has no title")

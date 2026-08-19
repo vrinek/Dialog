@@ -2,7 +2,9 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -311,6 +313,73 @@ func TestAnnounceDispositionsAreDecidedAfterTheSequence(t *testing.T) {
 	}
 	if !slices.Equal(again.Accepted, receipt.Accepted) || len(again.Held) != 0 || len(again.Rejected) != 0 {
 		t.Errorf("re-announcing the same sequence = %+v, want the first receipt %+v", again, receipt)
+	}
+}
+
+// refusingAnnouncer refuses every announce by policy, which is the one thing the
+// profile lets a source do with a write it does not want.
+type refusingAnnouncer struct{ reason string }
+
+func (a refusingAnnouncer) Announce(context.Context, []*block.Block) (*Receipt, error) {
+	return nil, fmt.Errorf("%w: %s", ErrAnnounceRefused, a.reason)
+}
+
+// unableAnnouncer fails for a reason that is not a policy: this source is
+// willing and cannot.
+type unableAnnouncer struct{}
+
+func (unableAnnouncer) Announce(context.Context, []*block.Block) (*Receipt, error) {
+	return nil, errors.New("the store is not answering")
+}
+
+// TestAnnounceRefusedByPolicy: a source that takes announces and refuses this
+// one answers 403 with the problem type that says so, and carries no receipt —
+// nothing was judged, so there are no dispositions to report. It is a fact about
+// the source's policy and about nothing in the body, and it is a different
+// answer from the 404 of a server that does not implement announce at all
+// (spec/07-transport.md, "announce"; "Status codes"; todos/092).
+func TestAnnounceRefusedByPolicy(t *testing.T) {
+	_, blocks := testChain(t, 62, 2)
+	store := block.NewValidatingStore(nil)
+	client, ts := serve(t, ServerConfig{Store: store, Announce: refusingAnnouncer{reason: "this announcer is over its quota"}})
+
+	resp := post(t, ts, DefaultPrefix+"/announce", MediaTypeBlocks, EncodeSeq(blocks))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.StatusCode)
+	}
+	problem := assertProblem(t, resp, http.StatusForbidden)
+	if problem.Type != ProblemAnnounceRefused {
+		t.Errorf("problem type = %q, want %q", problem.Type, ProblemAnnounceRefused)
+	}
+
+	// The client learns the same fact by the same name, and learns nothing at
+	// all about the blocks: they were not judged, and the store the refusing
+	// server sits in front of holds none of them.
+	receipt, err := client.Announce(t.Context(), blocks)
+	if err == nil {
+		t.Fatalf("Announce against a refusing source returned %+v and no error", receipt)
+	}
+	if !errors.Is(err, ErrAnnounceRefused) {
+		t.Errorf("Announce error = %v, want it to be ErrAnnounceRefused", err)
+	}
+	if receipt != nil {
+		t.Errorf("a refusal carried a receipt: %+v", receipt)
+	}
+	for _, b := range blocks {
+		if store.Has(b.Digest()) {
+			t.Errorf("the refusing source stored %s", b.Digest())
+		}
+	}
+
+	// A source that is unable rather than unwilling is a different answer, and
+	// the two do not collapse into each other.
+	unable, unableTS := serve(t, ServerConfig{Store: block.NewMemStore(), Announce: unableAnnouncer{}})
+	failed := post(t, unableTS, DefaultPrefix+"/announce", MediaTypeBlocks, EncodeSeq(blocks))
+	if failed.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("an announcer that failed = %d, want 503", failed.StatusCode)
+	}
+	if _, err := unable.Announce(t.Context(), blocks); errors.Is(err, ErrAnnounceRefused) {
+		t.Error("a 503 read as a policy refusal")
 	}
 }
 

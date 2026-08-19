@@ -13,10 +13,11 @@ import (
 // status code and MUST NOT parse detail: the status code is the interface, and
 // the prose is a diagnostic somebody reads at three in the morning.
 type Problem struct {
-	// Type is a URI identifying the problem type. It is one of the two the
+	// Type is a URI identifying the problem type. It is one of the three the
 	// profile defines — [ProblemNotHeld] and [ProblemOperationNotOffered], both
-	// 404s — or "about:blank", which RFC 9457 makes the status code's own
-	// meaning and which every other error here uses.
+	// 404s, and [ProblemAnnounceRefused], a 403 — or "about:blank", which RFC
+	// 9457 makes the status code's own meaning and which every other error here
+	// uses.
 	Type string `json:"type"`
 	// Title is a short, human-readable summary.
 	Title string `json:"title"`
@@ -27,16 +28,17 @@ type Problem struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-// The two problem types the profile defines, both of them 404s, because 404
-// carries two different facts and a client's next move differs between them
-// (spec/07-transport.md, "Status codes"; todos/087).
+// The three problem types the profile defines. Two are 404s, because 404
+// carries two different facts and a client's next move differs between them;
+// the third separates an announce this source refuses from every other reason a
+// write can fail (spec/07-transport.md, "Status codes"; todos/087, 092).
 //
 // They are URNs rather than URLs because they are identifiers and not links:
 // nothing is published at them, a client MUST NOT dereference them, and a URL
 // would tie a protocol identifier to a hostname somebody has to keep answering.
 const (
 	// ProblemTypeBlank is RFC 9457's "the status code and nothing more", which
-	// every error outside the two below uses.
+	// every error outside the three below uses.
 	ProblemTypeBlank = "about:blank"
 	// ProblemNotHeld says this source does not hold what was asked for: the
 	// block, or a tip for that author. Another source may hold it, and this one
@@ -46,6 +48,13 @@ const (
 	// OPTIONAL operation at that path. Asking again, or with other arguments,
 	// will not change the answer; another server may offer it.
 	ProblemOperationNotOffered = "urn:dialog:problem:operation-not-offered"
+	// ProblemAnnounceRefused is the 403 of a source that takes announces and
+	// refuses this one, by a policy of its own: quota, acquaintance, or any
+	// other ground that is not a protocol matter. Nothing was judged and nothing
+	// was stored, so the response carries no receipt and the blocks are not
+	// implicated — another source may take them, and this one may take them
+	// later.
+	ProblemAnnounceRefused = "urn:dialog:problem:announce-refused"
 )
 
 // problemTitles gives each status code of the profile's table the title the
@@ -60,6 +69,8 @@ func problemTitle(status int) string {
 		// is where that is said out loud: a source's absence of a block is a
 		// fact about the source and says nothing about whether the block exists.
 		return "not held by this source"
+	case http.StatusForbidden:
+		return "refused by this source"
 	case http.StatusMethodNotAllowed:
 		return "wrong method for this path"
 	case http.StatusNotAcceptable:
@@ -85,6 +96,8 @@ func titleFor(status int, problemType string) string {
 		return problemTitle(http.StatusNotFound)
 	case ProblemOperationNotOffered:
 		return "operation not offered by this server"
+	case ProblemAnnounceRefused:
+		return "announce refused by this source"
 	default:
 		return problemTitle(status)
 	}

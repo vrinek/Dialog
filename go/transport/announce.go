@@ -129,12 +129,18 @@ func parseCIDs(texts []string, member string) ([]cid.Digest, error) {
 // It is optional: a [Server] built without one is a read-only mirror, which the
 // profile makes conforming (spec/07-transport.md, "The six operations").
 //
-// An implementation MUST validate every block before storing it, exactly as it
-// would a block from any other origin, and MUST NOT store as valid a block whose
-// predecessor it does not hold and has not validated. It MAY refuse an announce
-// entirely for reasons that are its own policy — quota, rate, acquaintance,
-// disk — by returning an error, which the server reports as a refusal of the
-// request rather than of any one block.
+// An implementation MUST NOT store as valid a block whose predecessor it does
+// not hold and has not validated. It is not obliged to reach a verdict at all —
+// a source that validates nothing holds everything it takes as *stored but
+// unvalidated*, reports it as held, and serves it (see [Store]) — but a verdict
+// it does reach it reaches by the rules of spec/02-block-format.md, exactly as
+// it would for a block from any other origin.
+//
+// It MAY refuse an announce entirely for reasons that are its own policy —
+// quota, rate, acquaintance, disk — by returning an error wrapping
+// [ErrAnnounceRefused], which the server answers with 403 and no receipt: a
+// refusal of the request, and not a finding about any block in it. Any other
+// error is this source being unable rather than unwilling, and answers 503.
 type Announcer interface {
 	// Announce offers a block sequence and reports what became of each block.
 	// The blocks of one author arrive in chain order.
