@@ -116,7 +116,7 @@ Common rules:
 
 *Request:* an author key. *Response:* one block — the **tip**, as defined below — or "I do not have it" when the source holds no tip for that author.
 
-The tip is defined **constructively**, as the end of a walk through the source's own store: begin at the genesis position, take the block the source holds there, then the block whose `prev` names that block, and continue. The tip is the last block the walk reaches. Where the source holds more than one block at a position, the walk follows the branch that source serves (below). Two consequences, which are the first two server rules of "What a conforming server serves" rather than separate obligations:
+The tip is defined **constructively**, as the end of a walk through the source's own store: begin at the genesis position, take the block the source holds there, then the block whose `prev` names that block, and continue. The tip is the last block the walk reaches. The walk crosses every block the source holds, whatever validation verdict it has reached about any of them — it is a claim about connectivity and not about validity (server rule 7). Where the source holds more than one block at a position, the walk follows the branch that source serves (below). Two consequences, which are the first two server rules of "What a conforming server serves" rather than separate obligations:
 
 - A source that holds no block at the genesis position holds **no tip** for that author, whatever else of that chain it holds, and answers "I do not have it".
 - A source whose store has a **hole** — a position it holds no block at, with blocks of that chain beyond it — has as its tip the last block the walk reaches before the hole, and serves a `range` that ends at the same block.
@@ -135,7 +135,7 @@ A source that holds a fork has more than one candidate at a position, so the wal
 
 The position is **exclusive**: the block naming it is not in the response, the blocks after it are. The genesis position requests the chain from its genesis block.
 
-A source MUST NOT return more blocks than the requested maximum. It MAY return fewer, for any reason, including one of its own. If it holds at least one block at the requested position it MUST return at least one block. If it holds none, the response is an empty sequence — which is the answer both when the client is already at the tip and when the source's store stops there, and those two are distinguished by comparing against `tip`, not by the emptiness.
+A source MUST NOT return more blocks than the requested maximum. It MAY return fewer, for any reason, including one of its own. If it holds at least one block at the requested position it MUST return at least one block. If it holds none, the response is an empty sequence — which is the answer both when the client is already at the tip and when the source's store stops there, and those two are distinguished by comparing against `tip`, not by the emptiness. A third case hides behind the same emptiness and is the important one: a source that reports a tip the client does not hold, and no blocks after the position the client asked from, is serving a chain the client's position is not on. See "Pursuing an advertised tip".
 
 If the source holds more than one block at the requested position — a fork — it MUST answer `range` along one branch only, consistently with what its `tip` reports and with the same deterministic, per-author-stable choice `tip` makes (see "tip"), and MUST NOT interleave branches. Untangling a fork is `siblings`' job.
 
@@ -157,7 +157,7 @@ A request MUST NOT name the same digest twice; a source MAY reject such a reques
 
 *Request:* an author key and a position. *Response:* every block the source holds signed by that key whose `prev` names that position, ordered by ascending digest.
 
-This is the operation that gives [02-block-format.md](02-block-format.md)'s validation rule 9 something to fire on. A source MUST include every such block it holds — including the one it would itself serve from `range` and `tip`, so that the client sees a set rather than a difference — and MUST NOT choose a winner. The genesis position asks the question for the start of the chain, which is how the ambiguous-succession condition of [02-block-format.md](02-block-format.md), "rotate_key", is detected: two genesis blocks referencing the same rotation block are two members of the genesis position's sibling set.
+This is the operation that gives [02-block-format.md](02-block-format.md)'s validation rule 9 something to fire on. A source MUST include every such block it holds — including the one it would itself serve from `range` and `tip`, so that the client sees a set rather than a difference, and including any it holds as *stored but unvalidated* (server rule 7), since a block a source cannot yet judge is exactly the one whose omission would hide a fork — and MUST NOT choose a winner. The genesis position asks the question for the start of the chain, which is how the ambiguous-succession condition of [02-block-format.md](02-block-format.md), "rotate_key", is detected: two genesis blocks referencing the same rotation block are two members of the genesis position's sibling set.
 
 A response with one member is not a statement that the chain does not fork. It is a statement that this source is not showing more than one block there, which a source serving one side of a fork has every incentive to do. `siblings` is a convenience for the honest case; the mechanism that actually detects forks is the multi-source rule below.
 
@@ -166,6 +166,8 @@ A response with one member is not a statement that the chain does not fork. It i
 *Request:* a block sequence. *Response:* a statement of what the source did with each block.
 
 The source MUST validate every block per [02-block-format.md](02-block-format.md) before storing it, exactly as it would a block from any other origin, and MUST NOT store as valid a block whose predecessor it does not hold and has not validated — such a block is *stored but unvalidated* or discarded, per [05-processing-model.md](05-processing-model.md), "Block reception". A source MAY refuse an announce entirely, for reasons that are its own policy: quota, rate, acquaintance, disk.
+
+**A refusal by policy is 403**, with the problem type `urn:dialog:problem:announce-refused` (see "Status codes"), and it carries **no receipt**: nothing was judged, so there are no dispositions to report, and a source that answered 200 with every block `rejected` would be reporting a verdict it never reached. A client reads a 403 as a fact about this source and about nothing else — the blocks are not implicated, another source may take them, and this one may take them later, so the announce is worth retrying elsewhere and, after whatever policy provoked it has changed, here. It is distinct from the 404 a server that does not implement `announce` at all answers (`urn:dialog:problem:operation-not-offered`, "The six operations"), which is a fact about the server rather than about the request, and which asking again will not change.
 
 **A disposition is decided after the whole sequence.** A source MUST determine each block's disposition once it has processed the entire announce, and not as each block is offered. A block settled by a later block of the same sequence — a definition the announce also carries, a predecessor announced after the block that names it in another author's interleaving — is therefore reported by its final state, `accepted` rather than `held`.
 
@@ -179,6 +181,8 @@ A server is named by a **base URL**, learned out of band. Every path below is re
 
 `{author}` is an author's Ed25519 public key in the canonical text form of [03-encoding.md](03-encoding.md), "Text representation of author keys": multibase base32, 56 characters, always beginning `b5ua`. `{cid}` is a block's CID in the base32 text form of [03-encoding.md](03-encoding.md), "Content identifiers (CIDs)" → "Text representation": 59 characters, always beginning `bafyrei`. Both are case-sensitive, and a server MUST reject any other spelling of either with 400 rather than normalizing it — the two forms are canonical in both directions, and a server that accepted a variant would be minting aliases (see [03-encoding.md](03-encoding.md), Security Considerations).
 
+**One spelling means one byte sequence, and percent-encoding is a second spelling.** The path segments and query values this profile defines are drawn from alphabets that need no percent-encoding at all — base32 for both text forms, ASCII digits for `limit` — so a request target that percent-encodes any octet of one is malformed and MUST be rejected with 400. A server applies the canonical-form rules to the request target **as received**, not to a percent-decoded copy of it. This is the same rule as the paragraph above rather than a new one: `%62afyrei…` and `bafyrei…` are two byte strings naming one immutable resource, which is the alias the canonical text forms exist to prevent and which a cache keys twice. The cost is stated rather than hidden — an intermediary that re-encodes a request target turns a valid request into a 400 the user cannot see — and it is accepted, because the alternative is that every block resource acquires an unbounded set of URLs.
+
 A block digest inside a `refs` or `prev` field is 32 raw bytes and has no text form of its own. A client converts it to the CID text form before placing it in a URL, by the fixed prefix of [03-encoding.md](03-encoding.md), "Computing an entity's CID". Hexadecimal MUST NOT appear in a path or a query parameter: it is a byte dump, not an identifier.
 
 | Operation | Method and path |
@@ -191,8 +195,9 @@ A block digest inside a `refs` or `prev` field is 32 raw bytes and has no text f
 | `announce` | `POST /dialog/v1/announce` |
 
 - `after` and `prev` **omitted** denote the genesis position. The literal string `null` MUST NOT be used and MUST be rejected with 400; exactly one spelling of a position is admitted, for the same reason exactly one spelling of a CID is.
-- `limit` is a positive decimal integer, and has exactly one spelling: one or more ASCII digits, the first of which is not `0`, with no sign, no decimal point, no whitespace and no percent-encoded variant of any of those. `01`, `+1`, `1.0`, `%201` and `1e3` are malformed and MUST be rejected with 400. A server MAY cap the value it honours and MUST NOT exceed its own cap, and MAY reject with 400 a value too large to be a plausible count of blocks. Absent, the server chooses.
-- **A query parameter given more than once is malformed** and MUST be rejected with 400. `after` twice is two positions and this profile does not say which would win; `prev` and `limit` are refused on the same ground, and a server that picked one of the values would be defining a rule that is written nowhere.
+- `limit` is a positive decimal integer, and has exactly one spelling: one or more ASCII digits, the first of which is not `0`, with no sign, no decimal point and no whitespace. `01`, `+1`, `1.0` and `1e3` are malformed and MUST be rejected with 400, and so is `%201` — twice over, by the whitespace rule and by the percent-encoding rule above, which is the general form of what this bullet used to say about `limit` alone. A server MAY cap the value it honours and MUST NOT exceed its own cap, and MAY reject with 400 a value too large to be a plausible count of blocks. Absent, the server chooses.
+- **A query parameter this profile defines for the operation being invoked, given more than once, is malformed** and MUST be rejected with 400. `after` twice is two positions and this profile does not say which would win; `prev` and `limit` are refused on the same ground, and a server that picked one of the values would be defining a rule that is written nowhere.
+- **A query parameter this profile does not define for that operation MUST be ignored**, whether it appears once or many times. That covers a tracking parameter an intermediary appended, a parameter a later version of this profile defines, and a parameter of another operation. It is what makes the long poll's degradation work rather than an exception to it — "a server that does not implement it MUST ignore the parameter and answer immediately" ("Subscription mapping") is this rule applied to `wait`, and `wait=5&wait=6` on a server that does not implement long polling is ignored twice and is not a 400. It is also what lets a later parameter be added without breaking every server written against this version, which is the whole reason this profile does not reject the unknown. The cost is real and is accepted: a client that sends `prev` to `range`, or `after` to `siblings`, is answered from the genesis position with no signal that its parameter went nowhere. No block is misidentified by that — the client verifies everything it receives ("Verification obligations") — and forward compatibility is worth more than catching the mistake.
 - `HEAD` MUST be supported wherever `GET` is. Any other method on a defined path MUST return 405 with an `Allow` header.
 
 A 200 response to `tip` or `range` MUST carry a `Dialog-Tip` header whose value is the CID text form of the tip the server holds for that author at the moment of the response, as `tip` above defines a tip:
@@ -225,6 +230,10 @@ The header is what lets a client tell a range that ended at the tip from one the
 
 The block media type uses the `+cbor-seq` structured syntax suffix registered by [RFC 8742](https://datatracker.ietf.org/doc/html/rfc8742). A client SHOULD send `Accept: application/dialog-blocks+cbor-seq` and MUST accept `application/cbor-seq` as an equivalent, since a plain file server offering a directory of chain files will send the generic type and its bytes are the same bytes. A server MUST NOT serve a block sequence under any other type.
 
+**The equivalence holds in both directions.** An `announce` request body is a block sequence, and its `Content-Type` MUST be `application/dialog-blocks+cbor-seq` or `application/cbor-seq`; a server MUST reject any other type, and a missing one, with 415. Admitting the generic type is what makes "a chain file offered to a server is a valid announce body" ("As a file") true of a file whose type came from a file server rather than from a Dialog client, and it confuses nothing: the two types are the same bytes, the sequence carries no metadata, and a server that accepted both cannot be uncertain about what it received.
+
+**`Accept` is not evaluated on `announce`.** The operation's only response bodies are JSON — a receipt or a problem document — and the server produces them whatever the request asked for, so there is nothing for a 406 to protect. A client that speaks this profile carries `Accept: application/dialog-blocks+cbor-seq` in its standing headers, and a server enforcing 406 uniformly would refuse writes it would otherwise take, over a header naming a type the response was never going to have. 406 is defined for the five read operations.
+
 Bodies that carry blocks are CBOR sequences. Every other body is JSON, because the alternative — a second CBOR profile for envelopes — would put dCBOR in a place where its rules answer no question, and because a diagnostic a person reads at three in the morning should be readable without a decoder.
 
 A `blocks` request body is one JSON object:
@@ -250,12 +259,13 @@ An `announce` receipt is one JSON object mapping each submitted block's CID to w
 | 200 | Here is the answer. For a range or a sibling set the answer may be an empty sequence, and an empty range from a source holding no tip for that author carries no `Dialog-Tip`. |
 | 202 | The announce was taken for later processing; the receipt is incomplete or absent. |
 | 304 | The `tip` is unchanged from the `If-None-Match` the client sent. |
-| 400 | The request was malformed: a bad author key, a bad CID, a non-canonical spelling of either, a bad `limit`, a query parameter given more than once. |
+| 400 | The request was malformed: a bad author key, a bad CID, a non-canonical spelling of either (including a percent-encoded one), a bad `limit`, a parameter this operation defines given more than once. |
 | 404 | **I do not have it.** Never "it does not exist." A `tip` for an author this source holds no tip for; a `block` it does not hold; the path of an OPTIONAL operation this server does not offer. |
 | 405 | Wrong method for a defined path. |
-| 406 | The client's `Accept` excludes the only type this server can send. |
+| 403 | **This source refuses this announce by its own policy** — quota, acquaintance, or any other ground of its own. Defined for `announce` and for no other operation. |
+| 406 | The client's `Accept` excludes the only type this server can send. Defined for the five read operations; `Accept` is not evaluated on `announce`. |
 | 413 | The announce or fetch body is larger than this server accepts. |
-| 415 | The request body's media type is not the one the operation defines. |
+| 415 | The request body's media type is not one the operation admits: an `announce` body under anything but the two block-sequence types, or under none. |
 | 429 | Rate limited; `Retry-After` SHOULD be present. |
 | 503 | Temporarily unable; `Retry-After` SHOULD be present. |
 
@@ -263,16 +273,17 @@ An `announce` receipt is one JSON object mapping each submitted block's CID to w
 
 Error bodies are RFC 9457 problem details. The `title` and `detail` members are for people; a client MUST branch on the status code and MUST NOT parse `detail`.
 
-This profile defines two problem types, both of them 404s, because 404 carries two different facts and a client's next move differs between them:
+This profile defines three problem types. Two of them are 404s, because 404 carries two different facts and a client's next move differs between them; the third distinguishes a refusal of an announce from every other reason a write can fail:
 
 | `type` | What it says |
 |--------|--------------|
 | `urn:dialog:problem:not-held` | This source does not hold what was asked for: the block, or a tip for that author. Another source may hold it, and this one may hold it later. |
 | `urn:dialog:problem:operation-not-offered` | This server does not implement the OPTIONAL operation at that path. Asking again, or asking with other arguments, will not change the answer; another server may offer it. |
+| `urn:dialog:problem:announce-refused` | 403. This source takes announces and refuses **this** one, by a policy of its own. Nothing was judged and nothing was stored; the blocks are not implicated. Another source may take them, and this one may take them later. |
 
-A server SHOULD send the applicable type on a 404 and MAY send `about:blank`, which [RFC 9457](https://datatracker.ietf.org/doc/html/rfc9457) defines as the status code and nothing more; a client MUST still branch on the status code, and MUST work against a server that sends neither type. Every other error in this profile uses `about:blank`: the status code already says the whole of it.
+A server SHOULD send the applicable type on a 404, and on a 403 refusal of an announce, and MAY send `about:blank`, which [RFC 9457](https://datatracker.ietf.org/doc/html/rfc9457) defines as the status code and nothing more; a client MUST still branch on the status code, and MUST work against a server that sends none of the three types. Every other error in this profile uses `about:blank`: the status code already says the whole of it.
 
-The two are URNs rather than URLs because they are identifiers and not links. This profile publishes no document at them, a client MUST NOT dereference them, and a URL would tie a protocol identifier to a hostname somebody has to keep answering.
+The three are URNs rather than URLs because they are identifiers and not links. This profile publishes no document at them, a client MUST NOT dereference them, and a URL would tie a protocol identifier to a hostname somebody has to keep answering.
 
 #### Caching
 
@@ -313,7 +324,30 @@ The reason is that **fork detection is a reachability property, not a query.** [
 
 The rule also blunts the subscription leak: a node that splits twenty chains across four servers hands no single party the full set.
 
+Comparing is not a state of mind, and the shape it takes on the wire is written down: see "Pursuing an advertised tip", which is what a client does with the answer a second source actually gives it.
+
 Whether the specification proper should carry this obligation, rather than an optional profile, is open — see todo 070.
+
+#### Pursuing an advertised tip
+
+A client that has synced a source's range and finds that source's tip — the `Dialog-Tip` of the last range response, or the block `tip` answers with — naming a block it **does not hold** has learned something specific, and it is not "nothing new here". The source holds a tip, so its store does not simply stop; the client is not at that tip, so it is not caught up; and the range after the position the client asked from was empty, so the source's walk does not pass through that position at all. What is left is that the source serves a chain the client's position is not on: a branch, or a chain the client holds a different version of.
+
+A client in that case MUST NOT treat the empty range as "no new blocks". It MUST **pursue the advertised tip**:
+
+1. Fetch the block the tip names, **by digest**, from that source (`block`, or `blocks` for a batch of them).
+2. Verify it as every other received block is verified ("Verification obligations") — in particular, re-hash it, and treat bytes that hash to anything but the digest asked for as a failed fetch and not as a block.
+3. Read its `prev`. If the client holds that block, stop. If not, fetch that block by digest from the same source and repeat from step 2, walking backward one block at a time.
+4. Stop when the client reaches a block it holds, when a fetch fails, or when the client's own bound on the walk's length is reached.
+
+**The walk MUST be bounded**, by a limit the client chooses. It is a chain of the source's choosing, of a length the source controls, and every other resource bound in this profile is the client's own for the same reason ("Resource limits", and the client's symmetric exposure in Security Considerations).
+
+**Reaching a block the client holds is the point of the exercise.** At that position the client then holds two blocks with the same `prev` from the same author — the one it already had, and the one the backward walk arrived from — which is exactly the condition [02-block-format.md](02-block-format.md)'s validation rule 9 names. The client MUST surface the fork as that rule requires. Nothing about the pursuit is a special case of fork detection: the blocks are in the client's store, validated on arrival like any others, and rule 9 fires on the store rather than on the transport.
+
+**A walk that fails ends in fetches that did not succeed, and in nothing else.** A 404, bytes that hash wrong, or the client's own bound reached are each a *failed fetch*, recorded as such: they are not evidence of a fork, not evidence of an invalidity, and not evidence that the source lied, because a source advertising a tip it will not serve is indistinguishable from one that lost it (the freshness gap; see "What a server does not guarantee"). No verdict about any block follows from a failed pursuit, exactly as no verdict follows from a `refs` entry no source returned ("Interaction with the scan limit", point 3).
+
+This is the completion of the multi-source rule. That rule says "obtain each chain from more than one source, and compare"; this is what the comparison consists of at the moment it matters, because an empty range and an unreachable tip is the *normal* answer a second source gives about a forked chain. A client that walks away from it detects no fork at all against two sources that each serve one branch honestly — it satisfies validation rule 9 vacuously, which is the failure mode the multi-source rule exists to prevent — and so a client that skips the pursuit does not satisfy that rule's SHOULD.
+
+*Informative.* Two other moves reach the same divergence, and a client MAY use either. Re-issuing the range from the genesis position costs one request and re-downloads the shared prefix; it delivers the divergent blocks too, so rule 9 fires on it as well. A binary search with `limit=1` over the positions of the client's own chain *locates* the divergence in logarithmically many requests but delivers nothing, so it must still be followed by a fetch — of the divergent block, or of `siblings` at the position it found. The backward walk is the one written as the obligation because its cost is the distance between the two branches rather than the length of the chain, and because it is the only one that asks for nothing the client already holds.
 
 #### Interaction with the scan limit
 
@@ -341,6 +375,13 @@ That is a hosting convention and not a protocol fact: an author who rotates a ke
 4. A server MUST serve `siblings` honestly: every block it holds at the named position, with no winner chosen.
 5. A server MUST NOT require authentication or any client identifier for the five read operations. A deployment MAY put whatever it likes in front of these endpoints — a private server, an allowlist, a VPN — but a server that requires a client to identify itself makes that client's requests linkable into a durable identity, which is the opposite of what the subscription-privacy consideration asks for. See todo 073.
 6. A server SHOULD be reachable over TLS, and MAY be reachable over plaintext HTTP. Neither changes what a client must verify.
+7. **A source serves what it holds, whatever verdict it has reached about it.** A server answers every operation from the blocks in its store, including blocks it holds as *stored but unvalidated* ([05-processing-model.md](05-processing-model.md), "Block reception"), and MUST NOT withhold a block on the ground that it has not been able to validate it. The hole under "tip" — a store holding blocks 3, 4 and 5 of a chain whose first three it never received, serving all three by digest — is this rule's most visible case rather than an exception to it.
+
+   Two arguments, and they point the same way. A client MUST validate everything it receives regardless ("Verification obligations"), so a withheld block costs the client a *detection* and saves it nothing; and withholding is the source deciding a validity question on the client's behalf, which the client rules of this same document forbid a client from delegating. It bites hardest at `siblings`, where the block withheld is one side of a fork the source has not been able to judge — precisely the omission the multi-source rule exists to defeat — and where "I have not validated it yet" is unobservable, unfalsifiable, and identical on the wire to "I do not have it".
+
+   **The `tip` and `range` walk is a claim about connectivity, not validity.** It follows `prev` links through the blocks the source holds, and a source that has validated none of them still has a well-defined tip. A source that performs **no validation at all** — a mirror that stores the bytes it is given and serves them back — is conforming to this profile. Validation is the client's obligation, and nothing here moves any part of it to the source; a source that validates does so for its own store's sake, and the choice is not observable on the wire. A source that offers `announce` still owes that operation's own obligation, which is about what it stores and not about what it serves: it MUST NOT store as *valid* a block it has not validated, and a source that validates nothing therefore holds everything it takes as *stored but unvalidated*, reports it as `held`, and serves it.
+
+   The cost is that a source relays blocks that may later turn out to be invalid. The bound is the one `announce` already has and is the same for every server: validation bounds what may be stored *as valid*, storage policy bounds the rest, and a block that arrived well-formed and signed is the worst a client ever has to throw away.
 
 #### What a server does not guarantee
 
@@ -380,7 +421,9 @@ This draft deliberately settles none of the following. Each has a todo, each is 
 | [074](../todos/074-pending-p3-where-is-the-successor-chain-served.md) | Where is the successor chain served? | "Chain succession" |
 | [075](../todos/075-pending-p3-freshness-has-no-signal.md) | Freshness has no signal | `tip`; "What a server does not guarantee" |
 
-The questions above were left open on purpose. A second set was not: five places where this draft was silent, or said two things, and the first implementation (`go/transport`) had to choose. Each is now settled in the text above, and the reasoning is in [todos 085 to 089](../todos/) — `Dialog-Tip` where there is no tip, the tip of a store with a hole and the stability of a fork's branch choice, the status of an OPTIONAL operation a server does not offer, when an announce receipt's dispositions are decided, and the spelling of `limit` and of a repeated query parameter.
+The questions above were left open on purpose. Two further sets were not. Five places where this draft was silent, or said two things, and the first implementation (`go/transport`) had to choose, are settled in the text above with the reasoning in [todos 085 to 089](../todos/) — `Dialog-Tip` where there is no tip, the tip of a store with a hole and the stability of a fork's branch choice, the status of an OPTIONAL operation a server does not offer, when an announce receipt's dispositions are decided, and the spelling of `limit` and of a repeated query parameter.
+
+Six more were found the same way by the second implementation (`ts/`), written clean-room against this document, and are settled above with the reasoning in [todos 090 to 095](../todos/) — percent-encoding as a second spelling, whether a source serves blocks it has not validated, the status code for an announce refused by policy, what a client does with an empty range whose tip it cannot reach, which media types an announce body admits and whether `Accept` is evaluated on it, and what a server does with a query parameter the operation does not define. Two implementations finding eleven such places between them is the argument for writing the second one.
 
 ## Security Considerations
 
@@ -486,7 +529,17 @@ GET https://second.example/dialog/v1/chains/b5ua3y66…/tip
     - the second source is lying by omission    (indistinguishable from the
                                                  first case; see todo 075)
 
-  The explicit sibling query asks the divergent position directly:
+  In the second and third cases the second source answers an empty range
+  after the position the client synced to, and a Dialog-Tip the client
+  does not hold. The client then pursues that tip: GET the named block by
+  digest from the second source, read its prev, GET that, and so on until
+  it reaches a block it already holds ("Pursuing an advertised tip"). The
+  block it arrived from and the block it already held after that position
+  are two blocks with one prev from one pub key — rule 9, in the client's
+  own store, with no server having admitted to anything.
+
+  The explicit sibling query asks the divergent position directly, once
+  the pursuit has found it:
 
 GET /dialog/v1/chains/b5ua3y66…/siblings?prev=bafyreihqcci23eexzfsuiph6gxjeler4mldggpuy5mqihp5hfjjez3gadu
 
