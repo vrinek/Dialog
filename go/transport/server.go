@@ -25,12 +25,20 @@ import (
 // walk, a range is a bounded forward walk, a sibling set is one position's
 // answer unfiltered, and a block is a digest lookup.
 //
-// A server serves what it holds. It does not validate on the way out and it does
-// not filter by verdict: a block it holds as *stored but unvalidated* is still a
-// block another node may be able to decide about, and withholding it would make
-// this server the reason a valid block cannot be validated elsewhere. Every
-// client re-validates everything anyway (spec/07-transport.md, "Verification
-// obligations").
+// A server serves what it holds, whatever verdict it has reached about it. It
+// does not validate on the way out and it does not filter by verdict: a block it
+// holds as *stored but unvalidated* is still a block another node may be able to
+// decide about, and withholding it would make this server the reason a valid
+// block cannot be validated elsewhere. Every client re-validates everything
+// anyway, so withholding costs the client a detection and saves it nothing —
+// and at siblings the block a source cannot yet judge is precisely the one whose
+// omission would hide a fork (spec/07-transport.md, "Server rules", rule 7;
+// "Verification obligations"; todos/091).
+//
+// The interface is therefore the two questions and no third one about validity,
+// which is also what makes a store that validates nothing — a mirror holding
+// bytes it was given — a conforming source of this profile. The tip walk over it
+// is a claim about connectivity, not about validity.
 type Store interface {
 	block.Source
 	block.Siblings

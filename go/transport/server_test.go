@@ -483,6 +483,98 @@ func TestNonCanonicalSpellingsAreRejected(t *testing.T) {
 	}
 }
 
+// TestServerServesWhatItHoldsWhateverItsVerdict: a source serves the blocks in
+// its store, including the ones it holds as *stored but unvalidated*, at every
+// operation — and the tip walk crosses them, because the walk is a claim about
+// connectivity and not about validity.
+//
+// Withholding would be the source deciding a validity question on the client's
+// behalf, which the client rules of the same document forbid a client from
+// delegating. It costs the client nothing but bandwidth to receive a block that
+// turns out to be invalid, since it validates everything it receives anyway,
+// and it costs the client a detection not to — at `siblings` most of all, where
+// the block a source cannot yet judge is the one whose omission hides a fork
+// (spec/07-transport.md, "Server rules", rule 7; todos/091).
+func TestServerServesWhatItHoldsWhateverItsVerdict(t *testing.T) {
+	// A block whose refs name a definition this source does not hold: neither
+	// valid nor invalid, and kept.
+	_, definition, _, _ := definitionAndUse(t, 70, 71)
+	author := testBuilder(t, 72)
+	genesis, err := author.Public(1, nil, block.MustCreateAtom("the first block"))
+	if err != nil {
+		t.Fatalf("genesis: %v", err)
+	}
+	bond := mustBond(t, "_A_ is the capital of _B_")
+	paris, france := mustAtom(t, "Paris, the capital of France"), mustAtom(t, "France")
+	pending, err := author.Public(2, []cid.Digest{definition[1].Digest()},
+		block.MustCreateAtom(paris.Description()),
+		block.MustCreateAtom(france.Description()),
+		block.MustCreateMolecule(bond, fillersOf(paris, france)))
+	if err != nil {
+		t.Fatalf("the pending block: %v", err)
+	}
+	pub := genesis.PublicKey()
+
+	store := block.NewValidatingStore(nil)
+	if _, err := store.Add(genesis); err != nil {
+		t.Fatalf("adding the genesis block: %v", err)
+	}
+	if _, err := store.Add(pending); err != nil {
+		t.Fatalf("adding the pending block: %v", err)
+	}
+	if verdict, _ := store.Verdict(pending.Digest()); verdict != block.VerdictUnvalidated {
+		t.Fatalf("the fixture's second block is %v, want the undecided verdict", verdict)
+	}
+
+	client, _ := serve(t, ServerConfig{Store: store})
+
+	// The tip walk crosses it: the tip is the end of the walk through what the
+	// source holds, not the end of what it has managed to decide about.
+	tip, err := client.Tip(t.Context(), pub, "")
+	if err != nil {
+		t.Fatalf("Tip: %v", err)
+	}
+	if tip.Block.Digest() != pending.Digest() {
+		t.Errorf("tip = %s, want the undecided block %s: a server that stopped at its verdict would report a tip that lags its store for a reason no client can see", tip.Block.Digest(), pending.Digest())
+	}
+
+	// The range serves it, so that rule 1 holds: what tip claims, range reaches.
+	result, err := client.Range(t.Context(), pub, nil, 0)
+	if err != nil {
+		t.Fatalf("Range: %v", err)
+	}
+	if !slices.Equal(digests(result.Blocks), []cid.Digest{genesis.Digest(), pending.Digest()}) {
+		t.Errorf("the range is %v, want both blocks", digests(result.Blocks))
+	}
+
+	// By digest, where no claim about a chain is being made at all.
+	if _, err := client.Block(t.Context(), pending.Digest()); err != nil {
+		t.Errorf("an undecided block is not served by digest: %v", err)
+	}
+
+	// And in the sibling set, which is where withholding would cost a fork.
+	prev := genesis.Digest()
+	siblings, err := client.Siblings(t.Context(), pub, &prev)
+	if err != nil {
+		t.Fatalf("Siblings: %v", err)
+	}
+	if len(siblings) != 1 || siblings[0].Digest() != pending.Digest() {
+		t.Errorf("the sibling set is %v, want the undecided block", digests(siblings))
+	}
+
+	// A source that validates nothing at all is conforming. Every other test in
+	// this file serves from a MemStore, which records no verdicts and reaches
+	// none; this says out loud that the omission is the point.
+	mirror, _ := serve(t, ServerConfig{Store: memStore(t, genesis, pending)})
+	mirrored, err := mirror.Range(t.Context(), pub, nil, 0)
+	if err != nil {
+		t.Fatalf("the dumb mirror's Range: %v", err)
+	}
+	if len(mirrored.Blocks) != 2 {
+		t.Errorf("the dumb mirror served %d blocks, want both", len(mirrored.Blocks))
+	}
+}
+
 // TestUnknownQueryParametersAreIgnored: the repeated-parameter 400 is scoped to
 // the parameters this profile defines for the operation being invoked, and
 // everything else is ignored, once or many times.
