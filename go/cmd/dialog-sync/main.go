@@ -23,6 +23,11 @@
 //	-limit        the limit asked of each range request; 0 lets the source choose
 //	-max-pursuit  the client's own bound on the backward walk after an advertised
 //	              tip; 0 means the package default
+//	-from         where a source not asked before is asked from: "genesis", the
+//	              default, or "held" — the position this client's own chain
+//	              already reaches. The profile permits both and says which is
+//	              neither (todo 099); they differ in traffic and in whether the
+//	              divergence arrives as a range or as a pursuit
 //	-timeout      the whole run's deadline
 //
 // The summary's shape is documented in interop/README.md, which is also where
@@ -56,10 +61,11 @@ func main() {
 	authors := flag.String("authors", "", "author keys in canonical text form, comma-separated, in sync order")
 	limit := flag.Int("limit", 0, "limit asked of each range request; 0 lets the source choose")
 	maxPursuit := flag.Int("max-pursuit", 0, "bound on the backward walk after an advertised tip; 0 is the default")
+	from := flag.String("from", "genesis", `where a source not asked before is asked from: "genesis" or "held"`)
 	timeout := flag.Duration("timeout", time.Minute, "deadline for the whole run")
 	flag.Parse()
 
-	if err := run(sources, *authors, *limit, *maxPursuit, *timeout); err != nil {
+	if err := run(sources, *authors, *limit, *maxPursuit, *from, *timeout); err != nil {
 		fmt.Fprintln(os.Stderr, "dialog-sync:", err)
 		os.Exit(1)
 	}
@@ -80,9 +86,12 @@ func (m *multiFlag) Set(v string) error {
 	return nil
 }
 
-func run(sources multiFlag, authors string, limit, maxPursuit int, timeout time.Duration) error {
+func run(sources multiFlag, authors string, limit, maxPursuit int, from string, timeout time.Duration) error {
 	if len(sources) == 0 {
 		return errors.New("at least one -source is required")
+	}
+	if from != "genesis" && from != "held" {
+		return fmt.Errorf("-from is %q, want \"genesis\" or \"held\"", from)
 	}
 	pubs, err := parseAuthors(authors)
 	if err != nil {
@@ -100,6 +109,7 @@ func run(sources multiFlag, authors string, limit, maxPursuit int, timeout time.
 	store := block.NewValidatingStore(nil)
 	syncer := transport.NewSyncer(store, clients...)
 	syncer.PageLimit, syncer.MaxPursuit = limit, maxPursuit
+	syncer.AskFromHeldPosition = from == "held"
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

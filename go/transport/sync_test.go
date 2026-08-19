@@ -755,6 +755,61 @@ func TestPursuitToAGenesisBlock(t *testing.T) {
 	}
 }
 
+// TestAskingASourceFromTheHeldPosition: a client that asks a source it has never
+// met from the position its own chain reaches, rather than from the genesis
+// position, meets the pursuit on the first exchange.
+//
+// This is the case "Pursuing an advertised tip" is written for and calls the
+// normal answer a second source gives about a forked chain — an empty range and
+// a tip the client cannot reach. A client that asks every new source from the
+// genesis position never sees it, because the source answers with its own chain
+// from the beginning and the divergence arrives as ordinary blocks. Both find the
+// fork and the profile permits both; only the traffic and the report differ
+// (todo 099).
+func TestAskingASourceFromTheHeldPosition(t *testing.T) {
+	pub, genesis, short, long := divergentChain(t)
+	first, _ := serve(t, ServerConfig{Store: memStore(t, genesis, short)})
+	second, _ := serve(t, ServerConfig{Store: memStore(t, append([]*block.Block{genesis}, long...)...)})
+
+	store := block.NewValidatingStore(nil)
+	syncer := NewSyncer(store, first, second)
+	syncer.AskFromHeldPosition = true
+
+	result, err := syncer.SyncChain(t.Context(), pub)
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+
+	// The first source is met with an empty store, so there is no held position
+	// and it is asked from the genesis position like any first contact.
+	if result.Sources[0].PursuitEnd != PursuitNone {
+		t.Errorf("the first source ended a pursuit as %q; an empty store asks from the genesis position", result.Sources[0].PursuitEnd)
+	}
+	// The second is asked from where the client now is, which is a position its
+	// walk does not pass through: an empty range, a tip the client cannot reach,
+	// and the backward walk that finds the divergence.
+	report := result.Sources[1]
+	if report.PursuitEnd != PursuitHeld {
+		t.Fatalf("the second source's pursuit ended as %q (%v), want %q", report.PursuitEnd, report.PursuitErr, PursuitHeld)
+	}
+	if report.Pursued != len(long) {
+		t.Errorf("the pursuit fetched %d blocks, want the %d of the other branch", report.Pursued, len(long))
+	}
+	if len(result.Forks) != 1 {
+		t.Fatalf("forks = %v, want the one the pursuit revealed", result.Forks)
+	}
+	want := []cid.Digest{short.Digest(), long[0].Digest()}
+	slices.SortFunc(want, func(a, b cid.Digest) int { return slices.Compare(a[:], b[:]) })
+	if !slices.Equal(result.Forks[0].Blocks, want) {
+		t.Errorf("the fork holds %v, want both branch heads %v", result.Forks[0].Blocks, want)
+	}
+	for _, b := range append([]*block.Block{genesis, short}, long...) {
+		if verdict, _ := store.Verdict(b.Digest()); verdict != block.VerdictValid {
+			t.Errorf("%s is %v, want it accepted", b.Digest(), verdict)
+		}
+	}
+}
+
 // withholdingSource is a source that answers every question but the one the
 // pursuit asks: it advertises a tip and will not serve any block by digest.
 //

@@ -67,6 +67,21 @@ type Syncer struct {
 	// name and the store does not hold, before offering that block. It is on in
 	// a syncer built by NewSyncer.
 	Resolve bool
+	// AskFromHeldPosition makes a source this syncer has not asked before be
+	// asked from the position this client's own chain already reaches, rather
+	// than from the genesis position. It changes nothing for a source already
+	// asked once, which is always asked from where it left off.
+	//
+	// The profile permits both and says which is neither, so this is policy
+	// (todo 099). The two differ in cost and in which mechanism finds a fork.
+	// Asking from the genesis position re-downloads the shared prefix and
+	// delivers the divergent blocks in the range itself; asking from where this
+	// client is asks for nothing it already holds, and the answer to a source on
+	// another branch is the empty range and the unreachable tip that "Pursuing an
+	// advertised tip" is written for — the case that section calls the *normal*
+	// answer a second source gives about a forked chain. Either way rule 9 fires;
+	// only the traffic and the report differ.
+	AskFromHeldPosition bool
 
 	// resume remembers, per source and author, the position that source's next
 	// range should ask after — the last block it handed over. It is what keeps a
@@ -290,6 +305,11 @@ func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed2551
 	}
 
 	after := s.resumeAt(index, pub)
+	if after == nil && s.AskFromHeldPosition {
+		if held, ok := s.heldTip(pub); ok {
+			after = &held
+		}
+	}
 	maxPages := s.MaxPages
 	if maxPages == 0 {
 		maxPages = DefaultMaxPages
@@ -520,6 +540,29 @@ func (s *Syncer) querySiblings(ctx context.Context, pub ed25519.PublicKey, seen 
 		}
 	}
 	return nil
+}
+
+// heldTip returns the end of the forward walk from the genesis position through
+// the blocks this client's own store holds, which is the position it is at.
+//
+// It is the profile's constructive definition of a tip asked of the client's own
+// store rather than of a source's, and it takes the same reference rule at a
+// fork — the lowest digest — so that the position a client asks from is a
+// function of the blocks it holds and of nothing else
+// (spec/07-transport.md, "tip"; todo 086).
+func (s *Syncer) heldTip(pub ed25519.PublicKey) (cid.Digest, bool) {
+	var tip cid.Digest
+	var held bool
+	pos := (*cid.Digest)(nil)
+	for {
+		at := s.Store.BlocksWithPrev(pub, pos)
+		if len(at) == 0 {
+			return tip, held
+		}
+		next := slices.MinFunc(at, func(a, b cid.Digest) int { return bytes.Compare(a[:], b[:]) })
+		tip, held = next, true
+		pos = &next
+	}
 }
 
 // resumeAt returns the position this source's next range for this author should
