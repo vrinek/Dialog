@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"errors"
@@ -31,6 +32,12 @@ import (
 //   - Each chain is obtained from every configured source, and the union is
 //     what reveals a fork. This is the multi-source rule, and it is the part of
 //     the profile that does the most work.
+//   - A source whose tip the syncer does not hold after that source's range is
+//     exhausted is *pursued*: the tip is fetched by digest and its prev walked
+//     backward until the walk meets a block the store holds. That is what turns
+//     an empty range into a fork, and it is the multi-source rule's operational
+//     content rather than an optimisation (spec/07-transport.md, "Pursuing an
+//     advertised tip").
 type Syncer struct {
 	// Store is where blocks land. It is the node's L1.
 	Store *block.ValidatingStore
@@ -49,6 +56,13 @@ type Syncer struct {
 	// bound, not a protocol rule: a source can always claim a longer chain than
 	// a client is willing to read.
 	MaxPages int
+	// MaxPursuit bounds the backward walk from a tip a source advertised and
+	// this client does not hold. Zero means DefaultMaxPursuit.
+	//
+	// The walk MUST be bounded and the bound is the client's own: it follows a
+	// chain of the source's choosing, of a length the source controls
+	// (spec/07-transport.md, "Pursuing an advertised tip").
+	MaxPursuit int
 	// Resolve, when true, fetches the foreign blocks a received block's refs
 	// name and the store does not hold, before offering that block. It is on in
 	// a syncer built by NewSyncer.
@@ -64,6 +78,13 @@ type Syncer struct {
 
 // DefaultMaxPages bounds a single chain sync from a single source.
 const DefaultMaxPages = 1024
+
+// DefaultMaxPursuit bounds the backward walk from an advertised tip. It is the
+// scan limit's default, for no deeper reason than that a client already spends
+// that many fetches on one block's worth of resolution and this is the same
+// order of expense: a divergence deeper than this is a chain the two sources
+// have not shared for a long time, and one sync is not the place to close it.
+const DefaultMaxPursuit = 256
 
 // NewSyncer returns a syncer over a store and a set of sources, with
 // demand-driven resolution on.
@@ -113,6 +134,23 @@ type SourceSync struct {
 	// Blocks is how many blocks this source handed over that the sync had not
 	// already received.
 	Blocks int
+	// Pursued is how many blocks the backward walk from this source's advertised
+	// tip fetched, and is zero when no pursuit was needed — which is the usual
+	// case, because the usual answer is a range that reaches the tip.
+	//
+	// A pursuit happens when this source's tip is a block the client does not
+	// hold after the source's range is exhausted, which means the source serves
+	// a chain the client's position is not on (spec/07-transport.md, "Pursuing
+	// an advertised tip").
+	Pursued int
+	// PursuitErr is why the backward walk stopped short of a block the client
+	// holds, or nil.
+	//
+	// It is a failed fetch and nothing more. No verdict about any block follows
+	// from it: a source advertising a tip it will not serve is indistinguishable
+	// from one that lost it, and neither is evidence of a fork, of an
+	// invalidity, or of a lie.
+	PursuitErr error
 	// Err is why this source contributed nothing, or nil.
 	//
 	// A source that fails is not a failure of the sync. That is the point of
@@ -142,8 +180,8 @@ func (s *Syncer) SyncChain(ctx context.Context, pub ed25519.PublicKey) (*ChainSy
 			return nil, err
 		}
 		report := SourceSync{Source: fmt.Sprint(src)}
-		received, tip, err := s.syncFrom(ctx, i, src, pub)
-		report.Tip, report.Err = tip, err
+		received, err := s.syncFrom(ctx, i, src, pub, &report)
+		report.Err = err
 		for _, d := range received {
 			if seen[d] {
 				continue
@@ -187,14 +225,16 @@ func (s *Syncer) SyncChain(ctx context.Context, pub ed25519.PublicKey) (*ChainSy
 // against a single source, and it is what a node does when it has one — with the
 // standing consequence that a fork it is not shown is a fork it will never see.
 func (s *Syncer) SyncChainFrom(ctx context.Context, src Source, pub ed25519.PublicKey) (*ChainSync, error) {
-	single := &Syncer{Store: s.Store, Sources: []Source{src}, PageLimit: s.PageLimit, MaxPages: s.MaxPages, Resolve: s.Resolve}
+	single := &Syncer{Store: s.Store, Sources: []Source{src}, PageLimit: s.PageLimit, MaxPages: s.MaxPages, MaxPursuit: s.MaxPursuit, Resolve: s.Resolve}
 	return single.SyncChain(ctx, pub)
 }
 
 // syncFrom walks one source's copy of one chain: tip first, so that the client
 // knows whether there is anything to fetch, then ranges until the last block
-// received is the tip the source claims or the source stops handing blocks over.
-func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed25519.PublicKey) ([]cid.Digest, *cid.Digest, error) {
+// received is the tip the source claims or the source stops handing blocks over,
+// then — if the claimed tip is still a block this client does not hold — the
+// backward walk that pursues it.
+func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed25519.PublicKey, report *SourceSync) ([]cid.Digest, error) {
 	var received []cid.Digest
 
 	tip, tipErr := src.Tip(ctx, pub, "")
@@ -203,14 +243,15 @@ func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed2551
 		d := tip.Block.Digest()
 		claimed = &d
 	}
+	report.Tip = claimed
 	if tipErr != nil && !errors.Is(tipErr, ErrNotHeld) {
-		return nil, nil, tipErr
+		return nil, tipErr
 	}
 	if claimed == nil {
 		// The source holds nothing for this author. That is a fact about the
 		// source and not about the chain, so it is not an error worth stopping
 		// for, and there is nothing to range for either.
-		return nil, nil, tipErr
+		return nil, tipErr
 	}
 
 	after := s.resumeAt(index, pub)
@@ -220,22 +261,23 @@ func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed2551
 	}
 	for page := 0; page < maxPages; page++ {
 		if err := ctx.Err(); err != nil {
-			return received, claimed, err
+			return received, err
 		}
 		result, err := src.Range(ctx, pub, after, s.PageLimit)
 		if err != nil {
-			return received, claimed, err
+			return received, err
 		}
 		if len(result.Blocks) == 0 {
 			// An empty range is the answer both when the client is already at
-			// the tip and when the source's store stops there. The two are told
-			// apart by the tip, not by the emptiness — and a client that
-			// asked again would get the same empty answer forever.
+			// the tip and when the source's store stops there — and in a third
+			// case, when this source serves a chain the client's position is
+			// not on. The emptiness tells them apart from nothing; the tip
+			// does, and the pursuit below is what the third case costs.
 			break
 		}
 		for _, b := range result.Blocks {
 			if err := s.offer(ctx, src, b); err != nil {
-				return received, claimed, err
+				return received, err
 			}
 			received = append(received, b.Digest())
 		}
@@ -246,7 +288,98 @@ func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed2551
 			break
 		}
 	}
-	return received, claimed, nil
+
+	if !s.Store.Has(*claimed) {
+		pursued, err := s.pursue(ctx, src, pub, *claimed)
+		received = append(received, pursued...)
+		report.Pursued, report.PursuitErr = len(pursued), err
+	}
+	return received, nil
+}
+
+// pursue follows a tip a source advertised and this client does not hold, back
+// along prev and one block at a time, until the walk meets a block the store
+// already holds.
+//
+// This is the moment the multi-source rule either fires or does not. The source
+// holds a tip, so its store does not simply stop; the client is not at that tip,
+// so it is not caught up; and the range after the client's position was empty,
+// so the source's walk does not pass through that position at all. What is left
+// is that the source serves a chain this client's position is not on, and
+// treating that as "no new blocks" walks away from a fork one request from
+// detection — which satisfies validation rule 9 vacuously against two honest
+// sources serving one branch each (spec/07-transport.md, "Pursuing an advertised
+// tip"; "The multi-source rule").
+//
+// Reaching a held block is the point of it. The block the walk arrived from and
+// the block the store already held after that position are then two blocks with
+// one prev from one author, in this client's own store, which is exactly the
+// condition rule 9 names — and rule 9 fires on the store rather than on the
+// transport, so nothing here is a special case of fork detection.
+//
+// A walk that fails ends in fetches that did not succeed and in nothing else:
+// the error is returned for the report, no verdict about any block follows from
+// it, and whatever the walk did obtain is offered to the store anyway, because
+// those blocks arrived and are as real as any others.
+func (s *Syncer) pursue(ctx context.Context, src Source, pub ed25519.PublicKey, tip cid.Digest) ([]cid.Digest, error) {
+	limit := s.MaxPursuit
+	if limit == 0 {
+		limit = DefaultMaxPursuit
+	}
+	var walked []*block.Block
+	target := tip
+	for step := 0; !s.Store.Has(target); step++ {
+		if err := ctx.Err(); err != nil {
+			return s.offerWalk(ctx, src, walked), err
+		}
+		if step >= limit {
+			// The walk MUST be bounded, and the bound is this client's own: the
+			// chain being followed is the source's, and so is its length.
+			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s reached this client's bound of %d blocks without meeting one it holds", tip, limit)
+		}
+		b, err := src.Block(ctx, target)
+		if err != nil {
+			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s: %w", tip, err)
+		}
+		// Identify the block by the digest computed from its bytes, never by
+		// what was asked for, and never by anything the source said about it.
+		if b.Digest() != target {
+			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s: the source answered %s for %s: %w", tip, b.Digest(), target, ErrNotHeld)
+		}
+		if !bytes.Equal(b.PublicKey(), pub) {
+			// A block of another author cannot be a step of this author's
+			// chain, whatever the source thinks it is answering.
+			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s: %s is signed by another author: %w", tip, b.Digest(), ErrNotHeld)
+		}
+		walked = append(walked, b)
+		prev, ok := b.Prev()
+		if !ok {
+			// A genesis block, and this client holds none of its ancestry
+			// because it has none. The two chains share no block at all, which
+			// the genesis position's sibling set is the place to see.
+			break
+		}
+		target = prev
+	}
+	return s.offerWalk(ctx, src, walked), nil
+}
+
+// offerWalk hands a backward walk's blocks to the store in chain order, which is
+// the reverse of the order they were fetched in.
+//
+// The order is not cosmetic. Offered tip-first, every block waits for the
+// predecessor that has not arrived yet and the store settles them one by one as
+// the walk unwinds; offered genesis-ward first, each is decided the first time
+// it is validated.
+func (s *Syncer) offerWalk(ctx context.Context, src Source, walked []*block.Block) []cid.Digest {
+	out := make([]cid.Digest, 0, len(walked))
+	for i := len(walked) - 1; i >= 0; i-- {
+		if err := s.offer(ctx, src, walked[i]); err != nil {
+			break
+		}
+		out = append(out, walked[i].Digest())
+	}
+	return out
 }
 
 // offer resolves what a block's refs need and then hands the block to the store,

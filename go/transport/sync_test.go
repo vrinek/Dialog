@@ -1,8 +1,10 @@
 package transport
 
 import (
+	"context"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -487,4 +489,258 @@ func TestSyncReportsARejectedBlock(t *testing.T) {
 	if store.Has(bad.Digest()) {
 		t.Error("a rejected block was stored")
 	}
+}
+
+// divergentChain builds one genesis block and two branches from the position
+// after it: a one-block branch and a two-block branch, arranged so that the
+// two-block branch's first block sorts *below* the other bytewise.
+//
+// The arrangement is what makes the fixture a fork a server can walk into. A
+// server serving both chooses the lowest digest at the divergent position, so
+// once it holds the long branch it walks that way — and a client that synced it
+// while it held only the short one is left holding a position the server's walk
+// no longer passes through, which is the case "Pursuing an advertised tip" is
+// about.
+func divergentChain(t *testing.T) (pub ed25519.PublicKey, genesis, short *block.Block, long []*block.Block) {
+	t.Helper()
+	priv := testKey(t, 80)
+	genesis = signBlock(t, priv, block.Content{
+		Version: block.Version, Type: block.TypePublic, TS: 1,
+		Ops: []block.Operation{block.MustCreateAtom("the common ancestor")},
+	})
+	prev := genesis.Digest()
+	first := signBlock(t, priv, block.Content{
+		Version: block.Version, Type: block.TypePublic, Prev: &prev, TS: 2,
+		Ops: []block.Operation{block.MustCreateAtom("one branch")},
+	})
+	second := signBlock(t, priv, block.Content{
+		Version: block.Version, Type: block.TypePublic, Prev: &prev, TS: 3,
+		Ops: []block.Operation{block.MustCreateAtom("the other branch")},
+	})
+	lower, higher := first, second
+	if a, b := lower.Digest(), higher.Digest(); slices.Compare(a[:], b[:]) > 0 {
+		lower, higher = higher, lower
+	}
+	onward := lower.Digest()
+	far := signBlock(t, priv, block.Content{
+		Version: block.Version, Type: block.TypePublic, Prev: &onward, TS: 4,
+		Ops: []block.Operation{block.MustCreateAtom("the far end of the long branch")},
+	})
+	author := genesis.PublicKey()
+	return author, genesis, higher, []*block.Block{lower, far}
+}
+
+func signBlock(t *testing.T, priv ed25519.PrivateKey, content block.Content) *block.Block {
+	t.Helper()
+	b, err := block.Sign(content, priv)
+	if err != nil {
+		t.Fatalf("signing: %v", err)
+	}
+	return b
+}
+
+// addBlock puts a block in a store a server is already serving, tolerating the
+// fork the store flags: a fixture that stores a fork stores it on purpose.
+func addBlock(t *testing.T, store *block.MemStore, blocks ...*block.Block) {
+	t.Helper()
+	for _, b := range blocks {
+		var fork *block.ForkError
+		if err := store.Add(b); err != nil && !errors.As(err, &fork) {
+			t.Fatalf("storing %s: %v", b.Digest(), err)
+		}
+	}
+}
+
+// TestPursuingAnAdvertisedTip is the case an empty range hides, and the moment
+// the multi-source rule either fires or does not.
+//
+// The client syncs both sources while they agree, and is left at a position on
+// the short branch. The second source then receives the long branch, whose first
+// block sorts lower, so its walk goes that way: it answers an empty range after
+// the client's position and advertises a tip the client does not hold. Treating
+// that as "no new blocks" would walk away from a fork one request from
+// detection. Pursuing it — the tip by digest, then its prev, then its prev —
+// arrives at a block the client holds and leaves two blocks with one prev from
+// one author in the client's own store, which is what validation rule 9 fires on
+// (spec/07-transport.md, "Pursuing an advertised tip"; "The multi-source rule").
+func TestPursuingAnAdvertisedTip(t *testing.T) {
+	pub, genesis, short, long := divergentChain(t)
+	firstStore := memStore(t, genesis, short)
+	secondStore := memStore(t, genesis, short)
+	first, _ := serve(t, ServerConfig{Store: firstStore})
+	second, _ := serve(t, ServerConfig{Store: secondStore})
+
+	store := block.NewValidatingStore(nil)
+	syncer := NewSyncer(store, first, second)
+
+	// While the two sources agree there is no fork to find, and no pursuit:
+	// each source's tip is the block the client just received.
+	agreed, err := syncer.SyncChain(t.Context(), pub)
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+	if len(agreed.Forks) != 0 {
+		t.Fatalf("forks = %v, want none while the sources agree", agreed.Forks)
+	}
+	for i, report := range agreed.Sources {
+		if report.Pursued != 0 || report.PursuitErr != nil {
+			t.Errorf("source %d pursued %d blocks (%v); a tip the client holds needs no pursuit", i, report.Pursued, report.PursuitErr)
+		}
+	}
+	if !store.Has(short.Digest()) {
+		t.Fatal("the client did not receive the short branch")
+	}
+
+	// The second source now holds the other branch too, and serves it: the
+	// lowest digest at the divergent position is the branch it walks.
+	addBlock(t, secondStore, long...)
+
+	result, err := syncer.SyncChain(t.Context(), pub)
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+
+	// The first source is where the client already is, so it advertises a tip
+	// the client holds and nothing is pursued.
+	if result.Sources[0].Pursued != 0 {
+		t.Errorf("the first source was pursued for %d blocks, want none", result.Sources[0].Pursued)
+	}
+	// The second answered an empty range and a tip the client does not hold.
+	// Both blocks of the branch were fetched by digest, backward from the tip.
+	if result.Sources[1].PursuitErr != nil {
+		t.Fatalf("the pursuit failed: %v", result.Sources[1].PursuitErr)
+	}
+	if result.Sources[1].Pursued != len(long) {
+		t.Errorf("the pursuit fetched %d blocks, want the %d of the divergent branch", result.Sources[1].Pursued, len(long))
+	}
+	if result.Sources[1].Tip == nil || *result.Sources[1].Tip != long[1].Digest() {
+		t.Errorf("the second source claimed tip %v, want the far end of the long branch %s", result.Sources[1].Tip, long[1].Digest())
+	}
+
+	// And the fork is in the client's store: two blocks, one prev, one author,
+	// neither source having admitted to anything.
+	if len(result.Forks) != 1 {
+		t.Fatalf("forks = %v, want the one the pursuit revealed", result.Forks)
+	}
+	fork := result.Forks[0]
+	if fork.Prev == nil || *fork.Prev != genesis.Digest() {
+		t.Errorf("the fork is at %v, want the position after the genesis block", fork.Prev)
+	}
+	want := []cid.Digest{short.Digest(), long[0].Digest()}
+	slices.SortFunc(want, func(a, b cid.Digest) int { return slices.Compare(a[:], b[:]) })
+	if !slices.Equal(fork.Blocks, want) {
+		t.Errorf("the fork holds %v, want both branch heads %v", fork.Blocks, want)
+	}
+	// Both branches are held, and the whole long branch was validated on the
+	// way in: the walk is offered to the store genesis-ward first, so nothing
+	// is left waiting for a predecessor that already arrived.
+	for _, b := range append([]*block.Block{genesis, short}, long...) {
+		if verdict, _ := store.Verdict(b.Digest()); verdict != block.VerdictValid {
+			t.Errorf("%s is %v after the pursuit, want it accepted", b.Digest(), verdict)
+		}
+	}
+}
+
+// withholdingSource is a source that answers every question but the one the
+// pursuit asks: it advertises a tip and will not serve any block by digest.
+//
+// A source that advertises a tip it will not serve is indistinguishable from one
+// that lost it, which is why nothing about the blocks may be concluded from the
+// walk failing.
+type withholdingSource struct{ Source }
+
+func (w withholdingSource) Block(_ context.Context, d cid.Digest) (*block.Block, error) {
+	return nil, fmt.Errorf("transport: block %s: %w", d, ErrNotHeld)
+}
+
+// TestPursuitIsBoundedAndItsFailureIsOnlyAFailedFetch: the backward walk is
+// bounded by a limit the client chooses, and a walk that does not reach a block
+// the client holds is a failed fetch and nothing else — not a fork, not an
+// invalidity, not a finding about any block (spec/07-transport.md, "Pursuing an
+// advertised tip").
+func TestPursuitIsBoundedAndItsFailureIsOnlyAFailedFetch(t *testing.T) {
+	pub, genesis, short, long := divergentChain(t)
+
+	t.Run("a tip the source will not serve", func(t *testing.T) {
+		firstStore := memStore(t, genesis, short)
+		secondStore := memStore(t, genesis, short)
+		first, _ := serve(t, ServerConfig{Store: firstStore})
+		second, _ := serve(t, ServerConfig{Store: secondStore})
+
+		store := block.NewValidatingStore(nil)
+		syncer := NewSyncer(store, first, withholdingSource{second})
+		if _, err := syncer.SyncChain(t.Context(), pub); err != nil {
+			t.Fatalf("SyncChain: %v", err)
+		}
+		addBlock(t, secondStore, long...)
+
+		result, err := syncer.SyncChain(t.Context(), pub)
+		if err != nil {
+			t.Fatalf("SyncChain: %v", err)
+		}
+		if result.Sources[1].PursuitErr == nil {
+			t.Fatal("the pursuit of an unobtainable tip reported no failure")
+		}
+		if !errors.Is(result.Sources[1].PursuitErr, ErrNotHeld) {
+			t.Errorf("the pursuit failed with %v, want a failed fetch", result.Sources[1].PursuitErr)
+		}
+		if result.Sources[1].Pursued != 0 {
+			t.Errorf("the pursuit reported %d blocks from a source that served none", result.Sources[1].Pursued)
+		}
+		// No verdict follows from it. The chain the client holds is what it was,
+		// nothing was rejected, and no fork was invented out of a failed fetch.
+		if len(result.Forks) != 0 {
+			t.Errorf("forks = %v; a failed pursuit is not evidence of a fork", result.Forks)
+		}
+		if len(result.Rejected) != 0 {
+			t.Errorf("rejected = %v; a failed pursuit is not evidence of an invalidity", result.Rejected)
+		}
+		for _, b := range []*block.Block{genesis, short} {
+			if verdict, _ := store.Verdict(b.Digest()); verdict != block.VerdictValid {
+				t.Errorf("%s is %v after a failed pursuit, want it still accepted", b.Digest(), verdict)
+			}
+		}
+		for _, b := range long {
+			if store.Has(b.Digest()) {
+				t.Errorf("the client holds %s, which no source handed over", b.Digest())
+			}
+		}
+	})
+
+	t.Run("a walk longer than the client's bound", func(t *testing.T) {
+		firstStore := memStore(t, genesis, short)
+		secondStore := memStore(t, genesis, short)
+		first, _ := serve(t, ServerConfig{Store: firstStore})
+		second, _ := serve(t, ServerConfig{Store: secondStore})
+
+		store := block.NewValidatingStore(nil)
+		syncer := NewSyncer(store, first, second)
+		syncer.MaxPursuit = 1
+		if _, err := syncer.SyncChain(t.Context(), pub); err != nil {
+			t.Fatalf("SyncChain: %v", err)
+		}
+		addBlock(t, secondStore, long...)
+
+		result, err := syncer.SyncChain(t.Context(), pub)
+		if err != nil {
+			t.Fatalf("SyncChain: %v", err)
+		}
+		if result.Sources[1].PursuitErr == nil {
+			t.Fatal("a walk past the client's bound reported no failure")
+		}
+		if result.Sources[1].Pursued != 1 {
+			t.Errorf("the bounded walk fetched %d blocks, want the one its bound allows", result.Sources[1].Pursued)
+		}
+		// The one block it did fetch is held and undecided — its predecessor
+		// never arrived — and is neither rejected nor evidence of anything.
+		if verdict, _ := store.Verdict(long[1].Digest()); verdict != block.VerdictUnvalidated {
+			t.Errorf("the block the bounded walk fetched is %v, want the undecided verdict", verdict)
+		}
+		if len(result.Forks) != 0 {
+			t.Errorf("forks = %v; the walk stopped before the divergent block", result.Forks)
+		}
+		if len(result.Rejected) != 0 {
+			t.Errorf("rejected = %v; a bounded walk refuses nothing", result.Rejected)
+		}
+	})
 }
