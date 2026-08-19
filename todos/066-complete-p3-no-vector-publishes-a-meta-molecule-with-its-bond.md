@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "066"
 tags: [conformance-vectors, meta-bonds, validation, interoperability]
@@ -80,11 +80,11 @@ Option 1, together with the next change that is allowed to move `vectors/`.
 
 ## Acceptance Criteria
 
-- [ ] `vectors/blocks.json` holds a valid block publishing a meta-bond and a
+- [x] `vectors/blocks.json` holds a valid block publishing a meta-bond and a
       meta-molecule that uses it
-- [ ] `vectors/blocks.json` holds an `invalid_in_chain` case rejecting the same
+- [x] `vectors/blocks.json` holds an `invalid_in_chain` case rejecting the same
       block without the `create_bond`, for rule 4
-- [ ] The case counts in `vectors/README.md` and the TypeScript tests agree
+- [x] The case counts in `vectors/README.md` and the TypeScript tests agree
 
 ## Work Log
 
@@ -95,6 +95,49 @@ Option 1, together with the next change that is allowed to move `vectors/`.
 `todos/065` was applied as a spec-only change under an explicit constraint that
 `vectors/` stay byte-identical, so its third acceptance criterion was deferred
 here rather than dropped.
+
+### 2026-08-19 - Applied
+
+**By:** Claude
+
+Option 1, as filed and as ratified with 065. Two cases, one on each side of
+rule 4, generated rather than transcribed like everything else in `vectors/`:
+
+- `chain/bob_meta_molecule` — a sixth block in the scenario, the next block of
+  Bob's chain. It carries `create_bond("_A_ is true")` and the
+  `create_molecule` asserting the molecule his genesis block published, in that
+  order and in one block. `refs` is empty: the asserted molecule was created by
+  an ancestor of this block's own chain, so the only dependency needing
+  publication is the meta-bond itself. This is the `atlas` strategy of
+  spec/06's informative paragraph, which is the one an implementer copies.
+- `invalid_in_chain/unreachable_meta_bond` — the same shape with the
+  `create_bond` dropped: setup publishes the molecule, the rejected block names
+  the meta-bond digest, and rule 4 refuses it. The generator verifies the rule
+  number against the reference validator, as every case in that section does,
+  so the file cannot pin a verdict this implementation does not reach.
+
+**Changes:**
+
+- `go/internal/vectors/blocks.go`: the new chain block (`tsBobMeta`, between
+  Bob's genesis and Alice's rotation, so the section stays chronological), its
+  description, the file description and `spec/06-meta-bonds.md` added to the
+  file's `spec` list.
+- `go/internal/vectors/blocks_chain.go`: `rejectUnreachableMetaBond`, grouped
+  with the other rule 4 cases.
+- `vectors/blocks.json`: regenerated. Purely additive — no existing block's
+  bytes, digest or signature moved, because the new chain block is appended to
+  a chain nothing else links to.
+- `vectors/README.md`: counts `chain` (5 → 6) and `invalid_in_chain` (12 → 13),
+  06-meta-bonds.md in the file's specification column, and a paragraph in step
+  3 naming the pair and what an implementation reading the five digests as
+  ambient gets wrong.
+- `ts/test/block.test.ts`: the expected counts, the store size after replaying
+  the chain, and the two indices the rotation/succession test reads.
+
+Both suites consume the new cases through the machinery that was already
+there: Go's `TestBlockVectors` replays the chain and the chain-relative
+rejections by name, and the TypeScript test iterates `invalid_in_chain`
+generically and maps the rule string to its `reachability` error code.
 
 ## Notes
 
