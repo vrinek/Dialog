@@ -276,12 +276,22 @@ test("an error status is surfaced with the problem document as it arrived", asyn
   });
 });
 
-test("a client works against a server that sends neither problem type", async () => {
+test("a client works against a server that sends none of the three problem types", async () => {
   const bare = clientAgainst(() => new Response(null, { status: 404 }));
   // The status code is the whole of it: a 404 for a block is a failed fetch
   // whatever the body says or does not say.
   assert.equal((await bare.block(chainOf(ALICE, 1)[0]!.digest)).failed, "not-held");
   assert.equal((await bare.tip(ALICE_PUB)).status, "not-held");
+
+  // And a 403 with no problem document at all is still a refusal of this
+  // announce and still carries no verdict about the blocks.
+  const refusing = clientAgainst(() => new Response(null, { status: 403 }));
+  await assert.rejects(refusing.announce(chainOf(ALICE, 1)), (error: unknown) => {
+    assert.ok(error instanceof TransportError);
+    assert.equal(error.announceRefused, true);
+    assert.equal(error.problem, undefined);
+    return true;
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -534,6 +544,18 @@ test("the same server and client work over Node's http, with the runtime's own f
 
     const missing = await client.block(chainOf(BOB, 1)[0]!.digest);
     assert.equal(missing.failed, "not-held");
+
+    // Nothing between the socket and the server percent-decodes the request
+    // target: the canonical form is applied to it as received, so an encoded
+    // octet is a 400 out here too and never a second URL for one block.
+    const base = `http://127.0.0.1:${address.port}${DEFAULT_BASE_PATH}`;
+    const cid = atlas.index[0]!.cid;
+    assert.equal((await fetch(`${base}/blocks/${cid}`)).status, 200);
+    assert.equal((await fetch(`${base}/blocks/%62${cid.slice(1)}`)).status, 400);
+    assert.equal(
+      (await fetch(`${base}/chains/${atlas.keyText}/blocks?limit=%201`)).status,
+      400,
+    );
   } finally {
     await new Promise<void>((resolve) => http.close(() => resolve()));
   }
