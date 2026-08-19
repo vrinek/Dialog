@@ -461,6 +461,17 @@ func TestNonCanonicalSpellingsAreRejected(t *testing.T) {
 		{"limit given twice", DefaultPrefix + "/chains/" + author + "/blocks?limit=1&limit=2"},
 		{"after given twice", DefaultPrefix + "/chains/" + author + "/blocks?after=" + blockCID + "&after=" + blockCID},
 		{"prev given twice", DefaultPrefix + "/chains/" + author + "/siblings?prev=" + blockCID + "&prev=" + blockCID},
+		// Percent-encoding is a second spelling, and one spelling means one
+		// byte sequence. Each of these decodes to the canonical form a
+		// URL library would hand a handler, which is exactly why the server
+		// reads the target as it arrived (spec/07-transport.md, "HTTP
+		// binding"; todos/090).
+		{"a percent-encoded author key", DefaultPrefix + "/chains/%62" + author[1:] + "/tip"},
+		{"a percent-encoded author key on a range", DefaultPrefix + "/chains/%62" + author[1:] + "/blocks"},
+		{"a percent-encoded CID", DefaultPrefix + "/blocks/%62" + blockCID[1:]},
+		{"a percent-encoded position", DefaultPrefix + "/chains/" + author + "/blocks?after=%62" + blockCID[1:]},
+		{"a percent-encoded sibling position", DefaultPrefix + "/chains/" + author + "/siblings?prev=%62" + blockCID[1:]},
+		{"a percent-encoded limit", DefaultPrefix + "/chains/" + author + "/blocks?limit=%31"},
 	}
 	for _, c := range cases {
 		resp := get(t, ts, http.MethodGet, c.path, nil)
@@ -469,6 +480,79 @@ func TestNonCanonicalSpellingsAreRejected(t *testing.T) {
 			continue
 		}
 		assertProblem(t, resp, http.StatusBadRequest)
+	}
+}
+
+// TestUnknownQueryParametersAreIgnored: the repeated-parameter 400 is scoped to
+// the parameters this profile defines for the operation being invoked, and
+// everything else is ignored, once or many times.
+//
+// It is the rule the long poll's degradation already was — a server that does
+// not implement wait MUST ignore it and answer immediately — and it is what
+// lets a later version of this profile add a parameter without breaking a
+// server written against this one. The cost is accepted and is real: prev sent
+// to a range, or after sent to a sibling set, is answered from the genesis
+// position with no signal that the parameter went nowhere
+// (spec/07-transport.md, "HTTP binding"; todos/095).
+func TestUnknownQueryParametersAreIgnored(t *testing.T) {
+	pub, blocks := testChain(t, 60, 4)
+	client, ts := serve(t, ServerConfig{Store: memStore(t, blocks...)})
+	author := authorText(t, pub)
+	blockCID := blocks[1].CID().String()
+
+	ignored := []struct {
+		name, path string
+		want       int
+	}{
+		{"a tracking parameter an intermediary appended", DefaultPrefix + "/chains/" + author + "/blocks?limit=2&utm_source=somewhere", 2},
+		{"a percent-encoded value of a parameter this profile does not define", DefaultPrefix + "/chains/" + author + "/blocks?limit=2&ref=%20a%20b", 2},
+		// The long poll is OPTIONAL and this server does not implement it, so
+		// the parameter is ignored and the answer is immediate — and a
+		// repeated one is ignored twice rather than refused, which is what
+		// keeps the two rules from contradicting each other.
+		{"the long poll parameter, given once", DefaultPrefix + "/chains/" + author + "/blocks?wait=5", 4},
+		{"the long poll parameter, given twice", DefaultPrefix + "/chains/" + author + "/blocks?wait=5&wait=6", 4},
+		{"a parameter this profile defines for another operation", DefaultPrefix + "/chains/" + author + "/blocks?prev=" + blockCID, 4},
+		{"that other parameter, given twice", DefaultPrefix + "/chains/" + author + "/blocks?prev=" + blockCID + "&prev=" + blockCID, 4},
+	}
+	for _, c := range ignored {
+		resp := get(t, ts, http.MethodGet, c.path, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200", c.name, resp.StatusCode)
+			continue
+		}
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("%s: reading the body: %v", c.name, err)
+		}
+		got, err := DecodeSeq(raw)
+		if err != nil {
+			t.Fatalf("%s: decoding the body: %v", c.name, err)
+		}
+		if len(got) != c.want {
+			t.Errorf("%s: the range carries %d blocks, want %d", c.name, len(got), c.want)
+		}
+	}
+
+	// prev on a range names a position the server never reads, so the answer is
+	// the genesis position's: the blocks the parameter's sender meant to skip
+	// are all there.
+	all := get(t, ts, http.MethodGet, DefaultPrefix+"/chains/"+author+"/siblings?after="+blockCID, nil)
+	if all.StatusCode != http.StatusOK {
+		t.Errorf("after on a sibling set: status = %d, want 200", all.StatusCode)
+	}
+
+	// And the parameters the operation does define are still refused for being
+	// given twice, which is the scope the rule kept.
+	twice := get(t, ts, http.MethodGet, DefaultPrefix+"/chains/"+author+"/blocks?limit=2&limit=2&x=1&x=2", nil)
+	if twice.StatusCode != http.StatusBadRequest {
+		t.Errorf("limit twice beside an unknown parameter twice: status = %d, want 400", twice.StatusCode)
+	}
+	assertProblem(t, twice, http.StatusBadRequest)
+
+	// The client is unaffected: it sends the parameters it defines and no others.
+	if _, err := client.Range(t.Context(), pub, nil, 2); err != nil {
+		t.Fatalf("Range: %v", err)
 	}
 }
 

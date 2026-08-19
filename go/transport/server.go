@@ -95,6 +95,16 @@ const (
 // A deployment MAY put whatever it likes in front of these endpoints — TLS, an
 // allowlist, a VPN, a rate limiter — by wrapping the handler. Neither changes
 // what a client must verify.
+//
+// A query parameter this profile does not define for the operation being
+// invoked is ignored, whether it is given once or many times: a tracking
+// parameter an intermediary appended, a parameter of a later version of this
+// profile, a parameter of another operation. Only the parameters an operation
+// defines are read, and only those are refused for being given twice. That is
+// what makes a server which does not implement the long poll degrade to polling
+// rather than refuse the request, and what lets a later parameter be added
+// without breaking servers written against this version
+// (spec/07-transport.md, "HTTP binding"; todos/095).
 type Server struct {
 	store    Store
 	announce Announcer
@@ -181,7 +191,68 @@ func pick64(v, dflt int64) int64 {
 }
 
 // ServeHTTP implements [http.Handler].
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.canonicalTarget(w, r) {
+		return
+	}
+	s.mux.ServeHTTP(w, r)
+}
+
+// canonicalTarget refuses a request target that percent-encodes any octet of a
+// path segment under this server's prefix.
+//
+// One spelling means one byte sequence, and percent-encoding is a second
+// spelling. Every segment of every path this profile defines is either a fixed
+// literal or an identifier in a canonical text form, and both alphabets — base32
+// for an author key and a CID — need no percent-encoding at all, so a target
+// that carries some is a malformed request rather than a spelling to normalize:
+// bafyrei… and %62afyrei… are two byte strings naming one immutable resource,
+// which a cache keys twice and which is the alias the canonical forms exist to
+// prevent (spec/07-transport.md, "HTTP binding"; todos/090).
+//
+// The check is here rather than in each handler because Go's mux matches on the
+// decoded path, so by the time a handler runs the encoding is invisible: the
+// escaped path is the only place the second spelling still exists. Paths outside
+// this server's prefix are left alone — they are nothing this profile defines,
+// and they answer 404 for being nowhere rather than 400 for being spelled oddly.
+func (s *Server) canonicalTarget(w http.ResponseWriter, r *http.Request) bool {
+	rest, under := strings.CutPrefix(r.URL.EscapedPath(), s.prefix)
+	if !under || !strings.ContainsRune(rest, '%') {
+		return true
+	}
+	writeProblem(w, r, http.StatusBadRequest,
+		"the request target percent-encodes part of a path this profile defines; an author key and a CID are base32 and need no encoding, and two spellings of one resource are two names for it")
+	return false
+}
+
+// rawQuery parses the query string without percent-decoding it, into the values
+// each name was given, in the order they appeared.
+//
+// Not decoding is the whole of it. The query values this profile defines are
+// base32 identifiers and ASCII digits, so a well-behaved client never sends a
+// percent sign; leaving the bytes as they arrived is what makes limit=%31 and
+// after=%62afyrei… fail their own canonical-form checks instead of being
+// silently normalized into the values they decode to (spec/07-transport.md,
+// "HTTP binding"; todos/090). A percent-encoded octet in a parameter this
+// profile does not define is nobody's business and is ignored with the rest of
+// that parameter (todos/095).
+//
+// A malformed pair is kept rather than dropped, for the same reason: what the
+// operation does not define, it ignores, and what it does define it checks
+// itself.
+func rawQuery(r *http.Request) map[string][]string {
+	values := make(map[string][]string)
+	for q := r.URL.RawQuery; q != ""; {
+		var pair string
+		pair, q, _ = strings.Cut(q, "&")
+		if pair == "" {
+			continue
+		}
+		name, value, _ := strings.Cut(pair, "=")
+		values[name] = append(values[name], value)
+	}
+	return values
+}
 
 // handleUnknown answers a path this server does not define at all. It is a 404
 // in the profile's sense — this source does not have it — under the blank
@@ -248,9 +319,10 @@ func (s *Server) author(w http.ResponseWriter, r *http.Request) (ed25519.PublicK
 // The literal string null MUST be rejected. Exactly one spelling of a position
 // is admitted, for the same reason exactly one spelling of a CID is: two
 // spellings of one thing are two names for it, and this profile mints no
-// aliases.
+// aliases — which is also why the value is read undecoded, so that a
+// percent-encoded CID is the second spelling it is (see rawQuery).
 func (s *Server) position(w http.ResponseWriter, r *http.Request, param string) (*cid.Digest, bool) {
-	values, present := r.URL.Query()[param]
+	values, present := rawQuery(r)[param]
 	if !present {
 		return nil, true
 	}
@@ -275,13 +347,14 @@ func (s *Server) position(w http.ResponseWriter, r *http.Request, param string) 
 // and MUST NOT exceed it.
 //
 // It has exactly one spelling — one or more ASCII digits, the first not zero,
-// with no sign, no decimal point and no whitespace — and every other is 400,
-// including a value too large to be a plausible count of blocks, which the round
-// trip through strconv catches. A parameter given more than once is malformed
-// for the same reason `after` given twice is: two values, and no rule anywhere
-// saying which wins (spec/07-transport.md, "HTTP binding"; todos/089).
+// with no sign, no decimal point, no whitespace and no percent-encoded variant
+// of any of those — and every other is 400, including a value too large to be a
+// plausible count of blocks, which the round trip through strconv catches. A
+// parameter given more than once is malformed for the same reason `after` given
+// twice is: two values, and no rule anywhere saying which wins
+// (spec/07-transport.md, "HTTP binding"; todos/089, 090).
 func (s *Server) limit(w http.ResponseWriter, r *http.Request) (int, bool) {
-	values, present := r.URL.Query()["limit"]
+	values, present := rawQuery(r)["limit"]
 	if !present {
 		return s.defaultLimit, true
 	}
