@@ -434,6 +434,32 @@ export function decode(bytes: Uint8Array): DcborValue {
   return value;
 }
 
+/** One decoded item and the number of bytes it occupied. */
+export interface DecodedItem {
+  readonly value: DcborValue;
+  /** How many bytes of the input the item consumed, from offset 0. */
+  readonly read: number;
+}
+
+/**
+ * Decode the first Dialog dCBOR data item of `bytes` and report how long it
+ * was, leaving whatever follows it alone.
+ *
+ * {@link decode} is the rule for a Dialog *document*, which is exactly one data
+ * item; this is the primitive a concatenation of items needs — an
+ * [RFC 8742](https://datatracker.ietf.org/doc/html/rfc8742) CBOR sequence, which
+ * is the one serialization of `spec/07-transport.md`. Every other rule of the
+ * profile is unchanged: an item that is truncated, non-canonical or otherwise
+ * outside the profile throws here exactly as it does there, which is what makes
+ * a truncated final item of a sequence an error rather than an end
+ * (`spec/07-transport.md`, "The block sequence", rule 3).
+ */
+export function decodeFirst(bytes: Uint8Array): DecodedItem {
+  const cursor: Cursor = { buf: bytes, pos: 0 };
+  const value = decodeItem(cursor, 0);
+  return { value, read: cursor.pos };
+}
+
 /**
  * Decode one item. `depth` is the nesting depth of the container holding it —
  * 0 at the top level — so a container found here is itself at `depth + 1`
