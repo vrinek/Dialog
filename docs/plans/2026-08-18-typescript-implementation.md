@@ -201,15 +201,18 @@ by the final cross-validation phase, never read.
    profile names as a test rather than a claim: one author's `.block` files
    concatenated in index order are that author's whole-chain range response,
    byte for byte. **Scope is now wire format + transport; L2 and L3 remain out.**
-   Six gaps filed, 090 to 095 — see the commit and the todos themselves.
+   Six gaps filed, 090 to 095 — see the commit and the todos themselves. All six
+   are now settled in `spec/07` and applied to both implementations, which took
+   the count to 451 tests here and filed 096 and 097 on the way.
 
 ## Rules for implementing agents
 
 - Clean-room rule above is absolute.
 - Spec is normative; vectors are ground truth; any gap between what the spec
   says and what a vector contains is a todo (never silently resolve; next free
-  number: 096 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
-  filed 060 and 061, phase 4 filed 062, phase 6 filed 090 to 095).
+  number: 098 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
+  filed 060 and 061, phase 4 filed 062, phase 6 filed 090 to 095, and applying
+  those filed 096 and 097).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
 
@@ -270,6 +273,25 @@ implementation to match the other: 056 (map keys are text-only in the
 vectors), 057 and 060 above, 058 (`entities.json`'s rejection rules were
 unpinned), 059 (a meta-bond's `Fillers:` line is an L3 recognition criterion,
 not a validity rule), 061 (`blocks.json`'s chain-relative rejections were
-unpinned), 062 (`privacy.json`'s five rejection rules were unpinned). The
-running total is seven todos filed over five phases and seven settled; none
-remain open from this effort.
+unpinned), 062 (`privacy.json`'s five rejection rules were unpinned).
+
+**Todos 090-095, all settled too.** Phase 6's six went the same way: percent-
+encoding is a second spelling and is 400 (090); a source serves what it holds
+whatever verdict it has reached, and a mirror that validates nothing is
+conforming (091); an announce refused by policy is 403 with a third problem
+type and no receipt (092); a client that meets an empty range whose tip it does
+not hold pursues that tip backward by digest until it reaches a block it holds,
+which is what turns the second source's answer into a fork (093); an announce
+body admits both block-sequence types and `Accept` is not evaluated on it
+(094); and the repeated-parameter 400 is scoped to the parameters an operation
+defines, everything else being ignored (095). Each was resolved in `spec/07`
+first and then applied to both implementations, and 090 was a live bug in the
+Go server rather than a documentation gap — the standard library was
+normalizing a percent-encoded identifier and a percent-encoded `limit` before
+either reached a handler.
+
+Applying them filed two more: 096 (the pursuit's backward walk can reach a
+genesis block, which the specification's enumeration does not cover) and 097
+(`ts/`'s unused `BlockStore.tip` is the tip definition the profile rejects).
+The running total is fifteen todos filed over six phases, thirteen settled and
+those two open.

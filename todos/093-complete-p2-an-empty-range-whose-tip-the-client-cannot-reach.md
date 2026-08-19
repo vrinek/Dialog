@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "093"
 tags: [transport, specification-gap, forks]
@@ -119,8 +119,8 @@ one source, and compare", and this is what comparing actually consists of.
 
 ## Acceptance Criteria
 
-- [ ] The specification names the empty-range-with-an-unreachable-tip case
-- [ ] It says what a client does about it, at least as a SHOULD
+- [x] The specification names the empty-range-with-an-unreachable-tip case
+- [x] It says what a client does about it, at least as a SHOULD
 
 ## Work Log
 
@@ -132,6 +132,83 @@ Found writing `syncChain`: the obvious loop — resume from the local tip until
 the range comes back empty — detects no fork ever, against two sources that each
 serve one branch honestly. Nothing in the profile says so, and the test that
 catches it had to be written before the code that passes it.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, with the mechanism pinned rather than left to the client's choice
+of three, and sited in a client rule of its own.
+
+- `spec/07-transport.md`, "Client rules", **"Pursuing an advertised tip"**. When
+  a source's tip names a block the client does not hold *after* the client has
+  synced that source's range, the client has learned that the source serves a
+  chain its position is not on. It MUST NOT treat the empty range as "no new
+  blocks", and it MUST pursue: fetch the named block **by digest** from that
+  source, verify it as every received block is verified, read its `prev`, fetch
+  that by digest too, and keep walking backward until it reaches a block it
+  holds, a fetch fails, or its own bound is reached.
+- **The walk MUST be bounded**, by a limit the client chooses: it follows a chain
+  of the source's choosing, of a length the source controls.
+- Reaching a held block is the point of the exercise. Two children of one parent
+  are then in the client's own store, which is what validation rule 9 fires on —
+  on the store rather than on the transport, so nothing here is a special case of
+  fork detection.
+- **A failed walk is failed fetches and nothing else.** A 404, bytes that hash
+  wrong, or the client's own bound reached are each recorded as a failed fetch:
+  not evidence of a fork, not of an invalidity, not that the source lied, because
+  a source advertising a tip it will not serve is indistinguishable from one that
+  lost it. The text ties this to the same rule that already covers a `refs` entry
+  no source returned.
+- The section closes by naming what it completes: this is what "obtain each chain
+  from more than one source, and compare" consists of when the second source's
+  answer is an empty range and an unreachable tip — the *normal* second-source
+  answer about a forked chain — and a client that skips it satisfies rule 9
+  vacuously against two honest sources and does not satisfy the multi-source
+  rule's SHOULD. `range`'s empty-sequence sentence, "The multi-source rule" and
+  step 5 of the worked example all point at it.
+- The two cheaper moves are kept as an informative note rather than as the
+  obligation: re-issuing the range from the genesis position finds the same
+  divergence in one request and re-downloads the shared prefix, and a `limit=1`
+  binary search locates it logarithmically but delivers nothing, so it must still
+  be followed by a fetch. The backward walk is written as the rule because its
+  cost is the *distance between the branches* rather than the length of the
+  chain, and because it asks for nothing the client already holds.
+- `go/transport`: `Syncer.pursue`, run whenever a source's claimed tip is still
+  unheld after its range is exhausted, bounded by `MaxPursuit`
+  (`DefaultMaxPursuit` = 256, the scan limit's own default). The walk's blocks are
+  offered to the store genesis-ward first — the reverse of the order they were
+  fetched in — so each is decided the first time it is validated instead of
+  waiting for a predecessor still in flight. `SourceSync` grew `Pursued` and
+  `PursuitErr`; a `nil` error there and a fork in `ChainSync.Forks` is what
+  success looks like.
+- `TestPursuingAnAdvertisedTip` is this todo's scenario end to end: two sources
+  on one chain, the client synced to the short branch, the second source then
+  receiving the long branch whose head sorts lower so its walk goes that way, an
+  empty range and an unreachable tip, and both branch heads in the fork the sync
+  reports. Disabling the pursuit fails it, which is the property worth having.
+  `TestPursuitIsBoundedAndItsFailureIsOnlyAFailedFetch` covers both failure
+  modes — a source that will not serve the tip it advertises, and a walk longer
+  than the client's bound — and asserts what does *not* follow: no fork, no
+  rejection, no verdict disturbed, and the one block a bounded walk did fetch
+  held undecided rather than refused.
+- `ts/src/transport.ts` gave up the move this todo recorded it making. `syncChain`
+  no longer re-issues the range from the genesis position; it calls a new exported
+  `pursueTip` — fetch by digest, re-hash, read `prev`, walk backward, bounded by
+  `DEFAULT_PURSUIT_LIMIT` of 256 or `SyncOptions.maxPursuit` — and
+  `ChainSyncResult.rescanned` is replaced by a `pursuit` report carrying the tip,
+  the blocks fetched tip-ward first, the outcome and what was ingested. Fork
+  surfacing is unchanged, because it comes off the store. Its tests cover the
+  same two scenarios: three-block branches on two sources, with both branch
+  digests valid in the store and the rule-9 fork at the genesis child position;
+  and a source that 404s every digest fetch, and a walk past `maxPursuit`, each
+  asserting no fork, no rejection and nothing marked invalid.
+
+Two independent implementations of the same paragraph landing on the same
+reports — a fetched count, an outcome, and a bound — is the first evidence that
+the rule is implementable as written rather than only as intended.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

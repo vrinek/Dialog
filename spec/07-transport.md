@@ -339,6 +339,8 @@ A client in that case MUST NOT treat the empty range as "no new blocks". It MUST
 3. Read its `prev`. If the client holds that block, stop. If not, fetch that block by digest from the same source and repeat from step 2, walking backward one block at a time.
 4. Stop when the client reaches a block it holds, when a fetch fails, or when the client's own bound on the walk's length is reached.
 
+A walk that reaches a **genesis block** has run out of predecessors to ask for without meeting a block the client holds, and this enumeration does not yet say what that means; it is not a failure, and the two genesis blocks the client then holds are a sibling set at the genesis position, where the ambiguous-succession condition is detected. See todo 096.
+
 **The walk MUST be bounded**, by a limit the client chooses. It is a chain of the source's choosing, of a length the source controls, and every other resource bound in this profile is the client's own for the same reason ("Resource limits", and the client's symmetric exposure in Security Considerations).
 
 **Reaching a block the client holds is the point of the exercise.** At that position the client then holds two blocks with the same `prev` from the same author — the one it already had, and the one the backward walk arrived from — which is exactly the condition [02-block-format.md](02-block-format.md)'s validation rule 9 names. The client MUST surface the fork as that rule requires. Nothing about the pursuit is a special case of fork detection: the blocks are in the client's store, validated on arrival like any others, and rule 9 fires on the store rather than on the transport.

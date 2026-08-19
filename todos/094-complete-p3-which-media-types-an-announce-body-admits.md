@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "094"
 tags: [transport, specification-gap, http-binding]
@@ -86,8 +86,8 @@ client's standing `Accept` header cannot 406 a write.
 
 ## Acceptance Criteria
 
-- [ ] The specification says which media types an announce body may carry
-- [ ] It says whether `Accept` is enforced on `announce`
+- [x] The specification says which media types an announce body may carry
+- [x] It says whether `Accept` is enforced on `announce`
 
 ## Work Log
 
@@ -97,6 +97,40 @@ client's standing `Accept` header cannot 406 a write.
 
 Found writing the announce handler's 415 check and the 406 check beside it: both
 are one line, and the profile pins neither.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended, plus the `Accept` sentence.
+
+- `spec/07-transport.md`, "Bodies and content types": **the equivalence holds in
+  both directions.** An `announce` request body is a block sequence, and its
+  `Content-Type` MUST be `application/dialog-blocks+cbor-seq` or
+  `application/cbor-seq`; a server MUST reject any other type, and a missing one,
+  with 415. Admitting the generic type is what makes "a chain file offered to a
+  server is a valid announce body" true of a file whose type came from a file
+  server, and it confuses nothing: the two types are the same bytes and a
+  sequence carries no metadata to disagree about.
+- **`Accept` is not evaluated on `announce`.** Its only response bodies are JSON —
+  a receipt or a problem document — which the server produces whatever the
+  request asked for, so there is nothing for a 406 to protect; and the standing
+  header of a client that speaks this profile names the block-sequence type,
+  which no announce response ever carries. 406 is defined for the five read
+  operations, and the status table's 406 and 415 rows now say so.
+- `go/transport` already accepted both types (`isBlockSeqType` was written for
+  the response side and is symmetric) and was enforcing 406 on `announce`, which
+  is now gone along with `acceptsJSON`; a comment in its place says why there is
+  no such function. `TestAnnounceMediaTypes` covers both admitted types, the four
+  refusals including a missing `Content-Type`, and three `Accept` headers that
+  must not 406 a write.
+- `ts/src/transport.ts` was already conforming on both halves; the reasoning it
+  had to infer is now in the specification and cited in `DialogServer.announce`.
+  Its tests grew a missing-`Content-Type` case and a new one pairing an announce
+  under the block-sequence `Accept` (200) with the same header at `tip` (406), so
+  that the asymmetry is asserted rather than assumed.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

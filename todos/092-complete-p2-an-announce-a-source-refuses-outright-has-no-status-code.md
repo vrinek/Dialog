@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "092"
 tags: [transport, specification-gap, http-binding]
@@ -105,8 +105,8 @@ announce has no dispositions, because nothing was judged.
 
 ## Acceptance Criteria
 
-- [ ] The specification names a status code for an announce refused by policy
-- [ ] It says whether such a response carries a receipt
+- [x] The specification names a status code for an announce refused by policy
+- [x] It says whether such a response carries a receipt
 
 ## Work Log
 
@@ -116,6 +116,54 @@ announce has no dispositions, because nothing was judged.
 
 Found implementing the announce policy hook: the profile explicitly permits the
 refusal and names no way to express it.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 3**, not the recommended Option 2: 403 *and* a third problem type.
+
+The recommendation was one status row and no URN, on the ground that the
+document's own rule is that every other error uses `about:blank` because the
+status code says the whole of it. That is exactly what is not true here. A 403
+with a blank type leaves "this source refuses this announce" and "this source
+refuses you" indistinguishable, and the two problem types this profile already
+defines exist for precisely that reason — a client's next move differs. A
+refusal by policy is the same shape of question, so it gets the same shape of
+answer.
+
+- `spec/07-transport.md`, "Status codes": a 403 row, scoped to `announce` and to
+  no other operation, and a third problem type
+  `urn:dialog:problem:announce-refused`. The table's preamble now says three
+  types rather than two, and the paragraph after it asks a server to send the
+  applicable type on a 403 as on a 404.
+- `announce`: **a refusal by policy is 403 and carries no receipt.** Nothing was
+  judged, so there are no dispositions to report, and a source answering 200
+  with every block `rejected` would be reporting a verdict it never reached. The
+  paragraph also separates it from the 404 of a server that does not implement
+  `announce` at all: that one is a fact about the server which asking again will
+  not change; this one is a fact about the request, and another source may take
+  the blocks, and this one may take them later.
+- Authentication stays out, as Option 1 would not have allowed. Server rule 5's
+  prohibition covers the five read operations and is untouched; 401 is not
+  defined, because the profile defines no scheme to challenge with.
+- `go/transport`: `ErrAnnounceRefused` runs in both directions. An `Announcer`
+  returns it, or an error wrapping it, to refuse a request rather than to judge a
+  block; the server answers 403 with the typed problem and no receipt;
+  `StatusError.Unwrap` maps a 403 back to it, so `errors.Is` spells the same fact
+  on either side. Every other error from an `Announcer` stays 503 — unable rather
+  than unwilling. `TestAnnounceRefusedByPolicy` covers the status, the type, the
+  absent receipt, the untouched store, and the 503 that must not collapse into it.
+- `ts/src/transport.ts` was answering 403 with `about:blank`; it now emits
+  `PROBLEM_ANNOUNCE_REFUSED` on the 403 and keeps its refusal hook able to answer
+  429 or 503 for rate and temporary grounds, which the profile already had rows
+  for and which are not this type. Its tests assert the absent receipt on the
+  server side and, on the client side, that no verdict is read from the refusal,
+  that the store is untouched, and that the same blocks are then accepted by
+  another source; a bare typeless 403 covers the server that sends none of the
+  three types, which a client MUST still work against.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

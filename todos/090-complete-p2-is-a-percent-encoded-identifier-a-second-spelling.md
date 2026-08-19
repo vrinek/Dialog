@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "090"
 tags: [transport, specification-gap, http-binding, encoding]
@@ -115,9 +115,9 @@ removed or rewritten, because it is only malformed under Option 1's reading.
 
 ## Acceptance Criteria
 
-- [ ] The specification says whether a percent-encoded identifier is a second
+- [x] The specification says whether a percent-encoded identifier is a second
       spelling
-- [ ] The `limit` bullet's `%201` example is consistent with that answer
+- [x] The `limit` bullet's `%201` example is consistent with that answer
 
 ## Work Log
 
@@ -130,6 +130,54 @@ decision about whether to percent-decode at all, and that decision silently
 decides the identifiers too. The TypeScript implementation took Option 1 and
 tests it (`ts/test/transport.server.test.ts`, "a non-canonical author key or CID
 is 400 rather than normalized"); nothing in the specification requires it.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended, with the `limit` sentence generalized.
+
+- `spec/07-transport.md`, "HTTP binding": one spelling means one byte sequence,
+  and percent-encoding is a second spelling. The path segments and query values
+  this profile defines are drawn from alphabets that need no percent-encoding —
+  base32 for both text forms, ASCII digits for `limit` — so a target that
+  percent-encodes any octet of one is malformed and MUST be 400, and a server
+  applies the canonical-form rules to the request target **as received** rather
+  than to a percent-decoded copy. The cost is written down beside the rule: an
+  intermediary that re-encodes a target turns a valid request into a 400 nobody
+  can see, and that is accepted, because the alternative gives every immutable
+  block resource an unbounded set of URLs.
+- The `limit` bullet no longer carries the rule on its own. `%201` is now
+  malformed twice over — by the whitespace rule and by the general one — and the
+  bullet says so, which is what "consistent with that answer" asked for. The 400
+  row of the status table names a percent-encoded spelling too.
+- `go/transport` had the bug this todo predicts, in both places. Go's `ServeMux`
+  matches on the decoded path and hands `PathValue` the decoded segment, so
+  `%62afyrei…` reached the handler as a canonical CID; `r.URL.Query()`
+  percent-decodes, so `limit=%31` reached it as the number 1. The server now
+  checks the escaped path under its own prefix for a percent-encoded octet
+  (`Server.canonicalTarget`) and parses the query string without decoding it
+  (`rawQuery`), which is all it takes — a percent sign then fails the
+  canonical-form check each value already had. Paths outside the prefix are left
+  alone: nothing this profile defines lives there, and 404 for being nowhere is
+  a better answer than 400 for being spelled oddly.
+- `TestNonCanonicalSpellingsAreRejected` grew six cases: a percent-encoded author
+  key on `tip` and on `range`, a percent-encoded CID, a percent-encoded `after`
+  and `prev`, and `limit=%31`.
+- `ts/src/transport.ts` had taken Option 1 already and needed no behaviour
+  change; its comments now cite the general rule rather than the `limit`-only
+  one. Its tests grew an encoded *trailing* octet beside the leading one, a
+  positive control that the canonical CID still answers 200, a case per
+  percent-encoded query value, and — the one that could not be inferred from a
+  fetch call alone — the same check over a real socket through the Node adapter,
+  which passes the raw request target through undecoded.
+
+The two implementations reaching this rule differently is worth recording: the
+TypeScript one arrived at it from first principles while writing a query parser,
+and the Go one had to be corrected, because the standard library did the
+normalizing for it in two places at once.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

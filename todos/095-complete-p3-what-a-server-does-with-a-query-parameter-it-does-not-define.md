@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "095"
 tags: [transport, specification-gap, http-binding]
@@ -97,9 +97,9 @@ the long-poll degradation and refuses the mistake a client can actually make.
 
 ## Acceptance Criteria
 
-- [ ] The specification says what a server does with a parameter the operation
+- [x] The specification says what a server does with a parameter the operation
       does not define
-- [ ] The rule composes with the long-poll MUST-ignore
+- [x] The rule composes with the long-poll MUST-ignore
 
 ## Work Log
 
@@ -109,6 +109,45 @@ the long-poll degradation and refuses the mistake a client can actually make.
 
 Found writing the query parser, immediately after implementing todo 089's
 repeated-parameter rule: the rule needed a scope, and the profile gives it none.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 2**, not the recommended Option 1: ignore everything the operation does
+not define, with no cross-operation exception.
+
+Option 1 would have caught the one confusable mistake — `prev` on a range,
+`after` on a sibling set — at the price of a two-part rule whose second part has
+to be re-litigated every time this profile adds a parameter, and which puts the
+long poll's MUST-ignore back where it started, as an exception written in one
+bullet and nowhere else. Forward compatibility is the property worth buying
+here: a future `wait`, or a future anything, must not turn today's servers into
+400s. The mistake Option 1 caught is real and is now written down as a cost
+rather than prevented.
+
+- `spec/07-transport.md`, "HTTP binding": the repeated-parameter 400 is scoped to
+  **the parameters this profile defines for the operation being invoked**, and a
+  parameter the operation does not define MUST be ignored, once or many times.
+  The bullet names what that covers — a tracking parameter an intermediary
+  appended, a parameter of a later version, a parameter of another operation —
+  says that `wait=5&wait=6` on a server without long polling is ignored twice
+  rather than refused, and states the cost plainly: `prev` sent to a range is
+  answered from the genesis position with no signal that it went nowhere. No
+  block is misidentified by that, because the client verifies everything it
+  receives. The 400 row of the status table is scoped to match.
+- Both implementations already behaved this way, by only ever asking the query
+  for the names the matched operation defines, and neither said so. `go/transport`
+  states it on the `Server` type and proves it in
+  `TestUnknownQueryParametersAreIgnored`: a tracking parameter, a percent-encoded
+  value of an undefined parameter, `wait` once and twice, `prev` on a range once
+  and twice — all 200 — beside `limit` twice, which is still 400.
+- `ts/src/transport.ts` states it on `oneParameter` and splits its test in two,
+  the second covering `wait=5&wait=6` at `tip`, a repeated tracking parameter,
+  and the sharp edge from both sides: `limit` twice at `siblings` and `prev`
+  twice at `range` are answered from the genesis position rather than refused.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

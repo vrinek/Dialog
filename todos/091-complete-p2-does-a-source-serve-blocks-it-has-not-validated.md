@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "091"
 tags: [transport, specification-gap, processing-model]
@@ -114,8 +114,8 @@ existing hole paragraph cited as the case it generalizes.
 
 ## Acceptance Criteria
 
-- [ ] The specification says whether a stored-but-unvalidated block is served
-- [ ] `siblings` states it explicitly, since fork detection depends on it
+- [x] The specification says whether a stored-but-unvalidated block is served
+- [x] `siblings` states it explicitly, since fork detection depends on it
 
 ## Work Log
 
@@ -128,6 +128,56 @@ store's `siblings` index holds unvalidated blocks, and whether to filter them
 was a one-line choice with no rule to hang it on. The TypeScript implementation
 serves them and tests the hole case (`ts/test/transport.server.test.ts`, "a
 store with a hole reports no tip and serves no range across the hole").
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, as recommended, as a server rule rather than a sentence.
+
+- `spec/07-transport.md`, "What a conforming server serves", **rule 7**: a source
+  serves what it holds, whatever verdict it has reached about it. A server
+  answers every operation from the blocks in its store, including those it holds
+  as *stored but unvalidated*, and MUST NOT withhold one on the ground that it
+  has not been able to validate it. The hole paragraph under `tip` is named as
+  the case this generalizes. It is rule 7 rather than rule 1 because the document
+  cites rules 1, 2, 3 and 5 by number in four other places, and renumbering them
+  would have been a worse edit than a rule out of order.
+- The rule carries the argument as well as the obligation: a client validates
+  everything it receives anyway, so withholding costs it a *detection* and saves
+  it nothing, and withholding is the source deciding a validity question on the
+  client's behalf, which the client rules of the same document forbid a client
+  from delegating.
+- **The tip and range walk is a claim about connectivity, not validity**, and a
+  source that performs no validation at all — a dumb mirror — is conforming. Said
+  explicitly, because it is the reading that makes the rest of the rule
+  coherent. `announce`'s own obligation is unchanged and is about what a source
+  *stores*: it MUST NOT store as valid a block it has not validated, and a source
+  that validates nothing therefore holds everything it takes as stored but
+  unvalidated, reports it as `held`, and serves it.
+- `siblings` says it in its own words, since that is where the stakes are: a
+  block a source cannot yet judge is exactly the one whose omission would hide a
+  fork. The constructive tip definition cites rule 7 too.
+- `go/transport` already conformed — its `Store` interface asks two questions and
+  neither is about validity — and nothing held it there. `TestServerServesWhatItHoldsWhateverItsVerdict`
+  now does: a `ValidatingStore` holding one valid genesis block and one block
+  whose `refs` it cannot resolve, with the undecided block reached by the tip
+  walk, served in the range, answered for by digest, and named in the sibling
+  set. It also asserts what every other test in the file quietly relies on: a
+  server over a plain `MemStore` validates nothing and is conforming. The `Store`
+  and `Announcer` doc comments cite rule 7.
+- `ts/src/transport.ts` was audited for a verdict filter on the serving path and
+  has none: `block` and `blocks` go through the store's `get`, `siblings` through
+  the position index, `tip` and `range` through the `prev` walk. Its docs now
+  state rule 7, and two tests hold it there — a store of unvalidated blocks
+  serving a tip, a whole-chain range and every block by digest, and a sibling set
+  naming an unvalidated block, which is the side of a fork nobody can judge.
+
+Neither implementation had to change behaviour, which is the outcome a settled
+gap should usually have; what changed is that the rule is now written where a
+third implementation will read it, rather than inferred twice.
+
+**Vectors: no byte moved.**
 
 ## Notes
 
