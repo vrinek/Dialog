@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "096"
 tags: [transport, specification-gap, forks]
@@ -100,9 +100,9 @@ implementations share, since one has already given it one.
 
 ## Acceptance Criteria
 
-- [ ] The specification says what it means for the pursuit to reach a genesis
+- [x] The specification says what it means for the pursuit to reach a genesis
       block
-- [ ] The two implementations report that outcome by one name
+- [x] The two implementations report that outcome by one name
 
 ## Work Log
 
@@ -113,6 +113,45 @@ implementations share, since one has already given it one.
 Found by both implementations of "Pursuing an advertised tip" on the first pass,
 independently: the loop needs a branch for a block with no `prev`, and the
 specification's enumeration has none.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 1**, and the open question at the end of it answered: the outcome does
+deserve a name, and the name is the one the implementation that already had one
+gave it.
+
+- `spec/07-transport.md`, "Pursuing an advertised tip": step 4 enumerates four
+  stop conditions, the genesis block among them, and two paragraphs follow it.
+  The first fixes **three names for what a client reports** — *held*, *genesis*
+  and *failed* — folds the client's own bound into *failed* (a bound reached and
+  a fetch unanswered both end the walk with no block at the end of it), permits a
+  client to report a failure's kind more precisely, and forbids collapsing
+  *genesis* into either of the other two: nothing failed, and no held block was
+  met. The second says what the genesis end **found**: two chains claim this
+  author with no block in common, the most fundamental fork there is; the blocks
+  are stored and validated like any others; the two genesis blocks are two
+  distinct blocks claiming one (empty) position, which is validation rule 9's
+  condition and which `spec/02-block-format.md` already calls a fork in the
+  strict sense under "rotate_key"; the client MUST surface it with the two
+  genesis blocks as the sibling pair. No verdict follows from the walk's end
+  itself.
+- `go/transport`: `SourceSync.PursuitEnd`, of the new `PursuitEnd` type with
+  `PursuitNone`/`PursuitHeld`/`PursuitGenesis`/`PursuitFailed`, beside the
+  `PursuitErr` that carries the finer failure kind. `TestPursuitToAGenesisBlock`
+  is the scenario: two chains under one key with different genesis blocks, the
+  second source gaining the one whose genesis sorts lower, an empty range, a
+  pursuit that ends as `genesis` with no error, and a fork at the genesis
+  position whose sibling set is exactly the two genesis blocks.
+- `ts/`: `PursuitEnd` with the same three values is what `TipPursuit.end`
+  reports, and the five-value `PursuitOutcome` stays as the refinement the
+  profile permits, folded onto the three by `pursuitEnd()`. Its scenario test
+  asserts the same facts from the other implementation, including that the end is
+  neither `failed` nor `held`, and that the store's genesis-position sibling set
+  is exactly the two genesis blocks.
+
+**Vectors: no byte moved.**
 
 ## Notes
 

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "097"
 tags: [transport, typescript, implementation]
@@ -95,8 +95,8 @@ question has no more business ignoring an undecided block than a source's does.
 
 ## Acceptance Criteria
 
-- [ ] `ts/` has one definition of a tip, or two that cannot be confused
-- [ ] Whatever remains does not filter by verdict
+- [x] `ts/` has one definition of a tip, or two that cannot be confused
+- [x] Whatever remains does not filter by verdict
 
 ## Work Log
 
@@ -106,6 +106,33 @@ question has no more business ignoring an undecided block than a source's does.
 
 Found auditing the TypeScript serving path for the verdict filter todo 091
 forbids. The serving path is clean; this method, which nothing calls, is not.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Option 3**, deletion, against the todo's own recommendation of Option 2.
+
+The argument for keeping something was that "which of my blocks is the end of
+this chain" is a real question a store is the right place to answer. It is — but
+nothing asked it, and the question the *codebase* actually asks is the profile's,
+which `walkChain`/`sourceTip` already answer constructively. Renaming to `heads()`
+would have kept an unused method whose only readers would be people looking for a
+tip, in the module they look in first; a plural name makes the answer harder to
+misuse but does not make an uncalled method worth carrying. The rejected
+definition is now absent rather than parked under a better name, and if a caller
+ever turns up wanting one, it will arrive with the definition its call site needs.
+
+- `ts/src/block.ts`: `BlockStore.tip()` is gone. Nothing referenced it — grepping
+  `ts/src` and `ts/test` found only `DialogClient.tip` and `DialogServer.tip` —
+  so no caller had to be realigned. A comment stands where it was: there is
+  deliberately no tip here, `walkChain`/`sourceTip` is the codebase's only
+  definition, and the three ways the deleted one differed are named (a tip across
+  a hole, which server rule 1 refuses; a verdict filter, which server rule 7
+  forbids; a fork's branch chosen by insertion order, which todo 086's stability
+  rule refuses).
+
+**Vectors: no byte moved.**
 
 ## Notes
 
