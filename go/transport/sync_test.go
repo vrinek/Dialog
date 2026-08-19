@@ -764,8 +764,9 @@ func TestPursuitToAGenesisBlock(t *testing.T) {
 // a tip the client cannot reach. A client that asks every new source from the
 // genesis position never sees it, because the source answers with its own chain
 // from the beginning and the divergence arrives as ordinary blocks. Both find the
-// fork and the profile permits both; only the traffic and the report differ
-// (todo 099).
+// fork and the profile permits both, preferring the genesis position for a
+// source not synced from before; only the traffic and the report differ
+// (spec/07-transport.md, "First contact with a source").
 func TestAskingASourceFromTheHeldPosition(t *testing.T) {
 	pub, genesis, short, long := divergentChain(t)
 	first, _ := serve(t, ServerConfig{Store: memStore(t, genesis, short)})

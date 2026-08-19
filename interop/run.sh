@@ -99,7 +99,8 @@ serve() {
 #
 # FROM is where a source not asked before is asked from: "genesis", or "held" —
 # the position the client's own chain already reaches. The profile permits both
-# and says which is neither (todo 099), and they are not the same exchange: from
+# and prefers the genesis position (spec/07-transport.md, "First contact with a
+# source"), and they are not the same exchange: from
 # the genesis position the divergence arrives in the range itself, and from the
 # held position the source answers an empty range and a tip the client cannot
 # reach, which is what the backward walk is for.

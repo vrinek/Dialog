@@ -89,7 +89,9 @@ assertion about it:
 Every scenario is run **twice** against the same servers, differing only in where
 a client asks a source it has not used before from — `-from genesis`, and
 `-from held`, the position the client's own chain already reaches. The profile
-permits both and says which is neither (`todos/099`), and they are not the same
+permits both and prefers the genesis position for a source not synced from
+before ([`spec/07-transport.md`](../spec/07-transport.md), "First contact with a
+source"), and they are not the same
 exchange: from the genesis position the source re-sends the shared prefix and the
 divergence arrives in the range; from the held position the source answers an
 empty range and a tip the client cannot reach, which is the case "Pursuing an

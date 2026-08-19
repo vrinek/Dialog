@@ -72,15 +72,21 @@ type Syncer struct {
 	// than from the genesis position. It changes nothing for a source already
 	// asked once, which is always asked from where it left off.
 	//
-	// The profile permits both and says which is neither, so this is policy
-	// (todo 099). The two differ in cost and in which mechanism finds a fork.
-	// Asking from the genesis position re-downloads the shared prefix and
-	// delivers the divergent blocks in the range itself; asking from where this
-	// client is asks for nothing it already holds, and the answer to a source on
-	// another branch is the empty range and the unreachable tip that "Pursuing an
-	// advertised tip" is written for — the case that section calls the *normal*
-	// answer a second source gives about a forked chain. Either way rule 9 fires;
-	// only the traffic and the report differ.
+	// The profile permits both and prefers the genesis position, which is why
+	// the zero value is the one to have: a client asking a source it has not
+	// synced this chain from before SHOULD ask from the genesis position and MAY
+	// ask from the position it holds, and SHOULD record which it did
+	// (spec/07-transport.md, "First contact with a source"). The two differ in
+	// cost and in which mechanism finds a fork. Asking from the genesis position
+	// re-downloads the shared prefix and delivers the divergent blocks in the
+	// range itself; asking from where this client is asks for nothing it already
+	// holds, and the answer to a source on another branch is the empty range and
+	// the unreachable tip that "Pursuing an advertised tip" is written for — the
+	// case that section calls the *normal* answer a second source gives about a
+	// forked chain, which is why the pursuit is not optional in effect for a
+	// client setting this. Either way rule 9 fires; only the traffic and the
+	// report differ. The profile's other SHOULD is the caller's: record which of
+	// the two a run used, as cmd/dialog-sync's -from does.
 	AskFromHeldPosition bool
 
 	// resume remembers, per source and author, the position that source's next

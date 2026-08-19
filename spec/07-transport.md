@@ -324,9 +324,23 @@ The reason is that **fork detection is a reachability property, not a query.** [
 
 The rule also blunts the subscription leak: a node that splits twenty chains across four servers hands no single party the full set.
 
-Comparing is not a state of mind, and the shape it takes on the wire is written down: see "Pursuing an advertised tip", which is what a client does with the answer a second source actually gives it.
+Comparing is not a state of mind, and the shape it takes on the wire is written down: "First contact with a source" is where the comparison starts, and "Pursuing an advertised tip" is what a client does with the answer a second source actually gives it.
 
 Whether the specification proper should carry this obligation, rather than an optional profile, is open — see todo 070.
+
+#### First contact with a source
+
+Every `range` names a position, and positions are per source: the operation is exclusive and stateless, so "where did we get to" has an answer per source rather than per chain, and a position one source holds may be one another has never heard of. For a source this client has already synced this chain from, the position is where that source's last response ended. For a source it has not, there are two answers and this profile permits both.
+
+**A client asking a source it has not previously synced a chain from SHOULD ask from the genesis position, and MAY ask from the position its own copy of that chain reaches. Either way it SHOULD record which of the two it asked from**, because the two are not the same exchange and the difference shows in everything downstream: which blocks arrived, how many bytes it cost, and which mechanism found a divergence.
+
+From the **genesis position** the source serves its chain from the beginning. The shared prefix is re-sent — the cost, and it grows with the length of the chain rather than with the size of the disagreement — and in exchange every block that source holds arrives in the range, so a divergence arrives as blocks and validation rule 9 fires on the store as they are stored ([02-block-format.md](02-block-format.md)). The request asks nothing of the client's own state, which makes it the same request whatever branch the client is on and leaves the simplest audit trail: what this source served, in full, in one sequence.
+
+From the **held position** the client asks for nothing it already holds, which is the cheapest question available and the only one whose cost is the distance between the two branches. What it gives up is that a source on another branch then answers an empty range and a tip the client cannot reach, and the divergence is found by "Pursuing an advertised tip" below and by nothing else. That is not a weakness of the choice — it is the case the pursuit is written for, and that section calls it the *normal* answer a second source gives about a forked chain — but it does mean the pursuit's obligation is not optional in effect for such a client: skip it and the fork is not found at all. Note also that a client asking from its held position asks about a branch it chose, and a source that has never heard of that block answers the empty range whether it is on another branch or merely behind. The two are indistinguishable, exactly as a source that is behind and one that is withholding are, and each costs a pursuit.
+
+Neither choice is a conformance question and neither weakens the multi-source rule: both find every fork the sources between them expose, which is why the SHOULD here is a default for a client that must choose without knowing which case it is in, and not a rule about what may be asked.
+
+*Informative.* Both reference implementations expose the choice per run and default to the genesis position, and the interop harness runs its scenarios both ways. Over the same servers the two produce the same store, the same chains, the same forks and the same verdicts; the only difference in the summary is whether a pursuit happened.
 
 #### Pursuing an advertised tip
 
@@ -428,6 +442,8 @@ This draft deliberately settles none of the following. Each has a todo, each is 
 The questions above were left open on purpose. Two further sets were not. Five places where this draft was silent, or said two things, and the first implementation (`go/transport`) had to choose, are settled in the text above with the reasoning in [todos 085 to 089](../todos/) — `Dialog-Tip` where there is no tip, the tip of a store with a hole and the stability of a fork's branch choice, the status of an OPTIONAL operation a server does not offer, when an announce receipt's dispositions are decided, and the spelling of `limit` and of a repeated query parameter.
 
 Six more were found the same way by the second implementation (`ts/`), written clean-room against this document, and are settled above with the reasoning in [todos 090 to 095](../todos/) — percent-encoding as a second spelling, whether a source serves blocks it has not validated, the status code for an announce refused by policy, what a client does with an empty range whose tip it cannot reach, which media types an announce body admits and whether `Accept` is evaluated on it, and what a server does with a query parameter the operation does not define. Two implementations finding eleven such places between them is the argument for writing the second one.
+
+Two further places were found by neither implementation alone but by running them against each other ([todos 096 and 099](../todos/)): the pursuit's walk back to a *genesis* block, which is a third outcome and not a failure, and which position a client asks a source it has not used before from — where the two clients chose differently, produced identical stores, and disagreed only about whether a pursuit had happened. Both are settled above, the second in "First contact with a source".
 
 ## Security Considerations
 

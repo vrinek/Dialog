@@ -1901,13 +1901,22 @@ export interface SyncOptions {
    * — which is the position a client resuming *this* source asks from.
    *
    * A client meeting a source for the first time holds no position of that
-   * source's chain, whatever else it holds of the author's, and passes `null`:
-   * the genesis position. The difference is not cosmetic where the sources
-   * disagree. The store's own tip is the end of the branch this client chose,
-   * and asking a second source from it presumes that source's chain passes
-   * through that branch, which at a fork it does not; the source then answers
-   * an empty range and a tip the client cannot reach, which is the case
-   * {@link pursueTip} exists for.
+   * source's chain, whatever else it holds of the author's, and the profile
+   * settles what it should then ask: it SHOULD ask from the **genesis
+   * position**, passed here as `null`, MAY ask from the position it holds, and
+   * SHOULD record which of the two it used (spec/07-transport.md, "First
+   * contact with a source"). This function's default is the second of those, so
+   * a caller syncing a *new source* of a chain it already holds passes `null`
+   * to take the profile's preference; `scripts/sync.ts` does, under `-from`.
+   *
+   * The difference is not cosmetic where the sources disagree. The store's own
+   * tip is the end of the branch this client chose, and asking a second source
+   * from it presumes that source's chain passes through that branch, which at a
+   * fork it does not; the source then answers an empty range and a tip the
+   * client cannot reach, which is the case {@link pursueTip} exists for and the
+   * reason the pursuit is not optional in effect for a client asking this way.
+   * From the genesis position the same divergence arrives as blocks in the
+   * range instead, at the cost of re-downloading the shared prefix.
    */
   readonly from?: Uint8Array | null;
   /** Blocks per range request. */

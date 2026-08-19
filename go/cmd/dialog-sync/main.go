@@ -25,9 +25,11 @@
 //	              tip; 0 means the package default
 //	-from         where a source not asked before is asked from: "genesis", the
 //	              default, or "held" — the position this client's own chain
-//	              already reaches. The profile permits both and says which is
-//	              neither (todo 099); they differ in traffic and in whether the
-//	              divergence arrives as a range or as a pursuit
+//	              already reaches. The profile permits both and prefers the
+//	              genesis position, and asks a client to record which it used,
+//	              which this flag is (spec/07-transport.md, "First contact with a
+//	              source"); they differ in traffic and in whether the divergence
+//	              arrives as a range or as a pursuit
 //	-timeout      the whole run's deadline
 //
 // The summary's shape is documented in interop/README.md, which is also where

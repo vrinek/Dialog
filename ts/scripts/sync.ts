@@ -19,11 +19,12 @@
  * ## Where each source is asked from — `-from`
  *
  * A client meeting a source it has never asked before has two positions it can
- * ask the range from, the profile permits both, and it says which is neither:
- * the position of *another* source's chain is not a cursor for this one. Which
- * of the two a client picks is invisible in a document until the sources
- * disagree, and there it decides whether the pursuit happens at all — the gap
- * `todos/099` is filed on.
+ * ask the range from, and the position of *another* source's chain is not a
+ * cursor for this one. The profile permits both, prefers the genesis position,
+ * and asks a client to record which it used — which this flag and the run's
+ * command line are (`spec/07-transport.md`, "First contact with a source").
+ * Which of the two a client picks is invisible in a document until the sources
+ * disagree, and there it decides whether the pursuit happens at all.
  *
  * `-from genesis`, the default, asks every source from the **genesis position**.
  * It is what a client with no per-source cursor can honestly do, since it holds
