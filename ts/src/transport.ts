@@ -1681,22 +1681,59 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
  * choosing, of a length the source controls. */
 export const DEFAULT_PURSUIT_LIMIT = 256;
 
-/** How a backward walk after an advertised tip ended. */
-export type PursuitOutcome =
-  /** It reached a block the client already holds, which is the point of the
-   * exercise: two blocks with one `prev` from one author are now in the store,
-   * which is the condition validation rule 9 names. */
+/**
+ * How a backward walk after an advertised tip ended, by the profile's own name
+ * for it.
+ *
+ * spec/07-transport.md, "Pursuing an advertised tip": *"The walk ends in one of
+ * three outcomes, and a client that reports the end names it by one of them"* —
+ * `held`, the first stop condition; `genesis`, the second; and `failed`, the
+ * third and the fourth together, since the client's own bound is reached in the
+ * same way a fetch is not answered, with no block at the end of it.
+ *
+ * `genesis` MUST NOT be collapsed into either of the other two: it is not a
+ * failure, because every fetch succeeded and every block verified, and it is not
+ * `held`, because no block the client holds was met.
+ */
+export type PursuitEnd =
+  /** A block the client already holds, which is the point of the exercise: two
+   * blocks with one `prev` from one author are now in the store, which is the
+   * condition validation rule 9 names. */
   | "held"
-  /** It reached a genesis block. The source's chain shares no ancestor with the
-   * client's, and the two genesis blocks are themselves a sibling set at the
-   * genesis position. */
+  /** A genesis block, which has no predecessor to ask for. The source's chain
+   * shares no block with the client's — the most fundamental fork there is — and
+   * the two genesis blocks are a sibling set at the genesis position, where rule
+   * 9 fires on the store's own contents. Nothing failed. */
   | "genesis"
-  /** The source would not serve a block it named. */
+  /** Fetches that did not succeed, and nothing else. Not evidence of a fork, not
+   * evidence of an invalidity, and not evidence that the source lied. */
+  | "failed";
+
+/**
+ * The same end, with a failure's kind named more precisely — the refinement the
+ * profile permits: *"A client MAY report a failure's kind more precisely (a
+ * source that would not serve the block, bytes that hashed wrong, the bound)"*.
+ *
+ * Every value maps onto exactly one {@link PursuitEnd} through
+ * {@link pursuitEnd}, and the three failure kinds all map onto `failed`.
+ */
+export type PursuitOutcome =
+  /** Reached a block the client holds. */
+  | "held"
+  /** Reached a genesis block. */
+  | "genesis"
+  /** Failed: the source would not serve a block it named. */
   | "not-held"
-  /** Bytes that hash to something other than the digest asked for. */
+  /** Failed: bytes that hash to something other than the digest asked for. */
   | "digest-mismatch"
-  /** The client's own bound on the walk's length. */
+  /** Failed: the client's own bound on the walk's length. */
   | "bounded";
+
+/** The profile's three-way name for a finer outcome. The three failure kinds
+ * are one end, `failed`; `held` and `genesis` are themselves. */
+export function pursuitEnd(outcome: PursuitOutcome): PursuitEnd {
+  return outcome === "held" || outcome === "genesis" ? outcome : "failed";
+}
 
 /** What a pursuit of an advertised tip found. */
 export interface TipPursuit {
@@ -1706,17 +1743,24 @@ export interface TipPursuit {
    * them. */
   readonly fetched: Uint8Array[];
   /**
-   * How the walk ended.
+   * How the walk ended, by the profile's name for it: `held`, `genesis` or
+   * `failed`. This is the field to read and to report; {@link outcome} refines
+   * it.
    *
-   * The last three are each a **failed fetch and nothing else**: they are not
-   * evidence of a fork, not evidence of an invalidity, and not evidence that
-   * the source lied, because a source advertising a tip it will not serve is
-   * indistinguishable from one that lost it. No verdict about any block follows
-   * from a failed pursuit.
+   * No verdict about any block follows from the end itself, whichever it is —
+   * not from reaching a held block, not from reaching a genesis block, and not
+   * from failing. A `failed` walk is fetches that did not succeed and nothing
+   * else: not evidence of a fork, not evidence of an invalidity, and not
+   * evidence that the source lied, because a source advertising a tip it will
+   * not serve is indistinguishable from one that lost it.
    */
+  readonly end: PursuitEnd;
+  /** The same end with a failure's kind named precisely, which the profile
+   * permits as a refinement of {@link end} and never as a substitute for it. */
   readonly outcome: PursuitOutcome;
   /** The block the client already held that the walk reached, when it reached
-   * one. */
+   * one — that is, when {@link end} is `held`. A `genesis` end reaches a block
+   * the client did not hold and leaves this absent. */
   readonly reached?: Uint8Array;
   /** What the store made of the blocks the walk fetched. */
   readonly ingested: IngestReport;
@@ -1750,6 +1794,20 @@ export interface PursuitOptions extends RequestOptions {
  * the fork as it surfaces every other one: on its own contents, not on anything
  * the transport said.
  *
+ * **A walk that ends at a genesis block has found that this source's chain
+ * shares no block with the client's.** Two chains claim the author and they have
+ * nothing in common — the most fundamental fork there is. Nothing failed: every
+ * fetch succeeded and every block verified, and the blocks the walk fetched are
+ * stored and validated like any others, so the client then holds two genesis
+ * blocks for one `pub` key. That is rule 9's condition with the two genesis
+ * blocks as the sibling pair, and the store surfaces it the same way, on its own
+ * contents. No verdict about either chain follows from the walk's end, exactly
+ * as none follows from reaching a held block.
+ *
+ * The three ends are {@link PursuitEnd}, reported as {@link TipPursuit.end};
+ * {@link TipPursuit.outcome} names a failure's kind, which the profile permits
+ * as a refinement.
+ *
  * **The walk is bounded**, by a limit this caller chooses, because it is a chain
  * of the source's choosing of a length the source controls. Every block is
  * verified as every other received block is — re-hashed, and bytes that hash to
@@ -1771,6 +1829,7 @@ export async function pursueTip(
   const done = (outcome: PursuitOutcome, reached?: Uint8Array): TipPursuit => ({
     tip,
     fetched,
+    end: pursuitEnd(outcome),
     outcome,
     ...(reached === undefined ? {} : { reached }),
     ingested: { accepted, held, rejected },
@@ -1793,6 +1852,9 @@ export async function pursueTip(
     rejected.push(...report.rejected);
 
     const prev = answer.item.block.prev;
+    // A genesis block has no predecessor to ask for. The walk stops with
+    // everything it fetched verified and stored, and the two genesis blocks now
+    // in the store are the sibling pair rule 9 fires on.
     if (prev === null) return done("genesis");
     wanted = prev;
   }
@@ -1866,10 +1928,12 @@ export interface SyncOptions {
  *
  * A client MUST NOT treat that as "no new blocks". This one **pursues the
  * advertised tip** — {@link pursueTip}: it fetches the named block by digest and
- * walks `prev` backward until it reaches a block it holds, bounded by
- * {@link SyncOptions.maxPursuit}. Reaching one puts two children of one parent
- * in the store, where validation rule 9 fires on them; a walk that fails ends in
- * fetches that did not succeed and in nothing else.
+ * walks `prev` backward, bounded by {@link SyncOptions.maxPursuit}, until it
+ * reaches a block it holds, or a genesis block, or fails. Reaching a held block
+ * puts two children of one parent in the store, where validation rule 9 fires on
+ * them; reaching a genesis block puts two genesis blocks of one `pub` key there,
+ * where the same rule fires on the same store; a walk that fails ends in fetches
+ * that did not succeed and in nothing else.
  *
  * Two other moves reach the same divergence and a client MAY use either:
  * re-issuing the range from the genesis position costs one request and

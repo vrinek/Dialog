@@ -17,8 +17,11 @@
  *   both. Fork detection is a reachability property, not a query;
  * - **pursuing an advertised tip**, which is what that comparison consists of on
  *   the wire: an empty range and a `Dialog-Tip` the client cannot reach, walked
- *   backward by digest to the divergence — and, when the walk fails, recorded as
- *   fetches that did not succeed and as nothing else.
+ *   backward by digest to the divergence — ending at a block the client holds,
+ *   or at a **genesis block** when the two chains share nothing at all, or, when
+ *   the walk fails, recorded as fetches that did not succeed and as nothing
+ *   else. Those three ends are the profile's own, and `genesis` is neither of
+ *   the other two.
  */
 
 import assert from "node:assert/strict";
@@ -33,6 +36,7 @@ import {
   DialogServer,
   PROBLEM_NOT_HELD,
   PROBLEM_TYPE,
+  pursuitEnd,
   resolveReferences,
   sourceTip,
   syncChain,
@@ -416,6 +420,72 @@ test("a pursuit that fails is a failed fetch and nothing else", async () => {
   for (const item of right.slice(1)) {
     assert.equal(downstream.get(item.digest)?.valid, false, bytesToHex(item.digest));
   }
+});
+
+test("a pursuit that reaches a genesis block is not a failure", async () => {
+  // Two chains signed by one key with different genesis blocks: the source
+  // serves one, the client already holds the other. They share no block at all,
+  // so the backward walk from the source's tip has no held block to meet and
+  // runs out of predecessors instead.
+  const downstream = new BlockStore();
+  const mine = chainOf(ALICE, 3, { label: "the chain the client holds" });
+  const theirs = chainOf(ALICE, 3, { label: "the chain the source serves" });
+  assert.notDeepEqual(mine[0]!.digest, theirs[0]!.digest, "two distinct genesis blocks");
+
+  const holder = sourceOver(storeOf(mine), "held.example", { downstream });
+  await syncChain(holder, downstream, ALICE_PUB);
+  assert.equal(downstream.validBlocks().length, 3);
+  assert.equal(downstream.forks.length, 0, "one chain, nothing to detect");
+
+  const other = sourceOver(storeOf(theirs), "other.example", { downstream });
+  const result = await syncChain(other, downstream, ALICE_PUB);
+
+  // The normal second-source answer about a chain the client's position is not
+  // on: an empty range, and a tip the client cannot reach.
+  assert.equal(result.requests, 1);
+  assert.deepEqual(result.declaredTip, theirs.at(-1)!.digest);
+
+  const pursuit = result.pursuit!;
+  assert.deepEqual(
+    pursuit.fetched.map(bytesToHex),
+    [...theirs].reverse().map((item) => bytesToHex(item.digest)),
+    "the whole of the other chain, tip-ward first",
+  );
+
+  // The settled three-way name, and the finer kind beside it. Nothing failed:
+  // every fetch succeeded and every block verified.
+  assert.equal(pursuit.end, "genesis");
+  assert.equal(pursuit.outcome, "genesis");
+  assert.equal(pursuitEnd(pursuit.outcome), "genesis");
+  assert.notEqual(pursuit.end, "failed", "the walk ran out of predecessors, it did not fail");
+  assert.notEqual(pursuit.end, "held", "no block the client holds was ever met");
+  assert.equal(pursuit.reached, undefined);
+  assert.equal(result.rejected.length, 0, "no verdict about any block follows from the end");
+
+  // Every block of both chains is in the store and valid: the walk's blocks are
+  // offered to the store like any others.
+  assert.equal(downstream.size, 6);
+  assert.equal(downstream.validBlocks().length, 6);
+  for (const item of [...mine, ...theirs]) {
+    assert.equal(downstream.get(item.digest)?.valid, true, bytesToHex(item.digest));
+  }
+
+  // And rule 9's condition, with the two GENESIS blocks as the sibling pair:
+  // two distinct blocks of one pub key claiming the genesis position, which
+  // spec/02-block-format.md's "rotate_key" calls a fork in the strict sense.
+  const genesisSiblings = downstream.siblings(ALICE_PUB, null);
+  assert.deepEqual(
+    new Set(genesisSiblings.map((stored) => bytesToHex(stored.digest))),
+    new Set([mine[0]!, theirs[0]!].map((item) => bytesToHex(item.digest))),
+  );
+  assert.equal(downstream.forks.length, 1);
+  const fork = downstream.forks[0]!;
+  assert.equal(fork.prev, null, "the genesis position, named by the absence of a digest");
+  assert.deepEqual(fork.pub, ALICE_PUB);
+  assert.deepEqual(
+    new Set(fork.blocks.map(bytesToHex)),
+    new Set([mine[0]!, theirs[0]!].map((item) => bytesToHex(item.digest))),
+  );
 });
 
 test("two sources that agree need nothing more", async () => {
