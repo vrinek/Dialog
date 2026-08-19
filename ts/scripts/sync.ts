@@ -5,7 +5,7 @@
  *
  * ```
  * node ts/scripts/sync.ts -source URL [-source URL …] -authors KEY[,KEY…] \
- *      [-limit N] [-max-pursuit N] [-timeout MS]
+ *      [-from genesis|held] [-limit N] [-max-pursuit N] [-timeout MS]
  * ```
  *
  * Every author is synced from **every** source into **one** store, in the order
@@ -16,23 +16,38 @@
  * nothing kept between runs, so the document below is a statement about what
  * this exchange delivered rather than about what a previous one left behind.
  *
- * ## Where each source is asked from
+ * ## Where each source is asked from — `-from`
  *
- * The range walk starts each source at the **genesis position**, not at the
- * client's own tip. The distinction only shows itself where the sources
- * disagree, and there it is the whole point. The store's constructive tip is the
- * end of the branch *this client* chose; asking a second source from it presumes
- * that source's chain runs through that branch, which at a fork it does not, and
- * the source then answers the empty range and unreachable tip of "Pursuing an
- * advertised tip". Asking from the genesis position instead is the move that
- * section calls out as an alternative a client MAY use — "re-issuing the range
- * from the genesis position costs one request and re-downloads the shared
- * prefix; it delivers the divergent blocks too, so rule 9 fires on it as well" —
- * and it is what a client with no per-source cursor can honestly do, since it
- * holds no position of a source's chain until that source has served it one.
- * The pursuit remains implemented and obligatory in {@link syncChain} for the
- * case that does reach it, which is a source that stops short of the tip it
- * advertises.
+ * A client meeting a source it has never asked before has two positions it can
+ * ask the range from, the profile permits both, and it says which is neither:
+ * the position of *another* source's chain is not a cursor for this one. Which
+ * of the two a client picks is invisible in a document until the sources
+ * disagree, and there it decides whether the pursuit happens at all — the gap
+ * `todos/099` is filed on.
+ *
+ * `-from genesis`, the default, asks every source from the **genesis position**.
+ * It is what a client with no per-source cursor can honestly do, since it holds
+ * no position of a source's chain until that source has served it one, and it is
+ * the move "Pursuing an advertised tip" names as an alternative a client MAY
+ * use: "re-issuing the range from the genesis position costs one request and
+ * re-downloads the shared prefix; it delivers the divergent blocks too, so rule
+ * 9 fires on it as well". A source on another branch then answers with its whole
+ * chain and the divergence arrives as ordinary blocks.
+ *
+ * `-from held` asks each source from where **this client's own chain** already
+ * reaches: the constructive tip of `spec/07-transport.md`, "tip", recomputed
+ * over the store before each source, and the genesis position when the store
+ * holds nothing of that author — so the first source of a run is asked from the
+ * genesis position either way. It asks for nothing the client already holds, and
+ * that is exactly why it reaches the other case: a source serving a branch this
+ * client's position is not on answers the empty range and the unreachable tip
+ * that "Pursuing an advertised tip" is written for, and {@link syncChain}
+ * pursues it, which is what puts two blocks with one `prev` in the store for
+ * validation rule 9 to fire on.
+ *
+ * Neither choice changes which blocks the run ends up holding, in these
+ * scenarios or in any where every source is honest: it changes how they arrive,
+ * and therefore whether `pursuits` has anything in it.
  *
  * ## What the document says
  *
@@ -65,7 +80,7 @@ import {
   syncChainFromSources,
   walkChain,
 } from "../src/transport.ts";
-import { commaSeparated, count, fail, parseFlags } from "./flags.ts";
+import { commaSeparated, count, fail, one, parseFlags } from "./flags.ts";
 
 /** How long one chain's sync, across all of its sources, may take when no
  * `-timeout` is given. The bound is the client's own, as every resource bound in
@@ -124,6 +139,10 @@ async function main(): Promise<void> {
   const pageSize = count(flags, "limit");
   const maxPursuit = count(flags, "max-pursuit");
   const timeout = count(flags, "timeout") ?? DEFAULT_TIMEOUT_MS;
+  const from = one(flags, "from") ?? "genesis";
+  if (from !== "genesis" && from !== "held") {
+    fail(`sync: -from is genesis or held, not ${from}`);
+  }
 
   const store = new BlockStore();
   const clients = sources.map(
@@ -139,8 +158,12 @@ async function main(): Promise<void> {
       fail(`sync: ${text} is not an author key in the canonical text form: ${reason(error)}`);
     }
 
+    // `held` is {@link syncChain}'s own default — the constructive tip of what
+    // the store holds, recomputed per source, and the genesis position when it
+    // holds nothing — so the flag leaves the option out rather than naming a
+    // position the store has not been consulted about yet.
     const options: SyncOptions = {
-      from: null,
+      ...(from === "genesis" ? { from: null } : {}),
       signal: AbortSignal.timeout(timeout),
       ...(pageSize === undefined ? {} : { pageSize }),
       ...(maxPursuit === undefined ? {} : { maxPursuit }),
