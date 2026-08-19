@@ -157,8 +157,9 @@ What it yielded, beyond the demo itself:
   (`063`), a retraction withdraws the meta-molecule its author published
   (`064`), and the standard meta-bonds are entities somebody has to publish
   before using them (`065`). Two changed the library's API (`067`, `068`,
-  above). One is still open: `066`, a conformance vector publishing a
-  meta-molecule together with its meta-bond.
+  above). The sixth, `066`, moved `vectors/blocks.json`: a chain block
+  publishing a meta-molecule together with its meta-bond, and the same block
+  without the `create_bond` as a rule 4 rejection.
 
 - **Withdrawal semantics, forced into existence by a dataset.** `064` is the
   one that changed behaviour: before it, a retracted equivalence went on
