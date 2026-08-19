@@ -101,15 +101,19 @@ go get github.com/vrinek/Dialog/go@main
 
 See [Releases](#releases) for why the tag needs the `go/` prefix.
 
-### TypeScript — wire format (`ts/`)
+### TypeScript — wire format and transport (`ts/`)
 
-The wire format only — `dcbor`, `cid`, `entity`, `block` and `privacy`, the
-four vector files' worth of the protocol — written **clean-room**: built
-against `spec/` and `vectors/` alone, with no access to `go/`'s source, so
-that its agreement with the Go implementation is evidence the specification
-and the vectors are sufficient on their own, not evidence that one
-implementation copied the other's design decisions. L2 and L3 are node
-behavior, not interop surface, and are not part of it.
+The wire format — `dcbor`, `cid`, `entity`, `block` and `privacy`, the four
+vector files' worth of the protocol — and the optional [transport
+profile](spec/07-transport.md): the block sequence, an HTTP server over any
+block store, and a sync client. All of it written **clean-room**: built against
+`spec/` and `vectors/` alone, with no access to `go/`'s source, so that its
+agreement with the Go implementation is evidence the specification and the
+vectors are sufficient on their own, not evidence that one implementation
+copied the other's design decisions. That is not a slogan — writing the
+transport a second time this way found six places where `spec/07` was silent or
+said two things, filed as todos 090 to 095 and now settled in the text. L2 and
+L3 are node behavior rather than interop surface, and are not part of it.
 
 Zero-transitive-dependency runtime dependencies from the audited `@noble/*`
 family (`curves` for Ed25519 and X25519, `ciphers` for XChaCha20-Poly1305,
