@@ -22,9 +22,11 @@ go/                      # Go reference implementation (module github.com/vrinek
   internal/              # the vector generator and its JSON schema
   internal/difftest/     # differential fuzzing of dcbor, its own module (see below)
   conformance_test.go    # checks the implementation against committed vectors/
-ts/                      # TypeScript implementation, wire format only (package dialog-protocol)
+ts/                      # TypeScript implementation: wire format + transport (package dialog-protocol)
   src/                   # dcbor.ts cid.ts entity.ts block.ts privacy.ts — clean-room, see below
+                         # blockseq.ts transport.ts node-http.ts — the spec/07 profile
   test/                  # one *.test.ts per vectors/*.json, plus vectors.ts (the loader)
+                         # transport.*.test.ts + chains.ts (the demo chains as fixtures)
 demo/                    # Grounding demo, its own module (github.com/vrinek/Dialog/demo)
   internal/content/      # the curated dataset, expressed as Dialog entities
   internal/publish/      # signs the three author chains from it
@@ -192,9 +194,13 @@ CI.
 
 ### TypeScript implementation
 
-`ts/` implements the wire format only — `dcbor`, `cid`, `entity`, `block` and
-`privacy`, the four vector files' worth of the protocol; L2 and L3 are not
-part of it. Run both commands from `ts/`, and both before every commit:
+`ts/` implements the wire format — `dcbor`, `cid`, `entity`, `block` and
+`privacy`, the four vector files' worth of the protocol — and the optional
+transport profile of `spec/07-transport.md`: `blockseq` (the RFC 8742 block
+sequence, which is also the file form), `transport` (the client, the server and
+the sync helpers) and `node-http` (the one Node-only module, a type-only import
+away from browser-safe). L2 and L3 are node behavior, not interop surface, and
+are not part of it. Run both commands from `ts/`, and both before every commit:
 
 ```bash
 nix shell nixpkgs#nodejs_24 --command npx tsc --noEmit
@@ -209,8 +215,10 @@ runs `test/*.test.ts` directly.
 **The clean-room rule applies to all future work on `ts/`.** An agent
 implementing or extending it MUST NOT read anything under `go/` — not the
 package layout, not a helper's name, not a comment explaining a rule. Allowed
-inputs are `spec/*.md`, `vectors/*.json` and
-`docs/plans/2026-08-18-typescript-implementation.md`. The one exception is
+inputs are `spec/*.md`, `vectors/*.json`,
+`docs/plans/2026-08-18-typescript-implementation.md` and — for the transport
+work — `demo/chains/` as *data*: the committed `.block` files and `index.json`
+are readable bytes, and `demo/`'s Go source is not. The one exception is
 running `go/`, never reading it: `go test`, `go run ./cmd/genvectors` and
 `go run ./cmd/genvectors -check` may be executed for cross-validation. The
 point is not secrecy — both implementations are in the

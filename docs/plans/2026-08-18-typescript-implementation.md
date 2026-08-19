@@ -1,6 +1,6 @@
 # TypeScript implementation — design and plan
 
-**Status:** complete
+**Status:** complete (phases 1-5); phase 6 (transport) added 2026-08-19
 **Date:** 2026-08-18
 
 ## Purpose
@@ -18,7 +18,9 @@ protocol to run where the web runs.
 ## The clean-room rule
 
 **Implementing agents MUST NOT read anything under `go/`.** Allowed inputs:
-`spec/*.md`, `vectors/*`, and this plan. The Go implementation's design
+`spec/*.md`, `vectors/*`, this plan, and `demo/chains/` as data — the committed
+`.block` files and `index.json` are readable bytes, `demo/`'s Go source is not.
+The Go implementation's design
 decisions (package shapes, naming, internal helpers) must not leak; only the
 spec's normative text and the vectors' bytes constrain the TypeScript code.
 The one exception: `go/` may be *executed* (`go test`, `genvectors -check`)
@@ -39,8 +41,10 @@ by the final cross-validation phase, never read.
 - **Layout mirrors the protocol, not the Go code:** `src/dcbor.ts`, `src/cid.ts`,
   `src/entity.ts`, `src/block.ts`, `src/privacy.ts` (agents may split files as
   the code demands — the constraint is what each area implements, per spec).
-- **Scope: wire format** (the four vector files). L2/L3 are node behavior, not
-  interop surface; a TypeScript port of them is future work.
+- **Scope: wire format** (the four vector files), and — since phase 6 — the
+  optional transport profile of `spec/07-transport.md`, client and server. L2/L3
+  are node behavior, not interop surface; a TypeScript port of them is future
+  work.
 - **Conformance is the test suite:** each phase's tests load the corresponding
   `vectors/*.json` and verify every case — valid bytes reproduced exactly,
   invalid bytes rejected. Additional unit tests are welcome; the vectors are
@@ -174,13 +178,38 @@ by the final cross-validation phase, never read.
    "Language & Framework" bullet. This plan marked complete; see "Outcome"
    below.
 
+6. **The transport profile** (`spec/07-transport.md`), added after the plan's
+   original five phases closed. Same clean-room rule, one input added:
+   `demo/chains/` as *data* — the committed `.block` files and `index.json` are
+   readable bytes, `demo/`'s Go source is not.
+   — **done:** `src/blockseq.ts` (the RFC 8742 block sequence: encode, a strict
+   reader with the caller's bounds, and the two ordering rules as named checks;
+   `src/dcbor.ts` gained `decodeFirst`, since `decode` is the rule for a Dialog
+   *document* and a sequence needs an item's length), `src/transport.ts` (the
+   constructive tip walk shared by both sides, the six operations as a server
+   over a `BlockStore`, the client with every client rule applied, and
+   `syncChain` / `syncChainFromSources` / `resolveReferences`) and
+   `src/node-http.ts` (the one Node-only module, and a type-only import, so
+   library code stays browser-safe). 70 tests: the profile's conformance tables
+   read off the text — media types, `Dialog-Tip`, `ETag`/`If-None-Match`, the
+   status codes, the rejected spellings of an author key, a CID, a position and
+   `limit`, the 256-digest floor — plus a cold sync of the three committed demo
+   chains TS-to-TS with the downstream store's state asserted, a fork neither of
+   two sources admits to appearing at the client that asks both, errata's blocks
+   held undecided through two sources and settled by a third, an announce round
+   trip with held and rejected dispositions, and the file-form equality the
+   profile names as a test rather than a claim: one author's `.block` files
+   concatenated in index order are that author's whole-chain range response,
+   byte for byte. **Scope is now wire format + transport; L2 and L3 remain out.**
+   Six gaps filed, 090 to 095 — see the commit and the todos themselves.
+
 ## Rules for implementing agents
 
 - Clean-room rule above is absolute.
 - Spec is normative; vectors are ground truth; any gap between what the spec
   says and what a vector contains is a todo (never silently resolve; next free
-  number: 067 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
-  filed 060 and 061, phase 4 filed 062).
+  number: 096 — phase 1 filed 056 and 057, phase 2 filed 058 and 059, phase 3
+  filed 060 and 061, phase 4 filed 062, phase 6 filed 090 to 095).
 - `tsc --noEmit` and `node --test` clean before every commit; granular commits,
   conventional messages, required trailers; no pushes.
 
