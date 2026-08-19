@@ -18,6 +18,10 @@
 //   node harness.mjs compare-startup A B [LABEL_A LABEL_B]   the same, for two
 //       servers' startup lines, whose address and base URL are the two fields
 //       that are allowed to differ — the kernel chose them
+//   node harness.mjs compare-store A B [LABEL_A LABEL_B]   the same, ignoring
+//       every chain's pursuits: what the client ended up holding, whether or not
+//       it took the backward walk to get there
+//   node harness.mjs expect-pursuit FILE END   assert a pursuit ended that way
 
 import { readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -112,12 +116,15 @@ function differences(a, b, path = "", found = []) {
  * conforming clients is impossible by construction: whatever it names is either
  * a bug in one of them or a question the specification does not answer.
  */
-function compare(pathA, pathB, labelA, labelB, strip = []) {
+function compare(pathA, pathB, labelA, labelB, strip = [], pursuits = true) {
   const a = JSON.parse(readFileSync(pathA, "utf8"));
   const b = JSON.parse(readFileSync(pathB, "utf8"));
   for (const key of strip) {
     delete a[key];
     delete b[key];
+  }
+  if (!pursuits) {
+    for (const doc of [a, b]) for (const chain of doc.chains) delete chain.pursuits;
   }
   const found = differences(a, b);
   if (found.length === 0) return;
@@ -126,6 +133,31 @@ function compare(pathA, pathB, labelA, labelB, strip = []) {
   console.error(`\n${labelA}:\n${JSON.stringify(canonical(a), null, 2)}`);
   console.error(`\n${labelB}:\n${JSON.stringify(canonical(b), null, 2)}`);
   process.exit(1);
+}
+
+/**
+ * Assert that the client took the backward walk, and that it ended the way this
+ * scenario's divergence says it must.
+ *
+ * A pursuit that ends as `failed` is a failed fetch and nothing more — it is not
+ * evidence of a fork or of an invalidity — but between two servers on loopback
+ * that are both serving what they hold, it is a bug, so it fails here.
+ */
+function expectPursuit(path, end) {
+  const doc = JSON.parse(readFileSync(path, "utf8"));
+  const pursuits = doc.chains.flatMap((chain) => chain.pursuits);
+  if (pursuits.length === 0) {
+    console.error(`${path}: no pursuit at all, wanted one ending as "${end}"`);
+    process.exit(1);
+  }
+  for (const pursuit of pursuits) {
+    if (pursuit.end !== end) {
+      console.error(
+        `${path}: a pursuit ended as "${pursuit.end}", wanted "${end}": ${JSON.stringify(pursuit)}`,
+      );
+      process.exit(1);
+    }
+  }
 }
 
 switch (command) {
@@ -137,6 +169,16 @@ switch (command) {
     break;
   case "compare":
     compare(rest[0], rest[1], rest[2] ?? rest[0], rest[3] ?? rest[1]);
+    break;
+  case "compare-store":
+    // What the client ended up holding, whether it got there by a range from
+    // the genesis position or by the backward walk from an advertised tip. The
+    // two routes are both blessed and must deliver the same blocks; that they
+    // do is the assertion, and the pursuits are compared separately.
+    compare(rest[0], rest[1], rest[2] ?? rest[0], rest[3] ?? rest[1], [], false);
+    break;
+  case "expect-pursuit":
+    expectPursuit(rest[0], rest[1]);
     break;
   case "compare-startup":
     // Two servers over the same directory must report the same blocks and the

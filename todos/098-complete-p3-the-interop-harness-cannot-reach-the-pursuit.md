@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p3
 issue_id: "098"
 tags: [transport, interop, testing]
@@ -102,9 +102,9 @@ implementations do cover the walk against their own servers.
 
 ## Acceptance Criteria
 
-- [ ] A harness scenario in which one implementation pursues a tip advertised by
+- [x] A harness scenario in which one implementation pursues a tip advertised by
       the other, in both directions
-- [ ] The `genesis` end of the walk is asserted across implementations, not only
+- [x] The `genesis` end of the walk is asserted across implementations, not only
       within each
 
 ## Work Log
@@ -117,6 +117,41 @@ Found while writing the fork scenarios: the two-server genesis fixture was built
 for the pursuit and reached it in neither implementation, because a client with
 an empty store and no cursor never asks a range from anywhere but the genesis
 position.
+
+### 2026-08-19 - Closed the Same Day, by a Fourth Option
+
+**By:** Claude
+
+**None of the three options above.** The premise was wrong: a one-shot client
+*can* reach the pursuit on its first exchange, and one of the two implementations
+was already doing it. It does not need a persisted cursor or a server that
+changes mid-run — it needs only to ask a source it has not used before from **the
+position its own chain already reaches** rather than from the genesis position.
+The second source is then asked about a block it may never have heard of, answers
+an empty range, and advertises a tip the client cannot reach, which is precisely
+the case "Pursuing an advertised tip" is written for.
+
+That difference between the two implementations is its own finding and is filed
+as todo 099: the profile does not say which position a client asks a new source
+from, both readings find every fork, and the choice decides whether the pursuit
+happens at all.
+
+- Both clients gained the choice as a flag — `-from genesis` (the default, so
+  that a run says what it did) and `-from held` — over
+  `Syncer.AskFromHeldPosition` in `go/transport` and `SyncOptions.from` in `ts/`.
+- `interop/run.sh` runs every scenario **twice against the same servers**, once
+  each way. The store's contents must come out identical either way, which is
+  asserted; the second pass additionally asserts that the walk happened and ended
+  by the name the scenario requires — `held` where the two chains share a prefix,
+  `genesis` where they share nothing — and that the two clients agree on it down
+  to the fetched count. 71 checks, up from 32.
+- So the `genesis` outcome todo 096 named is now reached by the Go client against
+  a TypeScript server and by the TypeScript client against a Go server, which is
+  the crossing that was missing.
+
+What is still not crossed is a *failed* pursuit, and deliberately: it needs a
+server built to withhold a block it advertised, and each implementation tests
+that against its own fixture rather than asking the other to misbehave for it.
 
 ## Notes
 

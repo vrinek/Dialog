@@ -86,7 +86,21 @@ assertion about it:
    implementation name: two conforming clients differ in all of those and in
    nothing that matters.
 
-and one more, before any client has asked anything:
+Every scenario is run **twice** against the same servers, differing only in where
+a client asks a source it has not used before from — `-from genesis`, and
+`-from held`, the position the client's own chain already reaches. The profile
+permits both and says which is neither (`todos/099`), and they are not the same
+exchange: from the genesis position the source re-sends the shared prefix and the
+divergence arrives in the range; from the held position the source answers an
+empty range and a tip the client cannot reach, which is the case "Pursuing an
+advertised tip" is written for. The blocks that end up in the store are the same
+either way — that is asserted — and the second pass additionally asserts that the
+backward walk happened and ended by the name that scenario's divergence requires:
+`held` where the two chains share a prefix, `genesis` where they share nothing.
+That is [`spec/07-transport.md`](../spec/07-transport.md)'s three-way outcome,
+crossed between the implementations rather than tested twice in isolation.
+
+And one more, before any client has asked anything:
 
 3. **The servers against each other.** Two servers over the same directory must
    announce the same blocks and the same tips in their startup line. A tip is the
@@ -200,8 +214,9 @@ node ts/scripts/sync.ts  -source URL [-source URL …] -authors KEY[,KEY…]    
 
 `-source` is repeatable and also accepts a comma-separated list. `-authors` is
 comma-separated and its order is the order the chains are synced in, which
-matters where one chain's blocks reference another's. The summary goes to stdout
-and nothing else does.
+matters where one chain's blocks reference another's. `-from genesis` (the
+default) or `-from held` chooses where a source not asked before is asked from,
+as above. The summary goes to stdout and nothing else does.
 
 Neither program stores anything on disk, and the client keeps nothing between
 runs: every run starts from an empty store, so a summary is a statement about
@@ -231,13 +246,11 @@ the multi-source rule's entire content.
 
 ## What this does not prove
 
-- **The pursuit is not exercised here.** The backward walk after an advertised
-  tip needs a client that already holds a position the source's walk does not
-  pass through — which a client meeting a source for the first time does not
-  have, and these clients keep no state between runs. Each implementation covers
-  the walk, including its `genesis` end, in its own tests. Closing the gap needs
-  either a client that persists its per-source cursor or a server whose contents
-  change between two rounds of one run; see `todos/098`.
+- **A pursuit that fails is not crossed.** The `failed` end of the walk — a
+  source that will not serve the block it advertised, bytes that hash wrong, the
+  client's own bound — is covered by each implementation's own tests against its
+  own misbehaving fixtures, because a server built to misbehave is not a server
+  the other implementation should have to host.
 - **Only the read operations are crossed.** `announce` is implemented on both
   sides and is not part of the harness yet.
 - **Nothing about privacy, L2 or L3.** Those are node behaviour rather than

@@ -95,15 +95,22 @@ serve() {
   fi
 }
 
-# sync IMPL OUT AUTHORS URL… — run a client and write its summary to OUT.
+# sync IMPL FROM OUT AUTHORS URL… — run a client and write its summary to OUT.
+#
+# FROM is where a source not asked before is asked from: "genesis", or "held" —
+# the position the client's own chain already reaches. The profile permits both
+# and says which is neither (todo 099), and they are not the same exchange: from
+# the genesis position the divergence arrives in the range itself, and from the
+# held position the source answers an empty range and a tip the client cannot
+# reach, which is what the backward walk is for.
 sync_from() {
-  local impl="$1" out="$2" authors="$3"
-  shift 3
+  local impl="$1" from="$2" out="$3" authors="$4"
+  shift 4
   local args=()
   for url in "$@"; do args+=(-source "$url"); done
   case "$impl" in
-    go) "$BIN/dialog-sync" "${args[@]}" -authors "$authors" >"$out" ;;
-    ts) node "$ROOT/ts/scripts/sync.ts" "${args[@]}" -authors "$authors" >"$out" ;;
+    go) "$BIN/dialog-sync" "${args[@]}" -authors "$authors" -from "$from" >"$out" ;;
+    ts) node "$ROOT/ts/scripts/sync.ts" "${args[@]}" -authors "$authors" -from "$from" >"$out" ;;
     *) echo "interop: no such implementation: $impl" >&2; exit 2 ;;
   esac
 }
@@ -139,6 +146,17 @@ layout_impl() { # LAYOUT INDEX
   esac
 }
 
+# How the backward walk after an advertised tip must end in each scenario, once
+# the client is asking from the position it already holds. Empty where there is
+# nothing to pursue: one source cannot disagree with itself.
+scenario_pursuit() {
+  case "$1" in
+    demo) echo "" ;;
+    fork) echo "held" ;;
+    genesis) echo "genesis" ;;
+  esac
+}
+
 for scenario in demo fork genesis; do
   expected="$ROOT/interop/expected/$scenario.json"
   authors="$(node "$ROOT/interop/harness.mjs" authors "$expected")"
@@ -155,7 +173,7 @@ for scenario in demo fork genesis; do
 
     for client in go ts; do
       out="$WORK/$scenario.$layout.$client.json"
-      sync_from "$client" "$out" "$authors" "${urls[@]}"
+      sync_from "$client" genesis "$out" "$authors" "${urls[@]}"
       node "$ROOT/interop/harness.mjs" compare "$expected" "$out" \
         "the expectation" "the $client client against $layout servers"
       pass "$scenario: the $client client against $layout servers holds what it must"
@@ -167,6 +185,30 @@ for scenario in demo fork genesis; do
       "$WORK/$scenario.$layout.go.json" "$WORK/$scenario.$layout.ts.json" \
       "the Go client" "the TypeScript client"
     pass "$scenario: the two clients agree over $layout servers"
+
+    # The same servers again, asked from the position each client already holds.
+    # A source on another branch then answers an empty range and a tip the client
+    # cannot reach, which is the case "Pursuing an advertised tip" is written
+    # for: the divergence arrives by the backward walk instead of by the range.
+    # The blocks that end up in the store are the same either way — that is the
+    # assertion — and the walk's end is the third one.
+    want_end="$(scenario_pursuit "$scenario")"
+    for client in go ts; do
+      out="$WORK/$scenario.$layout.$client.held.json"
+      sync_from "$client" held "$out" "$authors" "${urls[@]}"
+      node "$ROOT/interop/harness.mjs" compare-store "$expected" "$out" \
+        "the expectation" "the $client client asking $layout servers from where it is"
+      pass "$scenario: the $client client asking $layout servers from where it is holds the same blocks"
+      if [ -n "$want_end" ]; then
+        node "$ROOT/interop/harness.mjs" expect-pursuit "$out" "$want_end"
+        pass "$scenario: the $client client's pursuit of a $layout server's tip ended as $want_end"
+      fi
+    done
+
+    node "$ROOT/interop/harness.mjs" compare \
+      "$WORK/$scenario.$layout.go.held.json" "$WORK/$scenario.$layout.ts.held.json" \
+      "the Go client" "the TypeScript client"
+    pass "$scenario: the two clients agree over $layout servers, pursuits and all"
   done
 
   # And across the crossings: the Go client against TypeScript servers, and the
@@ -176,6 +218,10 @@ for scenario in demo fork genesis; do
     "$WORK/$scenario.go.ts.json" "$WORK/$scenario.ts.go.json" \
     "TypeScript client ← Go servers" "Go client ← TypeScript servers"
   pass "$scenario: the two directions agree"
+  node "$ROOT/interop/harness.mjs" compare \
+    "$WORK/$scenario.go.ts.held.json" "$WORK/$scenario.ts.go.held.json" \
+    "TypeScript client pursuing a Go server" "Go client pursuing a TypeScript server"
+  pass "$scenario: the two directions agree when each pursues the other's tip"
 
   # The servers themselves, before any client asked them anything: over the same
   # directory they must report the same blocks and the same tips, because a tip
