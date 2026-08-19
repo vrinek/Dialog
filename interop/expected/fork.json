@@ -1,0 +1,44 @@
+{
+  "chains": [
+    {
+      "author": "b5uawnpt6gmwhurjtgk6z2ct7pwyfl5of54nanlngnwmlhh5wqegeooq",
+      "advertised_tips": [
+        "bafyreidvyrvltevgwelie56ru67miq5si42var4zgm6khqo3dw7nw6nl2m",
+        "bafyreihwuiecwrhfmxlfgixrxlaufgvrahscll4vekkguxdphvbyshhpuy"
+      ],
+      "tip": "bafyreidvyrvltevgwelie56ru67miq5si42var4zgm6khqo3dw7nw6nl2m",
+      "chain": [
+        "bafyreialgwi5xue7zrf7gihbny23waeczag7qkgogwznapmm7xnehyrisu",
+        "bafyreigmeygn7m5rn4wkfb43bt7i5fpecvzf6a2ge2msyir7eimpbhuzcm",
+        "bafyreidvyrvltevgwelie56ru67miq5si42var4zgm6khqo3dw7nw6nl2m"
+      ],
+      "blocks": [
+        "bafyreialgwi5xue7zrf7gihbny23waeczag7qkgogwznapmm7xnehyrisu",
+        "bafyreidvyrvltevgwelie56ru67miq5si42var4zgm6khqo3dw7nw6nl2m",
+        "bafyreigmeygn7m5rn4wkfb43bt7i5fpecvzf6a2ge2msyir7eimpbhuzcm",
+        "bafyreihwuiecwrhfmxlfgixrxlaufgvrahscll4vekkguxdphvbyshhpuy"
+      ],
+      "accepted": 4,
+      "held": 0,
+      "rejected": 0,
+      "pursuits": [],
+      "forks": [
+        {
+          "prev": "bafyreigmeygn7m5rn4wkfb43bt7i5fpecvzf6a2ge2msyir7eimpbhuzcm",
+          "siblings": [
+            "bafyreidvyrvltevgwelie56ru67miq5si42var4zgm6khqo3dw7nw6nl2m",
+            "bafyreihwuiecwrhfmxlfgixrxlaufgvrahscll4vekkguxdphvbyshhpuy"
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "chains": 1,
+    "blocks": 4,
+    "accepted": 4,
+    "held": 0,
+    "rejected": 0,
+    "forks": 1
+  }
+}
