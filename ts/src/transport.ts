@@ -306,8 +306,19 @@ export function parseQuery(search: string): Map<string, string[]> {
   return out;
 }
 
-/** One value of a parameter the operation defines, or `undefined`. A parameter
- * given more than once is a 400. */
+/**
+ * One value of a parameter the operation defines, or `undefined`.
+ *
+ * A parameter **this profile defines for the operation being invoked**, given
+ * more than once, is malformed and is a 400: `after` twice is two positions and
+ * the profile does not say which would win. Every other parameter is ignored,
+ * repeated or not — which is why nothing here ever asks the query for a name
+ * the operation does not define. That is what makes the long poll's degradation
+ * work rather than an exception to it: `wait=5&wait=6` on a server that does
+ * not implement long polling is ignored twice and is not a 400, and a parameter
+ * a later version of this profile defines can be added without breaking every
+ * server written against this one.
+ */
 function oneParameter(query: Map<string, string[]>, name: string): string | undefined {
   const values = query.get(name);
   if (values === undefined) return undefined;

@@ -712,7 +712,7 @@ test("limit has exactly one spelling", async () => {
   }
 });
 
-test("a query parameter given more than once is malformed", async () => {
+test("a parameter this operation defines, given more than once, is malformed", async () => {
   const atlas = demoChain("atlas");
   const server = serverOver(demoStore());
   const cid = digestToCidText(atlas.items[0]!.digest);
@@ -724,6 +724,47 @@ test("a query parameter given more than once is malformed", async () => {
     (await get(server, `/chains/${atlas.keyText}/siblings?prev=${cid}&prev=${cid}`)).status,
     400,
   );
+  // Two spellings of one position are two positions whether or not they agree.
+  assert.equal(
+    (await get(server, `${blocks}?after=${cid}&after=${digestToCidText(atlas.items[1]!.digest)}`))
+      .status,
+    400,
+  );
+});
+
+test("a repeated parameter this operation does not define is ignored, like any other", async () => {
+  // The rule is scoped to the parameters the profile defines *for the operation
+  // being invoked*; everything else is ignored, repeated or not. It is what
+  // makes the long poll's degradation work rather than an exception to it, and
+  // what lets a later version add a parameter without breaking a server written
+  // against this one.
+  const atlas = demoChain("atlas");
+  const server = serverOver(demoStore());
+  const cid = digestToCidText(atlas.items[0]!.digest);
+  const tip = digestToCidText(atlas.items.at(-1)!.digest);
+
+  // The profile's own example: this server does not implement long polling.
+  const polled = await get(server, `/chains/${atlas.keyText}/tip?wait=5&wait=6`);
+  assert.equal(polled.status, 200);
+  assert.equal(polled.headers.get(TIP_HEADER), tip);
+
+  // A tracking parameter an intermediary appended, twice over.
+  const tracked = await get(server, `/chains/${atlas.keyText}/blocks?utm=a&utm=b`);
+  assert.equal(tracked.status, 200);
+  assert.equal((await sequenceOf(tracked)).length, 6);
+
+  // And a parameter of another operation: `limit` belongs to `range` and not to
+  // `siblings`, `prev` to `siblings` and not to `range`. The cost is real and
+  // accepted — the client is answered from the genesis position with no signal
+  // that its parameter went nowhere — and no block is misidentified by it,
+  // because the client verifies everything it receives.
+  const siblings = await get(server, `/chains/${atlas.keyText}/siblings?limit=1&limit=2`);
+  assert.equal(siblings.status, 200);
+  assert.equal((await sequenceOf(siblings)).length, 1);
+
+  const range = await get(server, `/chains/${atlas.keyText}/blocks?prev=${cid}&prev=${cid}`);
+  assert.equal(range.status, 200);
+  assert.equal((await sequenceOf(range)).length, 6);
 });
 
 test("a server that does not implement long polling ignores wait and answers immediately", async () => {
@@ -740,11 +781,10 @@ test("a server that does not implement long polling ignores wait and answers imm
 
 
 test("a parameter the operation does not define is ignored, as the long-poll rule requires", async () => {
-  // The only thing the profile says about a parameter a server does not
-  // implement is that `wait` MUST be ignored, so that long polling degrades to
-  // polling. This server ignores every parameter the matched operation does not
-  // define, which is the reading that keeps that rule true without a special
-  // case — see todos/095.
+  // A query parameter this profile does not define for the operation being
+  // invoked MUST be ignored. That covers a tracking parameter an intermediary
+  // appended, a parameter a later version defines, and a parameter of another
+  // operation.
   const atlas = demoChain("atlas");
   const server = serverOver(demoStore());
   const cid = digestToCidText(atlas.items[0]!.digest);
