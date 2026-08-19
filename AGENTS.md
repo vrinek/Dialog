@@ -19,6 +19,9 @@ go/                      # Go reference implementation (module github.com/vrinek
   accept/                # L3: the subscribed, meta-bond-applied view of L2
   transport/             # the optional spec/07 profile: block sequence, server, sync client
   cmd/genvectors/        # writes the conformance vectors to vectors/
+  cmd/dialog-serve/      # a server over a directory of .block files
+  cmd/dialog-sync/       # its client: syncs authors from sources, prints a JSON summary
+  cmd/geninterop/        # writes interop/fixtures and interop/expected
   internal/              # the vector generator and its JSON schema
   internal/difftest/     # differential fuzzing of dcbor, its own module (see below)
   conformance_test.go    # checks the implementation against committed vectors/
@@ -36,6 +39,10 @@ demo/                    # Grounding demo, its own module (github.com/vrinek/Dia
   cmd/genchains/         # writes chains/, and -checks that it is current
   cmd/dialog-mcp/        # MCP server: six tools over an accept.View
   chains/                # the committed blocks (generated, byte-identical)
+interop/                 # the two implementations against each other, both directions
+  run.sh                 # the harness: every scenario, every server/client combination
+  fixtures/              # forked chains (generated, byte-identical)
+  expected/              # the summary each scenario's client must produce (generated)
 vectors/                 # Conformance test vectors (generated, language-agnostic)
 docs/
   brainstorms/           # Design decision records
@@ -245,6 +252,34 @@ consumed by dispatching on which of a case's optional fields are populated
 `VectorCase`), never by a separate `kind`/type discriminant field, because the
 shape of what is present already says which decoder or function the case
 exercises.
+
+### Cross-implementation interop
+
+`interop/` runs the two implementations against each other over the transport
+profile — a Go server answering the TypeScript client, a TypeScript server
+answering the Go client — and asserts that both directions put the same blocks
+in the same store. Run it from the repository root:
+
+```bash
+nix shell nixpkgs#go nixpkgs#nodejs_24 --command ./interop/run.sh
+```
+
+It needs both toolchains, builds `go/cmd/dialog-serve` and `go/cmd/dialog-sync`,
+and uses `ts/scripts/serve.ts` and `ts/scripts/sync.ts` for the other side. The
+unit of comparison is one JSON **summary document** whose shape is documented in
+[`interop/README.md`](interop/README.md); it deliberately holds no request
+counts, no URLs and no implementation name, so that two conforming clients
+cannot differ. `interop/fixtures/` and `interop/expected/` are generated under
+the same rule as `vectors/`:
+
+```bash
+cd go && nix shell nixpkgs#go --command go run ./cmd/geninterop -check
+```
+
+CI runs the harness in [`interop.yml`](.github/workflows/interop.yml) on every
+push. **A change to `go/` or `ts/` can break it and is not caught by either
+implementation's own suite** — a disagreement is the point of the directory, and
+one that is not a plain bug is a specification gap and belongs in `todos/`.
 
 ### Grounding demo
 

@@ -46,6 +46,11 @@ to prove the specification (together with the conformance vectors it fixes)
 is a sufficient interop contract, not just a document one team's code happens
 to agree with itself about.
 
+**The two implementations are tested against each other in CI**, in both
+directions — a Go server answering the TypeScript client and the reverse, over
+the [transport profile](spec/07-transport.md), asserting that both put the same
+blocks in the same store: see [`interop/`](interop/README.md).
+
 **[`vectors/`](vectors/README.md) is the interop contract.** Four
 language-agnostic JSON files pin the canonical bytes, digests, CIDs, signing
 inputs, signatures and ciphertexts of a fixed set of entities and blocks, plus
