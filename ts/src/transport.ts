@@ -1596,9 +1596,17 @@ export interface ChainSyncResult {
   /** Blocks the store could not decide about. Undecided is never invalid. */
   readonly held: number;
   readonly rejected: { readonly digest: Uint8Array; readonly reason: string }[];
-  /** Whether the sync ended at the tip this source reports — a claim, not
-   * evidence. */
+  /**
+   * Whether the store now holds the block this source names as its tip — a
+   * claim, not evidence, since a server withholding its newest blocks reports
+   * the older tip here too. A source claiming no tip is caught up vacuously:
+   * there is nothing more it will give.
+   */
   readonly caughtUp: boolean;
+  /** Whether the sync had to go back to the genesis position because the source
+   * named a tip the store could not reach forward from its own — the shape a
+   * fork, or a source ahead on another branch, takes at the client. */
+  readonly rescanned: boolean;
   /** The tip this source claimed, as a digest. */
   readonly declaredTip?: Uint8Array;
   /** Where the store's own copy of the chain now ends, walked constructively
@@ -1624,6 +1632,26 @@ export interface SyncOptions {
  * The continuation needs no cursor, no session and no server-side state — the
  * position *is* the digest of a block the client holds — so a client that stops
  * and resumes a week later on a different machine resumes correctly.
+ *
+ * ## When the source's tip is not reachable from the client's position
+ *
+ * A range that comes back empty means one of two things, and the emptiness does
+ * not distinguish them: the client is already at the tip, or the source's store
+ * stops there. The `Dialog-Tip` comparison settles the first. The case the
+ * profile leaves unwritten is the third one that falls out of the same two
+ * answers — an **empty range whose `Dialog-Tip` names a block the client does
+ * not hold**, which is what a source on the other branch of a fork looks like
+ * from a client that synced the first branch, and what a source ahead on a
+ * chain the client holds a different version of looks like too.
+ *
+ * This implementation then re-asks from the **genesis position**, once, which
+ * is the move the profile's own worked example makes ("the client tells them
+ * apart by fetching the range from the second source too"): the second source's
+ * range is either a prefix of the first's, an extension of it, or a walk that
+ * diverges at some position — and in the third case the divergent blocks land
+ * in the store, where validation rule 9 fires on them. The alternative, walking
+ * the client's own chain backwards asking `siblings` at each position, costs a
+ * request per block instead of one. See todos/094.
  */
 export async function syncChain(
   client: DialogClient,
@@ -1638,8 +1666,8 @@ export async function syncChain(
   let accepted = 0;
   let held = 0;
   const rejected: { digest: Uint8Array; reason: string }[] = [];
-  let caughtUp = false;
   let declaredTip: Uint8Array | undefined;
+  let rescanned = false;
 
   while (requests < maxRequests) {
     const page = await client.range(pub, position, {
@@ -1653,9 +1681,23 @@ export async function syncChain(
     accepted += report.accepted.length;
     held += report.held.length;
     rejected.push(...report.rejected);
-    caughtUp = page.caughtUp;
-    if (page.items.length === 0 || page.caughtUp) break;
-    position = page.items.at(-1)!.digest;
+
+    if (page.items.length > 0 && !page.caughtUp) {
+      position = page.items.at(-1)!.digest;
+      continue;
+    }
+    // The source named a tip this store cannot reach from where it was asking.
+    if (
+      !rescanned &&
+      position !== null &&
+      declaredTip !== undefined &&
+      !store.has(declaredTip)
+    ) {
+      rescanned = true;
+      position = null;
+      continue;
+    }
+    break;
   }
 
   const localTip = sourceTip(store, pub)?.digest;
@@ -1667,7 +1709,11 @@ export async function syncChain(
     accepted,
     held,
     rejected,
-    caughtUp,
+    // A source claiming no tip has nothing more to give, so it is caught up
+    // vacuously; otherwise the question is whether the store now holds the
+    // block the source named.
+    caughtUp: declaredTip === undefined || store.has(declaredTip),
+    rescanned,
     ...(declaredTip === undefined ? {} : { declaredTip }),
     ...(localTip === undefined ? {} : { localTip }),
   };
