@@ -79,6 +79,37 @@ type Syncer struct {
 // DefaultMaxPages bounds a single chain sync from a single source.
 const DefaultMaxPages = 1024
 
+// A PursuitEnd names how the backward walk after an advertised tip ended.
+//
+// The profile settles on three names and forbids collapsing the middle one into
+// either of the others: a walk that runs out of predecessors is not a failure,
+// because every fetch succeeded and every block verified, and it is not a walk
+// that met a block the client holds either (spec/07-transport.md, "Pursuing an
+// advertised tip").
+type PursuitEnd string
+
+// The three ends of a pursuit, and the absence of one.
+const (
+	// PursuitNone is no pursuit at all: the source's tip was a block this client
+	// already held, which is the usual answer.
+	PursuitNone PursuitEnd = ""
+	// PursuitHeld is the point of the exercise: the walk met a block this client
+	// holds, and the block it arrived from and the one already held after that
+	// position are two blocks with one prev from one author — validation rule 9,
+	// in this client's own store.
+	PursuitHeld PursuitEnd = "held"
+	// PursuitGenesis is a walk that ran out of predecessors: the source serves a
+	// chain sharing no block with this client's, the two genesis blocks are now
+	// both in the store, and they are a fork at the genesis position in the
+	// strict sense of rule 9 (spec/02-block-format.md, "Validation" rule 9 and
+	// "rotate_key"). Nothing failed, and the fork is in ChainSync.Forks.
+	PursuitGenesis PursuitEnd = "genesis"
+	// PursuitFailed is a fetch that did not succeed, in any of its kinds: a
+	// source that would not serve the block, bytes that hashed to something
+	// else, or this client's own bound. SourceSync.PursuitErr carries which.
+	PursuitFailed PursuitEnd = "failed"
+)
+
 // DefaultMaxPursuit bounds the backward walk from an advertised tip. It is the
 // scan limit's default, for no deeper reason than that a client already spends
 // that many fetches on one block's worth of resolution and this is the same
@@ -143,8 +174,12 @@ type SourceSync struct {
 	// a chain the client's position is not on (spec/07-transport.md, "Pursuing
 	// an advertised tip").
 	Pursued int
+	// PursuitEnd is how that walk ended, by the name the profile settles on, and
+	// is PursuitNone when no pursuit was needed.
+	PursuitEnd PursuitEnd
 	// PursuitErr is why the backward walk stopped short of a block the client
-	// holds, or nil.
+	// holds, or nil. It is set exactly when PursuitEnd is PursuitFailed, and it
+	// is the finer kind the profile permits a client to report.
 	//
 	// It is a failed fetch and nothing more. No verdict about any block follows
 	// from it: a source advertising a tip it will not serve is indistinguishable
@@ -290,9 +325,9 @@ func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed2551
 	}
 
 	if !s.Store.Has(*claimed) {
-		pursued, err := s.pursue(ctx, src, pub, *claimed)
+		pursued, end, err := s.pursue(ctx, src, pub, *claimed)
 		received = append(received, pursued...)
-		report.Pursued, report.PursuitErr = len(pursued), err
+		report.Pursued, report.PursuitEnd, report.PursuitErr = len(pursued), end, err
 	}
 	return received, nil
 }
@@ -317,51 +352,62 @@ func (s *Syncer) syncFrom(ctx context.Context, index int, src Source, pub ed2551
 // condition rule 9 names — and rule 9 fires on the store rather than on the
 // transport, so nothing here is a special case of fork detection.
 //
+// Reaching a genesis block is the other way the walk ends without failing: the
+// source's chain shares no block with this client's, which is the most
+// fundamental fork there is, and the two genesis blocks now in the store are a
+// fork at the genesis position that rule 9 names as surely as any other. It is
+// reported as PursuitGenesis and never as a failure.
+//
 // A walk that fails ends in fetches that did not succeed and in nothing else:
 // the error is returned for the report, no verdict about any block follows from
 // it, and whatever the walk did obtain is offered to the store anyway, because
 // those blocks arrived and are as real as any others.
-func (s *Syncer) pursue(ctx context.Context, src Source, pub ed25519.PublicKey, tip cid.Digest) ([]cid.Digest, error) {
+func (s *Syncer) pursue(ctx context.Context, src Source, pub ed25519.PublicKey, tip cid.Digest) ([]cid.Digest, PursuitEnd, error) {
 	limit := s.MaxPursuit
 	if limit == 0 {
 		limit = DefaultMaxPursuit
 	}
 	var walked []*block.Block
+	end := PursuitHeld
 	target := tip
 	for step := 0; !s.Store.Has(target); step++ {
 		if err := ctx.Err(); err != nil {
-			return s.offerWalk(ctx, src, walked), err
+			return s.offerWalk(ctx, src, walked), PursuitFailed, err
 		}
 		if step >= limit {
 			// The walk MUST be bounded, and the bound is this client's own: the
 			// chain being followed is the source's, and so is its length.
-			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s reached this client's bound of %d blocks without meeting one it holds", tip, limit)
+			return s.offerWalk(ctx, src, walked), PursuitFailed, fmt.Errorf("transport: pursuing the tip %s reached this client's bound of %d blocks without meeting one it holds", tip, limit)
 		}
 		b, err := src.Block(ctx, target)
 		if err != nil {
-			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s: %w", tip, err)
+			return s.offerWalk(ctx, src, walked), PursuitFailed, fmt.Errorf("transport: pursuing the tip %s: %w", tip, err)
 		}
 		// Identify the block by the digest computed from its bytes, never by
 		// what was asked for, and never by anything the source said about it.
 		if b.Digest() != target {
-			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s: the source answered %s for %s: %w", tip, b.Digest(), target, ErrNotHeld)
+			return s.offerWalk(ctx, src, walked), PursuitFailed, fmt.Errorf("transport: pursuing the tip %s: the source answered %s for %s: %w", tip, b.Digest(), target, ErrNotHeld)
 		}
 		if !bytes.Equal(b.PublicKey(), pub) {
 			// A block of another author cannot be a step of this author's
 			// chain, whatever the source thinks it is answering.
-			return s.offerWalk(ctx, src, walked), fmt.Errorf("transport: pursuing the tip %s: %s is signed by another author: %w", tip, b.Digest(), ErrNotHeld)
+			return s.offerWalk(ctx, src, walked), PursuitFailed, fmt.Errorf("transport: pursuing the tip %s: %s is signed by another author: %w", tip, b.Digest(), ErrNotHeld)
 		}
 		walked = append(walked, b)
 		prev, ok := b.Prev()
 		if !ok {
 			// A genesis block, and this client holds none of its ancestry
-			// because it has none. The two chains share no block at all, which
-			// the genesis position's sibling set is the place to see.
+			// because it has none. The two chains share no block at all, and
+			// the two genesis blocks now in the store are the fork — the
+			// sibling pair at the genesis position, which is where the ambiguous
+			// succession of spec/02-block-format.md, "rotate_key", is detected
+			// too.
+			end = PursuitGenesis
 			break
 		}
 		target = prev
 	}
-	return s.offerWalk(ctx, src, walked), nil
+	return s.offerWalk(ctx, src, walked), end, nil
 }
 
 // offerWalk hands a backward walk's blocks to the store in chain order, which is

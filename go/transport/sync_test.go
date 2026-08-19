@@ -610,6 +610,9 @@ func TestPursuingAnAdvertisedTip(t *testing.T) {
 	if result.Sources[1].PursuitErr != nil {
 		t.Fatalf("the pursuit failed: %v", result.Sources[1].PursuitErr)
 	}
+	if result.Sources[1].PursuitEnd != PursuitHeld {
+		t.Errorf("the pursuit ended as %q, want %q: it met a block the client holds", result.Sources[1].PursuitEnd, PursuitHeld)
+	}
 	if result.Sources[1].Pursued != len(long) {
 		t.Errorf("the pursuit fetched %d blocks, want the %d of the divergent branch", result.Sources[1].Pursued, len(long))
 	}
@@ -638,6 +641,117 @@ func TestPursuingAnAdvertisedTip(t *testing.T) {
 		if verdict, _ := store.Verdict(b.Digest()); verdict != block.VerdictValid {
 			t.Errorf("%s is %v after the pursuit, want it accepted", b.Digest(), verdict)
 		}
+	}
+}
+
+// twoGenesisChains builds two chains of one author that share no block at all:
+// two genesis blocks under one key, each with a block after it.
+//
+// The chain returned second is the one whose genesis block sorts lower, so that
+// a server holding both walks that one — the profile's reference rule for
+// choosing a branch is the lowest digest — and advertises its tip. That is what
+// makes the pursuit start.
+func twoGenesisChains(t *testing.T) (pub ed25519.PublicKey, higher, lower []*block.Block) {
+	t.Helper()
+	priv := testKey(t, 90)
+	chain := func(ts uint64, text string) []*block.Block {
+		genesis := signBlock(t, priv, block.Content{
+			Version: block.Version, Type: block.TypePublic, TS: ts,
+			Ops: []block.Operation{block.MustCreateAtom(text)},
+		})
+		prev := genesis.Digest()
+		next := signBlock(t, priv, block.Content{
+			Version: block.Version, Type: block.TypePublic, Prev: &prev, TS: ts + 1,
+			Ops: []block.Operation{block.MustCreateAtom(text + ", continued")},
+		})
+		return []*block.Block{genesis, next}
+	}
+	first := chain(1, "one claim on this author")
+	second := chain(100, "another claim on this author")
+	a, b := first[0].Digest(), second[0].Digest()
+	if slices.Compare(a[:], b[:]) < 0 {
+		first, second = second, first
+	}
+	return first[0].PublicKey(), first, second
+}
+
+// TestPursuitToAGenesisBlock is the fourth way the backward walk ends: it runs
+// out of predecessors to ask for without ever meeting a block the client holds.
+//
+// Nothing failed — every fetch succeeded and every block verified — and no block
+// the client holds was met either, so the walk is neither of the other two
+// outcomes. What it found is two chains claiming one author with no block in
+// common, the most fundamental fork there is, and the two genesis blocks are the
+// sibling pair at the genesis position that validation rule 9 fires on
+// (spec/07-transport.md, "Pursuing an advertised tip"; spec/02-block-format.md,
+// "Validation" rule 9 and "rotate_key").
+func TestPursuitToAGenesisBlock(t *testing.T) {
+	pub, held, other := twoGenesisChains(t)
+	firstStore := memStore(t, held...)
+	secondStore := memStore(t, held...)
+	first, _ := serve(t, ServerConfig{Store: firstStore})
+	second, _ := serve(t, ServerConfig{Store: secondStore})
+
+	store := block.NewValidatingStore(nil)
+	syncer := NewSyncer(store, first, second)
+
+	// Both sources serve the one chain, so the client ends the first sync at a
+	// position both of them are on, and neither is pursued.
+	agreed, err := syncer.SyncChain(t.Context(), pub)
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+	for i, report := range agreed.Sources {
+		if report.PursuitEnd != PursuitNone {
+			t.Errorf("source %d ended a pursuit as %q; a tip the client holds needs none", i, report.PursuitEnd)
+		}
+	}
+
+	// The second source now also holds the other chain, whose genesis block
+	// sorts lower: its walk goes that way, so it answers an empty range after
+	// the client's position and advertises a tip on a chain the client's
+	// position is not on.
+	addBlock(t, secondStore, other...)
+
+	result, err := syncer.SyncChain(t.Context(), pub)
+	if err != nil {
+		t.Fatalf("SyncChain: %v", err)
+	}
+	report := result.Sources[1]
+	if report.PursuitErr != nil {
+		t.Fatalf("the pursuit reported a failure: %v; every fetch succeeded", report.PursuitErr)
+	}
+	if report.PursuitEnd != PursuitGenesis {
+		t.Fatalf("the pursuit ended as %q, want %q", report.PursuitEnd, PursuitGenesis)
+	}
+	if report.Pursued != len(other) {
+		t.Errorf("the pursuit fetched %d blocks, want the %d of the other chain", report.Pursued, len(other))
+	}
+
+	// The fork is at the genesis position, and the sibling pair is the two
+	// genesis blocks.
+	if len(result.Forks) != 1 {
+		t.Fatalf("forks = %v, want the one at the genesis position", result.Forks)
+	}
+	fork := result.Forks[0]
+	if fork.Prev != nil {
+		t.Errorf("the fork is at prev %s, want the genesis position", fork.Prev)
+	}
+	want := []cid.Digest{held[0].Digest(), other[0].Digest()}
+	slices.SortFunc(want, func(a, b cid.Digest) int { return slices.Compare(a[:], b[:]) })
+	if !slices.Equal(fork.Blocks, want) {
+		t.Errorf("the sibling set is %v, want the two genesis blocks %v", fork.Blocks, want)
+	}
+	// Both chains are in the store and both validate: neither is refused for
+	// being the second claim on the author, because deciding that is not the
+	// transport's business and not validation's either.
+	for _, b := range append(append([]*block.Block{}, held...), other...) {
+		if verdict, _ := store.Verdict(b.Digest()); verdict != block.VerdictValid {
+			t.Errorf("%s is %v, want it accepted", b.Digest(), verdict)
+		}
+	}
+	if len(result.Rejected) != 0 {
+		t.Errorf("rejected = %v; a walk to a genesis block refuses nothing", result.Rejected)
 	}
 }
 
@@ -684,6 +798,9 @@ func TestPursuitIsBoundedAndItsFailureIsOnlyAFailedFetch(t *testing.T) {
 		if !errors.Is(result.Sources[1].PursuitErr, ErrNotHeld) {
 			t.Errorf("the pursuit failed with %v, want a failed fetch", result.Sources[1].PursuitErr)
 		}
+		if result.Sources[1].PursuitEnd != PursuitFailed {
+			t.Errorf("the pursuit ended as %q, want %q", result.Sources[1].PursuitEnd, PursuitFailed)
+		}
 		if result.Sources[1].Pursued != 0 {
 			t.Errorf("the pursuit reported %d blocks from a source that served none", result.Sources[1].Pursued)
 		}
@@ -727,6 +844,9 @@ func TestPursuitIsBoundedAndItsFailureIsOnlyAFailedFetch(t *testing.T) {
 		}
 		if result.Sources[1].PursuitErr == nil {
 			t.Fatal("a walk past the client's bound reported no failure")
+		}
+		if result.Sources[1].PursuitEnd != PursuitFailed {
+			t.Errorf("the bounded walk ended as %q, want %q: the client's own bound is a failed fetch like any other", result.Sources[1].PursuitEnd, PursuitFailed)
 		}
 		if result.Sources[1].Pursued != 1 {
 			t.Errorf("the bounded walk fetched %d blocks, want the one its bound allows", result.Sources[1].Pursued)
