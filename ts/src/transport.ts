@@ -21,9 +21,11 @@
  *
  * ## Shape of this module
  *
- * - **Constants and parsing.** The paths, the media types, the two problem
+ * - **Constants and parsing.** The paths, the media types, the three problem
  *   types, and the canonical spellings of a position and of `limit`. Exactly
- *   one spelling of each is admitted; a variant is a 400 and never normalized.
+ *   one spelling of each is admitted; a variant is a 400 and never normalized,
+ *   and a percent-encoded octet is a second spelling like any other, so the
+ *   canonical-form rules are applied to the request target **as received**.
  * - **{@link walkChain}.** The constructive definition of a tip, shared by the
  *   server (which answers `tip` and `range` from it) and the client (which
  *   finds where its own copy of a chain stops). It walks forward from the
@@ -192,12 +194,14 @@ export class TransportError extends Error {
 
 /**
  * Parse `limit`: one or more ASCII digits, the first of which is not `0`, with
- * no sign, no decimal point, no whitespace and no percent-encoded variant of
- * any of those.
+ * no sign, no decimal point and no whitespace.
  *
- * `01`, `+1`, `1.0`, `%201` and `1e3` are malformed. The value is read from the
- * *raw* query string, undecoded, which is what makes the percent-encoded
- * variants visible at all — see {@link parseQuery}.
+ * `01`, `+1`, `1.0` and `1e3` are malformed, and so is `%201` — twice over, by
+ * the whitespace rule and by the general percent-encoding rule of the HTTP
+ * binding, which makes any percent-encoded octet of a value this profile
+ * defines a second spelling and therefore a 400. The value is read from the
+ * *raw* query string, undecoded, which is what makes the encoded variants
+ * visible at all — see {@link parseQuery}.
  */
 export function parseLimit(raw: string, options: { readonly max?: number } = {}): number {
   if (!/^[1-9][0-9]*$/.test(raw)) {
@@ -250,13 +254,20 @@ export function digestFromCidText(text: string): Uint8Array {
 /**
  * Split a raw query string into its parameters **without percent-decoding**.
  *
- * Every value this profile puts in a query string is drawn from an alphabet
- * that needs no encoding — base32 for a position, ASCII digits for `limit` —
- * so a decoder here would only serve to accept spellings the profile refuses:
- * `%201` is named as a malformed `limit`, and `%62afyrei…` would be a second
- * spelling of a CID, which is what the canonical text forms exist to prevent.
- * A parameter given more than once is malformed and is reported as such by the
- * caller, since the profile does not say which value would win.
+ * "One spelling means one byte sequence, and percent-encoding is a second
+ * spelling": every value this profile puts in a query string is drawn from an
+ * alphabet that needs no encoding — base32 for a position, ASCII digits for
+ * `limit` — so a request target that percent-encodes any octet of one is
+ * malformed and MUST be rejected with 400. A server applies the canonical-form
+ * rules to the target **as received**, not to a decoded copy of it, which is
+ * what a decoder here would produce: `%201` would become a `limit` with
+ * whitespace and `%62afyrei…` a second spelling of one immutable resource,
+ * which is the alias the canonical text forms exist to prevent and which a
+ * cache keys twice.
+ *
+ * A parameter the operation defines, given more than once, is malformed and is
+ * reported as such by the caller, since the profile does not say which value
+ * would win; every other parameter is ignored, repeated or not.
  */
 export function parseQuery(search: string): Map<string, string[]> {
   const out = new Map<string, string[]>();

@@ -63,6 +63,13 @@ async function sequenceOf(response: Response) {
   return decodeBlockSequence(new Uint8Array(await response.arrayBuffer()));
 }
 
+/** The same text with its last character percent-encoded: a second spelling of
+ * one identifier, which decodes back to it and is refused before it can. */
+function percentEncodeLast(text: string): string {
+  const last = text.charCodeAt(text.length - 1).toString(16).toUpperCase();
+  return `${text.slice(0, -1)}%${last.padStart(2, "0")}`;
+}
+
 async function problemOf(response: Response): Promise<Record<string, unknown>> {
   assert.equal(mediaType(response.headers.get("Content-Type")), PROBLEM_TYPE);
   return (await response.json()) as Record<string, unknown>;
@@ -535,9 +542,11 @@ test("a non-canonical author key or CID is 400 rather than normalized", async ()
     `${atlas.keyText}=`,
     // Hexadecimal is a byte dump, not an identifier.
     bytesToHex(atlas.pub),
-    // A percent-encoded first character decodes to the same string and is a
-    // second spelling of it; this server refuses to mint the alias.
+    // "One spelling means one byte sequence, and percent-encoding is a second
+    // spelling": the canonical-form rules are applied to the request target as
+    // received, so an encoded octet is a 400 and never an alias.
     `%62${atlas.keyText.slice(1)}`,
+    percentEncodeLast(atlas.keyText),
     cid,
   ];
   for (const spelling of authorSpellings) {
@@ -553,11 +562,36 @@ test("a non-canonical author key or CID is 400 rather than normalized", async ()
     `${cid}=`,
     bytesToHex(atlas.items[0]!.digest),
     `%62${cid.slice(1)}`,
+    percentEncodeLast(cid),
     atlas.keyText,
   ];
   for (const spelling of cidSpellings) {
     assert.equal((await get(server, `/blocks/${spelling}`)).status, 400, spelling);
   }
+
+  // Nothing percent-decodes the request target, so the encoded spellings never
+  // reach the block they would name: the canonical one still answers.
+  assert.equal((await get(server, `/blocks/${cid}`)).status, 200);
+});
+
+test("a percent-encoded query value is a second spelling too, and is refused", async () => {
+  const atlas = demoChain("atlas");
+  const server = serverOver(demoStore());
+  const cid = digestToCidText(atlas.items[0]!.digest);
+  const blocks = `/chains/${atlas.keyText}/blocks`;
+
+  // A position, at both parameters that take one...
+  assert.equal((await get(server, `${blocks}?after=%62${cid.slice(1)}`)).status, 400);
+  assert.equal((await get(server, `${blocks}?after=${percentEncodeLast(cid)}`)).status, 400);
+  assert.equal(
+    (await get(server, `/chains/${atlas.keyText}/siblings?prev=%62${cid.slice(1)}`)).status,
+    400,
+  );
+
+  // ...and a count: %31 decodes to "1", which a server that decoded its target
+  // would honour. This one never decodes it.
+  assert.equal((await get(server, `${blocks}?limit=%31`)).status, 400);
+  assert.equal((await get(server, `${blocks}?limit=1%30`)).status, 400);
 });
 
 test("a position has exactly one spelling, and the genesis position is the absence of one", async () => {
