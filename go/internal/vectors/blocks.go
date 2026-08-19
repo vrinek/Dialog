@@ -23,6 +23,7 @@ const (
 	tsGenesis   = 1740067200 // 2025-02-20T16:00:00Z, the timestamp of the spec's examples
 	tsSecond    = 1740067260
 	tsBob       = 1740067320
+	tsBobMeta   = 1740067350
 	tsRotation  = 1740067380
 	tsSuccessor = 1740067440
 	tsFork      = 1740067261
@@ -94,14 +95,14 @@ func blocksDocument() (Document, error) {
 	return Document{
 		Vectors: Format,
 		Area:    "blocks",
-		Description: "A complete, deterministic chain scenario — genesis, an appended block, a foreign-reference block by a second author, and a rotation with its successor genesis — plus a fork, the blocks a conforming implementation MUST reject on their bytes, and the blocks it MUST reject only once it holds the chains around them. " +
+		Description: "A complete, deterministic chain scenario — genesis, an appended block, a foreign-reference block by a second author, a meta-molecule published with the meta-bond it uses, and a rotation with its successor genesis — plus a fork, the blocks a conforming implementation MUST reject on their bytes, and the blocks it MUST reject only once it holds the chains around them. " +
 			"Ed25519 signing is deterministic, so every signature here is reproducible from the seeds in inputs.",
-		Spec:   []string{"spec/02-block-format.md", "spec/03-encoding.md", "spec/04-cryptography.md", "spec/05-processing-model.md"},
+		Spec:   []string{"spec/02-block-format.md", "spec/03-encoding.md", "spec/04-cryptography.md", "spec/05-processing-model.md", "spec/06-meta-bonds.md"},
 		Inputs: blockInputs(),
 		Sections: []Section{
 			{
 				Name:        "chain",
-				Description: "The scenario, in the order the blocks are published. A consumer that stores them in order and validates each one MUST accept all five; the digests link them, so any encoding difference shows up as a broken prev.",
+				Description: "The scenario, in the order the blocks are published. A consumer that stores them in order and validates each one MUST accept all six; the digests link them, so any encoding difference shows up as a broken prev.",
 				Cases:       chain,
 			},
 			{
@@ -267,13 +268,36 @@ func scenario() ([]BlockCase, forkResult, error) {
 		return nil, forkResult{}, fmt.Errorf("vectors: foreign-reference block: %w", err)
 	}
 
-	// 4. The rotation block that ends Alice's chain, naming her next key.
+	// 4. Bob asserts the molecule he just published, and publishes in the same
+	// block the meta-bond that assertion is built from. A standard meta-bond is
+	// an ordinary bond — content-addressed over its template, present in no
+	// chain until somebody creates it — so the create_bond here is not
+	// decoration: without it the block's create_molecule names a digest rule 4
+	// cannot resolve, which is the invalid_in_chain case
+	// "unreachable_meta_bond" (spec/06-meta-bonds.md, "Meta-molecules are
+	// regular molecules"). The molecule being asserted needs no refs: Bob's own
+	// genesis block created it, and an author's ancestry is a resolution path.
+	bobMolecule := entity.MustMolecule(capital, []entity.Filler{
+		entity.AtomFiller(parisFrance.Digest()),
+		entity.AtomFiller(france.Digest()),
+	})
+	assertion, err := bob.Public(tsBobMeta, nil,
+		block.MustCreateBond(entity.TemplateTruthAssertion),
+		block.MustCreateMolecule(entity.MetaBondTruthAssertion, []entity.Filler{
+			entity.MoleculeFiller(bobMolecule.Digest()),
+		}),
+	)
+	if err != nil {
+		return nil, forkResult{}, fmt.Errorf("vectors: truth-assertion block: %w", err)
+	}
+
+	// 5. The rotation block that ends Alice's chain, naming her next key.
 	rotation, err := alice.Rotation(tsRotation, nil, seedPub(seedSuccessor))
 	if err != nil {
 		return nil, forkResult{}, fmt.Errorf("vectors: rotation block: %w", err)
 	}
 
-	// 5. The successor chain's genesis block, which must be public and must
+	// 6. The successor chain's genesis block, which must be public and must
 	// name the rotation block in refs (spec/02-block-format.md, "Verifiable
 	// succession").
 	successor, err := block.NewBuilder(seedKey(seedSuccessor))
@@ -304,7 +328,7 @@ func scenario() ([]BlockCase, forkResult, error) {
 		return nil, forkResult{}, fmt.Errorf("vectors: fork block: %w", err)
 	}
 
-	if err := validateScenario(genesis, second, foreign, rotation, successorGenesis); err != nil {
+	if err := validateScenario(genesis, second, foreign, assertion, rotation, successorGenesis); err != nil {
 		return nil, forkResult{}, err
 	}
 
@@ -312,10 +336,11 @@ func scenario() ([]BlockCase, forkResult, error) {
 		{"alice_genesis", "Alice's genesis block: prev is null, and the four operations define two atoms, a bond and the molecule that uses them. The molecule's references resolve inside this same block.", "alice"},
 		{"alice_second", "The next block of Alice's chain: prev is the digest of alice_genesis. Its molecule carries a scalar filler with a unit, whose digest is the metre atom this block defines.", "alice"},
 		{"bob_foreign_reference", "Bob's genesis block, referencing Alice's genesis block in refs. Its molecule uses a bond and an atom defined there and an atom defined by its own first operation.", "bob"},
+		{"bob_meta_molecule", "The next block of Bob's chain: a meta-molecule asserting the molecule bob_foreign_reference published, together with the create_bond that publishes the standard meta-bond \"_A_ is true\" it is built from. A meta-bond is an entity like any other and is present in no chain until an author creates it, so this is the shape a publishable truth assertion has; drop the create_bond and the block is the invalid_in_chain case unreachable_meta_bond. refs is empty: the asserted molecule was created by an ancestor of this block's own chain.", "bob"},
 		{"alice_rotation", "The rotation block that ends Alice's chain. Exactly one rotate_key operation, prev not null, and new_pub naming a different key.", "alice"},
 		{"alice_successor_genesis", "The successor chain's genesis block. It is public and names the rotation block in refs, which is what makes the succession verifiable to a node with no keys.", "alice_successor"},
 	}
-	blocks := []*block.Block{genesis, second, foreign, rotation, successorGenesis}
+	blocks := []*block.Block{genesis, second, foreign, assertion, rotation, successorGenesis}
 	cases := make([]BlockCase, 0, len(blocks))
 	for i, b := range blocks {
 		c, err := blockCase(descriptions[i].name, descriptions[i].description, descriptions[i].author, b)

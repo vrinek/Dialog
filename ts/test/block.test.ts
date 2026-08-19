@@ -68,11 +68,11 @@ const blocks = loadVectors("blocks.json");
 
 /** Case counts as `vectors/README.md` records them. */
 const EXPECTED_CASE_COUNTS: Record<string, number> = {
-  chain: 5,
+  chain: 6,
   forks: 1,
   fork_block: 1,
   invalid: 23,
-  invalid_in_chain: 12,
+  invalid_in_chain: 13,
 };
 
 test("the vector file is the one vectors/README.md describes", () => {
@@ -240,7 +240,7 @@ test("the chain validates block by block, in the order it is published", () => {
     assert.equal(result.report?.fork, undefined, `${vector.name} is not a fork`);
     assert.deepEqual(result.report?.uncheckedRefs, [], `${vector.name} resolved every ref`);
   }
-  assert.equal(store.size, 5);
+  assert.equal(store.size, 6);
   assert.equal(store.forks.length, 0);
 });
 
@@ -273,8 +273,8 @@ test("a block whose predecessor has not arrived is stored but unvalidated", () =
 
 test("the successor genesis block is recognized as the rotation's successor", () => {
   const store = replay();
-  const rotation = chainCases()[3]!;
-  const successor = chainCases()[4]!;
+  const rotation = chainCases()[4]!;
+  const successor = chainCases()[5]!;
   assert.equal(store.successions.length, 1);
   const succession = store.successions[0]!;
   assert.equal(bytesToHex(succession.rotation), rotation.digest);
@@ -389,7 +389,7 @@ test("no invalid block reaches a store", () => {
   for (const vector of section(blocks, "invalid").cases) {
     assert.throws(() => store.add(hexToBytes(vector.bytes!)), `${vector.name} was stored`);
   }
-  assert.equal(store.size, 5, "the store is unchanged");
+  assert.equal(store.size, 6, "the store is unchanged");
 });
 
 // ---------------------------------------------------------------------------

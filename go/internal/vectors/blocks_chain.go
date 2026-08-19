@@ -69,6 +69,7 @@ func invalidInChainCases() ([]InvalidInChainCase, error) {
 		rejectOwnChainReference,
 		rejectUnreachableBond,
 		rejectUnreferencedChain,
+		rejectUnreachableMetaBond,
 		rejectForwardReference,
 		rejectUnreachableScalarUnit,
 		rejectScanLimitExceeded,
@@ -315,6 +316,43 @@ func rejectUnreferencedChain() (chainRejection, error) {
 		return c, err
 	}
 	c.setup, c.bad = []*block.Block{provider}, bad
+	return c, nil
+}
+
+// rejectUnreachableMetaBond: rule 4 in the one position an implementation is
+// tempted to treat as ambient — the digest of a standard meta-bond.
+func rejectUnreachableMetaBond() (chainRejection, error) {
+	c := chainRejection{
+		name:    "unreachable_meta_bond",
+		rule:    ruleOperations,
+		ruleNum: 4,
+		reason:  "The create_molecule names the standard meta-bond \"_A_ is true\", which nothing in this chain ever created: the block publishes no create_bond for it, its ancestor published the molecule being asserted and not the meta-bond, and refs is empty. The standard meta-bonds are not implicitly present in any chain and no digest is exempt from rule 4 (spec/06-meta-bonds.md, \"Meta-molecules are regular molecules\"), so an implementation that recognizes the five meta-bond digests and lets them resolve accepts this block. Its valid counterpart is the chain block bob_meta_molecule, which is this block plus the create_bond.",
+	}
+	capital := entity.MustBond(capitalTemplate)
+	fillers := []entity.Filler{
+		entity.AtomFiller(entity.MustAtom(parisDescription).Digest()),
+		entity.AtomFiller(entity.MustAtom(franceDescription).Digest()),
+	}
+	alice, err := author(seedAlice)
+	if err != nil {
+		return c, err
+	}
+	setup, err := alice.Public(tsSetup, nil,
+		block.MustCreateAtom(parisDescription),
+		block.MustCreateAtom(franceDescription),
+		block.MustCreateBond(capitalTemplate),
+		block.MustCreateMolecule(capital, fillers))
+	if err != nil {
+		return c, err
+	}
+	bad, err := alice.Public(tsRejected, nil,
+		block.MustCreateMolecule(entity.MetaBondTruthAssertion, []entity.Filler{
+			entity.MoleculeFiller(entity.MustMolecule(capital, fillers).Digest()),
+		}))
+	if err != nil {
+		return c, err
+	}
+	c.setup, c.bad = []*block.Block{setup}, bad
 	return c, nil
 }
 

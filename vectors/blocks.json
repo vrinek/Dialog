@@ -1,12 +1,13 @@
 {
   "vectors": "dialog-conformance/1",
   "area": "blocks",
-  "description": "A complete, deterministic chain scenario — genesis, an appended block, a foreign-reference block by a second author, and a rotation with its successor genesis — plus a fork, the blocks a conforming implementation MUST reject on their bytes, and the blocks it MUST reject only once it holds the chains around them. Ed25519 signing is deterministic, so every signature here is reproducible from the seeds in inputs.",
+  "description": "A complete, deterministic chain scenario — genesis, an appended block, a foreign-reference block by a second author, a meta-molecule published with the meta-bond it uses, and a rotation with its successor genesis — plus a fork, the blocks a conforming implementation MUST reject on their bytes, and the blocks it MUST reject only once it holds the chains around them. Ed25519 signing is deterministic, so every signature here is reproducible from the seeds in inputs.",
   "spec": [
     "spec/02-block-format.md",
     "spec/03-encoding.md",
     "spec/04-cryptography.md",
-    "spec/05-processing-model.md"
+    "spec/05-processing-model.md",
+    "spec/06-meta-bonds.md"
   ],
   "inputs": {
     "note": "Every key comes from a seed of 32 equal bytes. These are test keys with published private material and MUST NOT be used for anything but conformance testing. public_key_text is the canonical text form of public_key — multibase base32 over 0xed 0x01 || key (spec/03-encoding.md, \"Text representation of author keys\") — and an implementation MUST reproduce it from the key bytes.",
@@ -51,7 +52,7 @@
   "sections": [
     {
       "name": "chain",
-      "description": "The scenario, in the order the blocks are published. A consumer that stores them in order and validates each one MUST accept all five; the digests link them, so any encoding difference shows up as a broken prev.",
+      "description": "The scenario, in the order the blocks are published. A consumer that stores them in order and validates each one MUST accept all six; the digests link them, so any encoding difference shows up as a broken prev.",
       "cases": [
         {
           "name": "alice_genesis",
@@ -632,6 +633,147 @@
           "cid_text": "bafyreid5q2hm2vh3c2ozdcghxaf3n5xmi24ag4oqpegblpg6d3pm7jtagu"
         },
         {
+          "name": "bob_meta_molecule",
+          "description": "The next block of Bob's chain: a meta-molecule asserting the molecule bob_foreign_reference published, together with the create_bond that publishes the standard meta-bond \"_A_ is true\" it is built from. A meta-bond is an entity like any other and is present in no chain until an author creates it, so this is the shape a publishable truth assertion has; drop the create_bond and the block is the invalid_in_chain case unreachable_meta_bond. refs is empty: the asserted molecule was created by an ancestor of this block's own chain.",
+          "author": "bob",
+          "type": "public",
+          "prev": "7d868ecd54fb169d9188c7b80bb6f6ec46b80371d0790c15bcde1edecfa66035",
+          "ts": 1740067350,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067350"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_bond"
+                          }
+                        },
+                        {
+                          "key": "template",
+                          "value": {
+                            "type": "text",
+                            "text": "_A_ is true"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_molecule"
+                          }
+                        },
+                        {
+                          "key": "bond",
+                          "value": {
+                            "type": "bytes",
+                            "bytes": "d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be3"
+                          }
+                        },
+                        {
+                          "key": "fillers",
+                          "value": {
+                            "type": "array",
+                            "items": [
+                              {
+                                "type": "map",
+                                "entries": [
+                                  {
+                                    "key": "type",
+                                    "value": {
+                                      "type": "uint",
+                                      "number": "2"
+                                    }
+                                  },
+                                  {
+                                    "key": "value",
+                                    "value": {
+                                      "type": "bytes",
+                                      "bytes": "459d6723f98ae753a17a45c64a3d13566deca5e3cbe48652f6a82b5515416a1d"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "82e1dbda8ed814df9105000af52131ee6832e3b2adb694dda28abc4918a119a70b6bdab0a88324567d80f6c33d070c27fae8dae1bbc22eed894153d0e3aadc0e"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "7d868ecd54fb169d9188c7b80bb6f6ec46b80371d0790c15bcde1edecfa66035"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array"
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b75216636f707382a2626f706b6372656174655f626f6e646874656d706c6174656b5f415f2069732074727565a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be36766696c6c65727381a26474797065026576616c75655820459d6723f98ae753a17a45c64a3d13566deca5e3cbe48652f6a82b5515416a1d6370756258208139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394647072657658207d868ecd54fb169d9188c7b80bb6f6ec46b80371d0790c15bcde1edecfa660356472656673806474797065667075626c6963",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b75216636f707382a2626f706b6372656174655f626f6e646874656d706c6174656b5f415f2069732074727565a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be36766696c6c65727381a26474797065026576616c75655820459d6723f98ae753a17a45c64a3d13566deca5e3cbe48652f6a82b5515416a1d6370756258208139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394647072657658207d868ecd54fb169d9188c7b80bb6f6ec46b80371d0790c15bcde1edecfa660356472656673806474797065667075626c6963",
+          "signature": "82e1dbda8ed814df9105000af52131ee6832e3b2adb694dda28abc4918a119a70b6bdab0a88324567d80f6c33d070c27fae8dae1bbc22eed894153d0e3aadc0e",
+          "block": "a86176016274731a67b75216636f707382a2626f706b6372656174655f626f6e646874656d706c6174656b5f415f2069732074727565a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be36766696c6c65727381a26474797065026576616c75655820459d6723f98ae753a17a45c64a3d13566deca5e3cbe48652f6a82b5515416a1d6370756258208139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b39463736967584082e1dbda8ed814df9105000af52131ee6832e3b2adb694dda28abc4918a119a70b6bdab0a88324567d80f6c33d070c27fae8dae1bbc22eed894153d0e3aadc0e647072657658207d868ecd54fb169d9188c7b80bb6f6ec46b80371d0790c15bcde1edecfa660356472656673806474797065667075626c6963",
+          "digest": "8ff0c5042bbca3248edd74308e012743f9387d915623bfa2bfad7b4fc12fe31f",
+          "cid": "017112208ff0c5042bbca3248edd74308e012743f9387d915623bfa2bfad7b4fc12fe31f",
+          "cid_text": "bafyreiep6dcqik54umsi5xlugchacj2d7e4h3ekweo72fp5npnh4cl7dd4"
+        },
+        {
           "name": "alice_rotation",
           "description": "The rotation block that ends Alice's chain. Exactly one rotate_key operation, prev not null, and new_pub naming a different key.",
           "author": "alice",
@@ -1142,6 +1284,15 @@
             "a86176016274731a67b752ac636f707381a2626f706b6372656174655f626f6e646874656d706c61746578195f415f20697320746865206361706974616c206f66205f425f6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c637369675840cabccd6bcac72b96d0c2e91c10ff1884496b0337afba3f42fedc3b219ebd68924c05cb3d390209f1fc95287d7afe00f0d7162af3c067679f3bbdb877fa363b0d6470726576f66472656673806474797065667075626c6963"
           ],
           "bytes": "a86176016274731a67b75324636f707383a2626f706b6372656174655f61746f6d6b6465736372697074696f6e781c50617269732c20746865206361706974616c206f66204672616e6365a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e6365a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b39463736967584016e3baac063756019e0359c1b91801813832675285cdf32c32584add3f10421476af968530985af135325250d708e201d0b725c6e45a3eee21a9d819262a0a066470726576f66472656673806474797065667075626c6963"
+        },
+        {
+          "name": "unreachable_meta_bond",
+          "rule": "spec/02-block-format.md, Validation rule 4 (operation validity)",
+          "reason": "The create_molecule names the standard meta-bond \"_A_ is true\", which nothing in this chain ever created: the block publishes no create_bond for it, its ancestor published the molecule being asserted and not the meta-bond, and refs is empty. The standard meta-bonds are not implicitly present in any chain and no digest is exempt from rule 4 (spec/06-meta-bonds.md, \"Meta-molecules are regular molecules\"), so an implementation that recognizes the five meta-bond digests and lets them resolve accepts this block. Its valid counterpart is the chain block bob_meta_molecule, which is this block plus the create_bond.",
+          "setup": [
+            "a86176016274731a67b752ac636f707384a2626f706b6372656174655f61746f6d6b6465736372697074696f6e781c50617269732c20746865206361706974616c206f66204672616e6365a2626f706b6372656174655f61746f6d6b6465736372697074696f6e664672616e6365a2626f706b6372656174655f626f6e646874656d706c61746578195f415f20697320746865206361706974616c206f66205f425fa3626f706f6372656174655f6d6f6c6563756c6564626f6e645820f295b89289597b4486784ad03d0be8bdab09a0d20070a893afa4f4d3078113406766696c6c65727382a26474797065006576616c756558206545050a23d42dbbd9af636a25fb6a373be6ae75f9d928539c594360965411fda26474797065006576616c75655820e57761b439ee0cbb7ef79422b0cce927d7d0147e00a5281cc173b0475512b8426370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758406e63407354d9106f4f3b2bb742fa915f456dcd5dce6b6c0329d1d565805f4e5e261fbd61566d04e3e0523dbbdcd9f26f9caf1849b63c570a321f1e831581af086470726576f66472656673806474797065667075626c6963"
+          ],
+          "bytes": "a86176016274731a67b75324636f707381a3626f706f6372656174655f6d6f6c6563756c6564626f6e645820d6dc10d7c503ab4ac9caa453eb3a32984abc885cfa850740e97c9f0881ba5be36766696c6c65727381a26474797065026576616c75655820f9f124b06af6aa7d5f2381462afdeaca628fe3ac8b994253e5c08a3f5d128afb6370756258208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c6373696758406819212949fdc23a351502bce7730be8d51cfa7a14a19ab2591397ce0860f0cb991d4c251db9729ce6002d92bda9fdb3d9da8fe8dee1d16ea661e0ddf418db08647072657658204bcc39125de041e1ae3566f2faecdf5359a79ee6cfa3150090dda6f8e3419e736472656673806474797065667075626c6963"
         },
         {
           "name": "forward_reference_in_same_block",
