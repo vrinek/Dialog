@@ -14,7 +14,11 @@
  *   an invalidity;
  * - the **multi-source rule**: two sources each serving one branch of a fork,
  *   neither admitting to it, and the fork appearing at the client that asks
- *   both. Fork detection is a reachability property, not a query.
+ *   both. Fork detection is a reachability property, not a query;
+ * - **pursuing an advertised tip**, which is what that comparison consists of on
+ *   the wire: an empty range and a `Dialog-Tip` the client cannot reach, walked
+ *   backward by digest to the divergence — and, when the walk fails, recorded as
+ *   fetches that did not succeed and as nothing else.
  */
 
 import assert from "node:assert/strict";
@@ -27,6 +31,8 @@ import {
   DEFAULT_BASE_PATH,
   DialogClient,
   DialogServer,
+  PROBLEM_NOT_HELD,
+  PROBLEM_TYPE,
   resolveReferences,
   sourceTip,
   syncChain,
@@ -85,7 +91,10 @@ test("a cold sync of the three committed chains reaches fourteen validated block
   );
   assert.ok(results.every((result) => result.caughtUp));
   assert.ok(results.every((result) => result.rejected.length === 0));
-  assert.ok(results.every((result) => !result.rescanned));
+  assert.ok(
+    results.every((result) => result.pursuit === undefined),
+    "each source's tip is a block the store reached forward from the genesis position",
+  );
 
   // The downstream store's own state, which is the point of the exercise.
   assert.equal(downstream.size, 14);
@@ -259,11 +268,15 @@ test("two sources with different branches produce a fork at the client", async (
   assert.equal(result.tipsAgree, false, "the two sources name different tips");
   assert.equal(result.failures.length, 0);
   assert.equal(result.perSource.length, 2);
+  const pursuit = result.perSource[1]!.pursuit!;
   assert.equal(
-    result.perSource[1]!.rescanned,
-    true,
-    "the second source named a tip the store could not reach forward from its own",
+    pursuit.outcome,
+    "held",
+    "the second source named a tip the store did not hold, and the walk back reached one it did",
   );
+  assert.deepEqual(pursuit.tip, right.digest);
+  assert.deepEqual(pursuit.fetched, [right.digest]);
+  assert.deepEqual(pursuit.reached, genesis.digest);
 
   // Rule 9's condition, at the client: two blocks of one chain claiming the
   // same predecessor, from one pub key.
@@ -280,6 +293,129 @@ test("two sources with different branches produce a fork at the client", async (
   // And now the client's own store answers the sibling query honestly, which
   // neither source did.
   assert.equal(downstream.siblings(ALICE_PUB, genesis.digest).length, 2);
+});
+
+/**
+ * One chain forked at its second position, each branch three blocks long and on
+ * its own source, with the client having synced the first branch already.
+ *
+ * The second source then answers exactly what the profile says is the normal
+ * second-source answer about a forked chain: an empty range after the position
+ * the client holds, and a `Dialog-Tip` naming a block the client does not hold.
+ */
+function divergentSources(downstream: BlockStore) {
+  const [genesis] = chainOf(ALICE, 1);
+  const left = chainOf(ALICE, 3, { label: "left", after: genesis! });
+  const right = chainOf(ALICE, 3, { label: "right", after: genesis! });
+  return {
+    genesis: genesis!,
+    left,
+    right,
+    first: sourceOver(storeOf([genesis!, ...left]), "first.example", { downstream }),
+    second: sourceOver(storeOf([genesis!, ...right]), "second.example", { downstream }),
+  };
+}
+
+test("an empty range whose tip the client does not hold is pursued back to the fork", async () => {
+  const downstream = new BlockStore();
+  const { genesis, left, right, first, second } = divergentSources(downstream);
+
+  const synced = await syncChain(first, downstream, ALICE_PUB);
+  assert.equal(synced.caughtUp, true);
+  assert.equal(downstream.size, 4);
+  assert.equal(downstream.forks.length, 0, "one source, one branch, nothing to detect");
+
+  // The second source: one range request, no blocks, and a tip the store does
+  // not hold. A client that read that as "no new blocks" would walk away from
+  // the fork it is one request from detecting.
+  const result = await syncChain(second, downstream, ALICE_PUB);
+  assert.equal(result.requests, 1);
+  assert.deepEqual(result.declaredTip, right.at(-1)!.digest);
+
+  // Instead it fetches the named block by digest and walks prev backward, one
+  // block at a time, until it reaches a block it holds.
+  const pursuit = result.pursuit!;
+  assert.deepEqual(pursuit.tip, right.at(-1)!.digest);
+  assert.deepEqual(
+    pursuit.fetched.map(bytesToHex),
+    [...right].reverse().map((item) => bytesToHex(item.digest)),
+    "tip-ward first, one predecessor at a time",
+  );
+  assert.equal(pursuit.outcome, "held");
+  assert.deepEqual(pursuit.reached, genesis.digest);
+  assert.equal(result.received, 3);
+  assert.equal(result.rejected.length, 0);
+
+  // Reaching a block the client holds is the point of the exercise: two blocks
+  // with one prev from one author, which is the condition rule 9 names. The
+  // store surfaces it on its own contents, not on anything the transport said.
+  assert.equal(downstream.forks.length, 1);
+  const fork = downstream.forks[0]!;
+  assert.deepEqual(fork.prev, genesis.digest);
+  assert.deepEqual(
+    new Set(fork.blocks.map(bytesToHex)),
+    new Set([left[0]!, right[0]!].map((item) => bytesToHex(item.digest))),
+  );
+
+  // Both branches are in the store, whole, and neither source admitted to
+  // anything.
+  for (const item of [...left, ...right]) {
+    assert.equal(downstream.get(item.digest)?.valid, true, bytesToHex(item.digest));
+  }
+  assert.equal(downstream.size, 7);
+  assert.equal(downstream.siblings(ALICE_PUB, genesis.digest).length, 2);
+});
+
+test("a pursuit that fails is a failed fetch and nothing else", async () => {
+  const downstream = new BlockStore();
+  const { genesis, right, first } = divergentSources(downstream);
+  await syncChain(first, downstream, ALICE_PUB);
+
+  // A source that advertises a tip it will not serve is indistinguishable from
+  // one that lost it, which is the freshness gap and is not fixable here.
+  const withholding = storeOf([genesis, ...right]);
+  const server = new DialogServer({ store: withholding });
+  const liar = new DialogClient({
+    baseUrl: BASE,
+    label: "withholding.example",
+    store: downstream,
+    fetch: async (input, init) => {
+      const url = new URL(input as string);
+      if (url.pathname.startsWith(`${DEFAULT_BASE_PATH}/blocks/`)) {
+        return new Response(JSON.stringify({ type: PROBLEM_NOT_HELD, status: 404 }), {
+          status: 404,
+          headers: { "Content-Type": PROBLEM_TYPE },
+        });
+      }
+      return server.handle(new Request(input as string, init));
+    },
+  });
+
+  const before = downstream.size;
+  const refused = await syncChain(liar, downstream, ALICE_PUB);
+  assert.deepEqual(refused.declaredTip, right.at(-1)!.digest);
+  assert.equal(refused.pursuit?.outcome, "not-held");
+  assert.deepEqual(refused.pursuit?.fetched, []);
+  assert.equal(refused.caughtUp, false, "the store still does not hold the tip it was shown");
+  // No verdict about any block follows from a failed pursuit.
+  assert.equal(refused.rejected.length, 0);
+  assert.equal(downstream.forks.length, 0);
+  assert.equal(downstream.size, before);
+
+  // The client's own bound is the other way a walk ends short, and it is the
+  // same kind of nothing: the walk is over a chain of the source's choosing, of
+  // a length the source controls.
+  const second = sourceOver(withholding, "second.example", { downstream });
+  const bounded = await syncChain(second, downstream, ALICE_PUB, { maxPursuit: 2 });
+  assert.equal(bounded.pursuit?.outcome, "bounded");
+  assert.equal(bounded.pursuit?.fetched.length, 2);
+  assert.equal(bounded.rejected.length, 0);
+  assert.equal(downstream.forks.length, 0, "the walk never reached the divergent position");
+  // The two blocks it did fetch are held, undecided: their ancestry has not
+  // arrived, which is not an invalidity either.
+  for (const item of right.slice(1)) {
+    assert.equal(downstream.get(item.digest)?.valid, false, bytesToHex(item.digest));
+  }
 });
 
 test("two sources that agree need nothing more", async () => {

@@ -42,7 +42,9 @@
  *   arrived.
  * - **{@link syncChain} and {@link syncChainFromSources}.** The multi-source
  *   rule: the same chain from two sources into one store, which is what makes a
- *   fork detectable at all.
+ *   fork detectable at all — with {@link pursueTip}, the backward walk after a
+ *   tip a source advertises and the client cannot reach, which is what the
+ *   comparison consists of at the moment it matters.
  */
 
 import {
@@ -1674,12 +1676,137 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 // Sync
 // ---------------------------------------------------------------------------
 
+/** The most blocks {@link pursueTip}'s backward walk fetches before it stops.
+ * The bound is the client's own: the walk is over a chain of the source's
+ * choosing, of a length the source controls. */
+export const DEFAULT_PURSUIT_LIMIT = 256;
+
+/** How a backward walk after an advertised tip ended. */
+export type PursuitOutcome =
+  /** It reached a block the client already holds, which is the point of the
+   * exercise: two blocks with one `prev` from one author are now in the store,
+   * which is the condition validation rule 9 names. */
+  | "held"
+  /** It reached a genesis block. The source's chain shares no ancestor with the
+   * client's, and the two genesis blocks are themselves a sibling set at the
+   * genesis position. */
+  | "genesis"
+  /** The source would not serve a block it named. */
+  | "not-held"
+  /** Bytes that hash to something other than the digest asked for. */
+  | "digest-mismatch"
+  /** The client's own bound on the walk's length. */
+  | "bounded";
+
+/** What a pursuit of an advertised tip found. */
+export interface TipPursuit {
+  /** The tip that was pursued, as the source advertised it. */
+  readonly tip: Uint8Array;
+  /** The digests fetched, tip-ward first, in the order the walk asked for
+   * them. */
+  readonly fetched: Uint8Array[];
+  /**
+   * How the walk ended.
+   *
+   * The last three are each a **failed fetch and nothing else**: they are not
+   * evidence of a fork, not evidence of an invalidity, and not evidence that
+   * the source lied, because a source advertising a tip it will not serve is
+   * indistinguishable from one that lost it. No verdict about any block follows
+   * from a failed pursuit.
+   */
+  readonly outcome: PursuitOutcome;
+  /** The block the client already held that the walk reached, when it reached
+   * one. */
+  readonly reached?: Uint8Array;
+  /** What the store made of the blocks the walk fetched. */
+  readonly ingested: IngestReport;
+}
+
+/** Options for {@link pursueTip}. */
+export interface PursuitOptions extends RequestOptions {
+  /** The client's own bound on the walk's length. Defaults to
+   * {@link DEFAULT_PURSUIT_LIMIT}. */
+  readonly maxBlocks?: number;
+}
+
+/**
+ * Pursue a tip a source advertises and the client does not hold: fetch the
+ * block the tip names **by digest**, read its `prev`, fetch that, and walk
+ * backward one block at a time.
+ *
+ * A client that has synced a source's range and finds that source's tip naming
+ * a block it does not hold has learned something specific, and it is not
+ * "nothing new here": the source holds a tip, so its store does not simply stop;
+ * the client is not at that tip, so it is not caught up; and the range after the
+ * position it asked from was empty, so the source's walk does not pass through
+ * that position at all. What is left is that the source serves a chain the
+ * client's position is not on — a branch, or a chain the client holds a
+ * different version of.
+ *
+ * **Reaching a block the client holds is the point of the exercise.** At that
+ * position the client then holds two blocks with the same `prev` from the same
+ * author — the one it already had, and the one the backward walk arrived from —
+ * which is exactly the condition validation rule 9 names, and the store surfaces
+ * the fork as it surfaces every other one: on its own contents, not on anything
+ * the transport said.
+ *
+ * **The walk is bounded**, by a limit this caller chooses, because it is a chain
+ * of the source's choosing of a length the source controls. Every block is
+ * verified as every other received block is — re-hashed, and bytes that hash to
+ * anything but the digest asked for treated as a failed fetch and not as a
+ * block.
+ */
+export async function pursueTip(
+  client: DialogClient,
+  store: BlockStore,
+  tip: Uint8Array,
+  options: PursuitOptions = {},
+): Promise<TipPursuit> {
+  const bound = options.maxBlocks ?? DEFAULT_PURSUIT_LIMIT;
+  const request: RequestOptions = options.signal === undefined ? {} : { signal: options.signal };
+  const fetched: Uint8Array[] = [];
+  const accepted: Uint8Array[] = [];
+  const held: Uint8Array[] = [];
+  const rejected: { digest: Uint8Array; reason: string }[] = [];
+  const done = (outcome: PursuitOutcome, reached?: Uint8Array): TipPursuit => ({
+    tip,
+    fetched,
+    outcome,
+    ...(reached === undefined ? {} : { reached }),
+    ingested: { accepted, held, rejected },
+  });
+
+  let wanted = tip;
+  for (;;) {
+    if (store.has(wanted)) return done("held", wanted);
+    if (fetched.length >= bound) return done("bounded");
+
+    const answer = await client.block(wanted, request);
+    // A 404, or bytes that hash wrong, is a fetch that did not succeed. It is
+    // not a finding about any block.
+    if (answer.item === undefined) return done(answer.failed ?? "not-held");
+
+    fetched.push(answer.item.digest);
+    const report = answer.ingested ?? ingestBlocks(store, [answer.item]);
+    accepted.push(...report.accepted);
+    held.push(...report.held);
+    rejected.push(...report.rejected);
+
+    const prev = answer.item.block.prev;
+    if (prev === null) return done("genesis");
+    wanted = prev;
+  }
+}
+
 /** What one chain sync from one source did. */
 export interface ChainSyncResult {
   readonly source: string;
   readonly pub: Uint8Array;
-  /** How many range requests it took. */
+  /** How many range requests it took. The digest fetches of a pursuit are
+   * counted by {@link TipPursuit.fetched} rather than here. */
   readonly requests: number;
+  /** Blocks received, from the ranges and from any pursuit of an advertised
+   * tip. */
   readonly received: number;
   readonly accepted: number;
   /** Blocks the store could not decide about. Undecided is never invalid. */
@@ -1692,10 +1819,11 @@ export interface ChainSyncResult {
    * there is nothing more it will give.
    */
   readonly caughtUp: boolean;
-  /** Whether the sync had to go back to the genesis position because the source
-   * named a tip the store could not reach forward from its own — the shape a
-   * fork, or a source ahead on another branch, takes at the client. */
-  readonly rescanned: boolean;
+  /** The pursuit of a tip this source advertised and the store did not hold,
+   * where there was one — the shape a fork, or a source ahead on another
+   * branch, takes at the client. Absent when the source named no tip the store
+   * was missing. */
+  readonly pursuit?: TipPursuit;
   /** The tip this source claimed, as a digest. */
   readonly declaredTip?: Uint8Array;
   /** Where the store's own copy of the chain now ends, walked constructively
@@ -1710,6 +1838,9 @@ export interface SyncOptions {
   /** A bound on the number of range requests, so that a source feeding an
    * endless chain cannot hold the client forever. Defaults to 1024. */
   readonly maxRequests?: number;
+  /** The bound on the backward walk after an advertised tip the store does not
+   * hold. Defaults to {@link DEFAULT_PURSUIT_LIMIT}. */
+  readonly maxPursuit?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -1726,21 +1857,27 @@ export interface SyncOptions {
  *
  * A range that comes back empty means one of two things, and the emptiness does
  * not distinguish them: the client is already at the tip, or the source's store
- * stops there. The `Dialog-Tip` comparison settles the first. The case the
- * profile leaves unwritten is the third one that falls out of the same two
- * answers — an **empty range whose `Dialog-Tip` names a block the client does
- * not hold**, which is what a source on the other branch of a fork looks like
- * from a client that synced the first branch, and what a source ahead on a
- * chain the client holds a different version of looks like too.
+ * stops there. The `Dialog-Tip` comparison settles the first. A third case hides
+ * behind the same emptiness and is the important one — an **empty range whose
+ * `Dialog-Tip` names a block the client does not hold**, which is what a source
+ * on the other branch of a fork looks like from a client that synced the first
+ * branch, and what a source ahead on a chain the client holds a different
+ * version of looks like too.
  *
- * This implementation then re-asks from the **genesis position**, once, which
- * is the move the profile's own worked example makes ("the client tells them
- * apart by fetching the range from the second source too"): the second source's
- * range is either a prefix of the first's, an extension of it, or a walk that
- * diverges at some position — and in the third case the divergent blocks land
- * in the store, where validation rule 9 fires on them. The alternative, walking
- * the client's own chain backwards asking `siblings` at each position, costs a
- * request per block instead of one. See todos/093.
+ * A client MUST NOT treat that as "no new blocks". This one **pursues the
+ * advertised tip** — {@link pursueTip}: it fetches the named block by digest and
+ * walks `prev` backward until it reaches a block it holds, bounded by
+ * {@link SyncOptions.maxPursuit}. Reaching one puts two children of one parent
+ * in the store, where validation rule 9 fires on them; a walk that fails ends in
+ * fetches that did not succeed and in nothing else.
+ *
+ * Two other moves reach the same divergence and a client MAY use either:
+ * re-issuing the range from the genesis position costs one request and
+ * re-downloads the shared prefix, and a binary search with `limit=1` locates the
+ * divergence in logarithmically many requests but delivers nothing. The backward
+ * walk is the obligation because its cost is the distance between the two
+ * branches rather than the length of the chain, and because it is the only one
+ * that asks for nothing the client already holds.
  */
 export async function syncChain(
   client: DialogClient,
@@ -1756,7 +1893,7 @@ export async function syncChain(
   let held = 0;
   const rejected: { digest: Uint8Array; reason: string }[] = [];
   let declaredTip: Uint8Array | undefined;
-  let rescanned = false;
+  let exhausted = false;
 
   while (requests < maxRequests) {
     const page = await client.range(pub, position, {
@@ -1775,18 +1912,24 @@ export async function syncChain(
       position = page.items.at(-1)!.digest;
       continue;
     }
-    // The source named a tip this store cannot reach from where it was asking.
-    if (
-      !rescanned &&
-      position !== null &&
-      declaredTip !== undefined &&
-      !store.has(declaredTip)
-    ) {
-      rescanned = true;
-      position = null;
-      continue;
-    }
+    // The source has given everything it will give from this position.
+    exhausted = true;
     break;
+  }
+
+  // The source advertises a tip this store does not hold, so it serves a chain
+  // this client's position is not on. Pursue it rather than reading the empty
+  // range as "no new blocks".
+  let pursuit: TipPursuit | undefined;
+  if (exhausted && declaredTip !== undefined && !store.has(declaredTip)) {
+    pursuit = await pursueTip(client, store, declaredTip, {
+      ...(options.maxPursuit === undefined ? {} : { maxBlocks: options.maxPursuit }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    received += pursuit.fetched.length;
+    accepted += pursuit.ingested.accepted.length;
+    held += pursuit.ingested.held.length;
+    rejected.push(...pursuit.ingested.rejected);
   }
 
   const localTip = sourceTip(store, pub)?.digest;
@@ -1802,7 +1945,7 @@ export async function syncChain(
     // vacuously; otherwise the question is whether the store now holds the
     // block the source named.
     caughtUp: declaredTip === undefined || store.has(declaredTip),
-    rescanned,
+    ...(pursuit === undefined ? {} : { pursuit }),
     ...(declaredTip === undefined ? {} : { declaredTip }),
     ...(localTip === undefined ? {} : { localTip }),
   };
@@ -1835,6 +1978,12 @@ export interface MultiSourceSyncResult {
  * chain satisfies it vacuously and forever. Two sources with different branches
  * produce a fork at the client even when neither admits to one, which is why
  * this function syncs them all into the same store and reads the forks off it.
+ *
+ * Comparing is not a state of mind, and the shape it takes on the wire is the
+ * pursuit {@link syncChain} performs: an empty range and a tip the client cannot
+ * reach is the *normal* answer a second source gives about a forked chain, and a
+ * client that walks away from it detects no fork at all against two sources that
+ * each serve one branch honestly.
  *
  * The `siblings` query at each divergent position is issued too, since that is
  * where an honest source names the whole set.
