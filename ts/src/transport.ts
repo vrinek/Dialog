@@ -1895,6 +1895,21 @@ export interface ChainSyncResult {
 
 /** Options for {@link syncChain}. */
 export interface SyncOptions {
+  /**
+   * The position the first range request asks from. Defaults to where the
+   * store's own copy of the chain ends — the constructive tip of what it holds
+   * — which is the position a client resuming *this* source asks from.
+   *
+   * A client meeting a source for the first time holds no position of that
+   * source's chain, whatever else it holds of the author's, and passes `null`:
+   * the genesis position. The difference is not cosmetic where the sources
+   * disagree. The store's own tip is the end of the branch this client chose,
+   * and asking a second source from it presumes that source's chain passes
+   * through that branch, which at a fork it does not; the source then answers
+   * an empty range and a tip the client cannot reach, which is the case
+   * {@link pursueTip} exists for.
+   */
+  readonly from?: Uint8Array | null;
   /** Blocks per range request. */
   readonly pageSize?: number;
   /** A bound on the number of range requests, so that a source feeding an
@@ -1950,7 +1965,7 @@ export async function syncChain(
   options: SyncOptions = {},
 ): Promise<ChainSyncResult> {
   const maxRequests = options.maxRequests ?? 1024;
-  let position = sourceTip(store, pub)?.digest ?? null;
+  let position = options.from === undefined ? (sourceTip(store, pub)?.digest ?? null) : options.from;
   let requests = 0;
   let received = 0;
   let accepted = 0;
