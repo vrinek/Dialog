@@ -11,7 +11,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BlockStore, createAtom } from "../src/block.ts";
+import {
+  BlockStore,
+  createAtom,
+  createBond,
+  createMolecule,
+  operationDigest,
+} from "../src/block.ts";
 import { compareBytes, decodeBlockSequence, encodeBlockSequence } from "../src/blockseq.ts";
 import {
   BLOCK_SEQUENCE_TYPE,
@@ -28,8 +34,9 @@ import {
   mediaType,
 } from "../src/transport.ts";
 import { authorKeyToText as authorText } from "../src/cid.ts";
+import { atomFiller } from "../src/entity.ts";
 import { bytesToHex } from "../src/hex.ts";
-import { ALICE, chainOf, demoChain, demoChains, publicBlock } from "./chains.ts";
+import { ALICE, BOB, chainOf, demoChain, demoChains, publicBlock } from "./chains.ts";
 
 const ORIGIN = "http://mirror.example";
 
@@ -238,6 +245,77 @@ test("a store with a hole reports no tip and serves no range across the hole", a
   const byDigest = await get(server, `/blocks/${digestToCidText(held.digest)}`);
   assert.equal(byDigest.status, 200);
   assert.deepEqual((await sequenceOf(byDigest))[0]!.digest, held.digest);
+});
+
+test("a source serves what it holds, whatever verdict it has reached about it", async () => {
+  // errata's blocks name entities atlas defines, so a store holding errata
+  // alone can validate none of them: four blocks, stored but unvalidated. All
+  // four are served anyway — server rule 7.
+  const errata = demoChain("errata");
+  const store = new BlockStore();
+  for (const item of errata.items) store.add(item.bytes);
+  assert.equal(store.size, 4);
+  assert.equal(store.validBlocks().length, 0, "the source has not been able to judge any of them");
+  const server = serverOver(store);
+
+  // The tip and range walk is a claim about connectivity, not validity.
+  const tip = await get(server, `/chains/${errata.keyText}/tip`);
+  assert.equal(tip.status, 200);
+  assert.equal(tip.headers.get(TIP_HEADER), digestToCidText(errata.items.at(-1)!.digest));
+  const range = await sequenceOf(await get(server, `/chains/${errata.keyText}/blocks`));
+  assert.deepEqual(
+    range.map((item) => bytesToHex(item.digest)),
+    errata.items.map((item) => bytesToHex(item.digest)),
+    "the walk crosses every block the source holds",
+  );
+
+  // And by digest, one at a time.
+  const one = await get(server, `/blocks/${digestToCidText(errata.items[2]!.digest)}`);
+  assert.equal(one.status, 200);
+  assert.deepEqual((await sequenceOf(one))[0]!.bytes, errata.items[2]!.bytes);
+});
+
+test("siblings names an unvalidated block too: it is the side of a fork nobody can judge", async () => {
+  // Alice forks. One branch resolves; the other names a reference no source
+  // holds, so this store cannot decide about it. Withholding it would hide the
+  // fork behind "I have not validated it yet", which is unfalsifiable and
+  // identical on the wire to "I do not have it".
+  const [genesis] = chainOf(ALICE, 1);
+  const judged = publicBlock(ALICE, {
+    prev: genesis!.digest,
+    ts: 2,
+    ops: [createAtom("the branch this source could validate")],
+  });
+  // The definitions this one names live in a block nobody offered the store.
+  const bond = createBond("_A_ is the capital of _B_");
+  const paris = createAtom("Paris");
+  const france = createAtom("France");
+  const elsewhere = publicBlock(BOB, { ops: [bond, paris, france] });
+  const unjudged = publicBlock(ALICE, {
+    prev: genesis!.digest,
+    refs: [elsewhere.digest],
+    ts: 3,
+    ops: [
+      createMolecule(operationDigest(bond), [
+        atomFiller(operationDigest(paris)),
+        atomFiller(operationDigest(france)),
+      ]),
+    ],
+  });
+  const store = new BlockStore();
+  for (const item of [genesis!, judged, unjudged]) store.add(item.bytes);
+  assert.equal(store.get(unjudged.digest)?.valid, false, "stored but unvalidated");
+
+  const server = serverOver(store);
+  const author = authorText(genesis!.block.pub);
+  const items = await sequenceOf(
+    await get(server, `/chains/${author}/siblings?prev=${digestToCidText(genesis!.digest)}`),
+  );
+  assert.deepEqual(
+    new Set(items.map((item) => bytesToHex(item.digest))),
+    new Set([judged, unjudged].map((item) => bytesToHex(item.digest))),
+    "every block held at the position, with no winner chosen and no verdict consulted",
+  );
 });
 
 // ---------------------------------------------------------------------------

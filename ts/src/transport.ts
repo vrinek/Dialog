@@ -359,10 +359,11 @@ export interface WalkOptions {
  *   answers.
  *
  * The walk reads every block the source *holds*, whatever verdict the source
- * reached about it: a block held as stored-but-unvalidated is one the source
- * has, and withholding it would be the source deciding a validity question on
- * the client's behalf, which is exactly what the client rules forbid the client
- * from delegating (see todos/091).
+ * reached about it (server rule 7): it is a claim about **connectivity and not
+ * about validity**, so a source that has validated none of the blocks it holds
+ * still has a well-defined tip. Withholding one would be the source deciding a
+ * validity question on the client's behalf, which is exactly what the client
+ * rules forbid the client from delegating.
  */
 export function walkChain(
   source: ServeSource,
@@ -528,6 +529,16 @@ interface Route {
  * a client identify itself would make that client's requests linkable into a
  * durable identity, which is the opposite of what the profile's
  * subscription-privacy consideration asks for.
+ *
+ * **It serves what it holds, whatever verdict it has reached about it** (server
+ * rule 7). No operation here consults {@link StoredBlock.valid}: a block held
+ * as *stored but unvalidated* is answered by `block` and `blocks`, named by
+ * `siblings`, and crossed by the `tip` and `range` walk. Withholding it would
+ * cost the client a detection and save it nothing, since a client MUST validate
+ * everything it receives regardless — and it bites hardest at `siblings`, where
+ * the block withheld is one side of a fork the source has not been able to
+ * judge, and where "I have not validated it yet" is identical on the wire to "I
+ * do not have it". A server that validates nothing at all is conforming.
  */
 export class DialogServer {
   private readonly store: ServeSource;
