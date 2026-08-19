@@ -25,6 +25,7 @@ import {
   DialogServer,
   JSON_TYPE,
   MIN_FETCH_DIGESTS,
+  PROBLEM_ANNOUNCE_REFUSED,
   PROBLEM_BLANK,
   PROBLEM_NOT_HELD,
   PROBLEM_OPERATION_NOT_OFFERED,
@@ -799,6 +800,34 @@ test("an announce body under the generic CBOR-sequence type is accepted", async 
     }),
   );
   assert.equal(wrong.status, 415);
+});
+
+test("an announce refused by policy is 403 with its own problem type, and no receipt", async () => {
+  const store = new BlockStore();
+  const server = new DialogServer({
+    store,
+    announce: true,
+    refuseAnnounce: () => ({ detail: "over quota until the month turns" }),
+  });
+  const response = await server.handle(
+    new Request(url("/announce"), {
+      method: "POST",
+      headers: { "Content-Type": BLOCK_SEQUENCE_TYPE },
+      body: encodeBlockSequence(chainOf(ALICE, 2)),
+    }),
+  );
+
+  assert.equal(response.status, 403);
+  const problem = await problemOf(response);
+  assert.equal(problem["type"], PROBLEM_ANNOUNCE_REFUSED);
+  assert.equal(problem["status"], 403);
+  // Nothing was judged, so there are no dispositions to report: a server that
+  // answered with every block rejected would be reporting a verdict it never
+  // reached.
+  for (const member of ["accepted", "held", "rejected"]) {
+    assert.equal(problem[member], undefined, member);
+  }
+  assert.equal(store.size, 0);
 });
 
 test("an announce larger than the server accepts is 413, and nothing is stored", async () => {

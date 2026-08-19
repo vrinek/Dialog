@@ -120,6 +120,11 @@ export const PROBLEM_NOT_HELD = "urn:dialog:problem:not-held";
  * again will not change the answer; another server may offer it. */
 export const PROBLEM_OPERATION_NOT_OFFERED = "urn:dialog:problem:operation-not-offered";
 
+/** 403. This source takes announces and refuses **this** one, by a policy of
+ * its own. Nothing was judged and nothing was stored; the blocks are not
+ * implicated. Another source may take them, and this one may take them later. */
+export const PROBLEM_ANNOUNCE_REFUSED = "urn:dialog:problem:announce-refused";
+
 /** RFC 9457's "the status code and nothing more". */
 export const PROBLEM_BLANK = "about:blank";
 
@@ -140,9 +145,11 @@ export type Operation = "tip" | "range" | "block" | "blocks" | "siblings" | "ann
 
 /** An RFC 9457 problem document, as this profile uses one. */
 export interface ProblemDetails {
-  /** `urn:dialog:problem:not-held`, `urn:dialog:problem:operation-not-offered`
-   * or `about:blank`. A client MUST branch on the status code and MUST work
-   * against a server that sends neither Dialog type. */
+  /** One of the profile's three types — `urn:dialog:problem:not-held`,
+   * `urn:dialog:problem:operation-not-offered`,
+   * `urn:dialog:problem:announce-refused` — or `about:blank`. A client MUST
+   * branch on the status code and MUST work against a server that sends none of
+   * the three. */
   readonly type: string;
   /** For people. A client MUST NOT parse it. */
   readonly title?: string;
@@ -185,6 +192,20 @@ export class TransportError extends Error {
    * that path. Asking again will not change the answer. */
   get operationNotOffered(): boolean {
     return this.status === 404 && this.problem?.type === PROBLEM_OPERATION_NOT_OFFERED;
+  }
+
+  /**
+   * Whether the source refused this announce by a policy of its own.
+   *
+   * It carries **no receipt**: nothing was judged, so there are no dispositions
+   * to report, and a client MUST NOT read any verdict about the announced
+   * blocks from it. The blocks are not implicated — another source may take
+   * them, and this one may take them once whatever policy provoked the refusal
+   * has changed — which is what distinguishes it from the 404 a server that
+   * does not implement `announce` at all answers.
+   */
+  get announceRefused(): boolean {
+    return this.status === 403;
   }
 }
 
@@ -454,10 +475,20 @@ export function acceptsType(accept: string | null, type: string): boolean {
 // The server
 // ---------------------------------------------------------------------------
 
-/** Why a server refused an announce outright. */
+/**
+ * Why a server refused an announce outright.
+ *
+ * A refusal by policy — quota, rate, acquaintance, disk — is **403** with the
+ * problem type {@link PROBLEM_ANNOUNCE_REFUSED}, and it carries no receipt:
+ * nothing was judged, so there are no dispositions to report, and a server that
+ * answered 200 with every block `rejected` would be reporting a verdict it
+ * never reached.
+ */
 export interface AnnounceRefusal {
-  /** The status to answer with. A policy refusal has no status code of its own
-   * in the profile; 403 is this implementation's reading (see todos/092). */
+  /** The status to answer with. Defaults to 403, which is the profile's code
+   * for a refusal by policy; a server whose ground is rate or a temporary
+   * condition rather than policy MAY answer 429 or 503 instead, and only the
+   * 403 carries {@link PROBLEM_ANNOUNCE_REFUSED}. */
   readonly status?: number;
   /** For people. */
   readonly detail: string;
@@ -854,7 +885,16 @@ export class DialogServer {
 
     const refusal = this.refuseAnnounce?.(items);
     if (refusal !== undefined) {
-      return problemResponse(refusal.status ?? 403, refusal.detail);
+      // A refusal by policy is 403 and carries no receipt: nothing was judged,
+      // and a client reads it as a fact about this source and about nothing
+      // else. It is distinct from the 404 a server that does not implement
+      // announce at all answers, which asking again will not change.
+      const status = refusal.status ?? 403;
+      return problemResponse(
+        status,
+        refusal.detail,
+        status === 403 ? PROBLEM_ANNOUNCE_REFUSED : PROBLEM_BLANK,
+      );
     }
 
     const store = this.store as ServeSource & { add(input: Uint8Array | Block): AcceptResult };
@@ -980,6 +1020,8 @@ function problemTitle(status: number): string {
   switch (status) {
     case 400:
       return "Malformed request";
+    case 403:
+      return "Announce refused";
     case 404:
       return "Not held";
     case 405:

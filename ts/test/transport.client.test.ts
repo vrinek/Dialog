@@ -33,6 +33,7 @@ import {
   DialogClient,
   DialogServer,
   JSON_TYPE,
+  PROBLEM_ANNOUNCE_REFUSED,
   PROBLEM_NOT_HELD,
   PROBLEM_TYPE,
   TransportError,
@@ -440,17 +441,34 @@ test("announce: a source may refuse one outright, for reasons that are its own p
     new DialogServer({
       store,
       announce: true,
-      // Quota, rate, acquaintance, disk: the profile names the reasons and no
-      // status code, so this server answers 403 — see todos/092.
+      // Quota, rate, acquaintance, disk: a refusal by policy is 403 with the
+      // profile's own problem type.
       refuseAnnounce: () => ({ detail: "this server takes announces from acquaintances only" }),
     }),
   );
-  await assert.rejects(client.announce(chainOf(ALICE, 1)), (error: unknown) => {
+  const announced = chainOf(ALICE, 1);
+  await assert.rejects(client.announce(announced), (error: unknown) => {
     assert.ok(error instanceof TransportError);
     assert.equal(error.status, 403);
+    assert.equal(error.announceRefused, true);
+    assert.equal(error.problem?.type, PROBLEM_ANNOUNCE_REFUSED);
+    // Distinct from the 404 of a server that does not offer announce at all,
+    // which is a fact about the server rather than about the request.
+    assert.equal(error.operationNotOffered, false);
+    assert.equal(error.notHeld, false);
     return true;
   });
+
+  // It carries no receipt: nothing was judged, so there are no dispositions to
+  // report and the client reads no verdict about the blocks it announced.
   assert.equal(store.size, 0);
+  assert.equal(store.has(announced[0]!.digest), false);
+
+  // And the blocks are not implicated: another source takes them.
+  const elsewhere = new BlockStore();
+  const other = clientFor(new DialogServer({ store: elsewhere, announce: true }));
+  const receipt = (await other.announce(announced)).receipt!;
+  assert.deepEqual(receipt.accepted, [digestToCidText(announced[0]!.digest)]);
 });
 
 test("announce: acceptance is not endorsement, and the same bytes come back out", async () => {
