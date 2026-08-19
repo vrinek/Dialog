@@ -1952,17 +1952,26 @@ export class BlockStore implements BlockSource {
     return rotation === undefined ? undefined : this.blocks.get(bytesToHex(rotation));
   }
 
-  /** The tip of an author's chain: the block of that `pub` no other block of
-   * the same chain names as its predecessor. */
-  tip(pub: Uint8Array): StoredBlock | undefined {
-    let candidate: StoredBlock | undefined;
-    for (const stored of this.blocks.values()) {
-      if (!stored.valid) continue;
-      if (!bytesEqual(stored.block.pub, pub)) continue;
-      if (this.siblings(pub, stored.digest).length === 0) candidate = stored;
-    }
-    return candidate;
-  }
+  /*
+   * There is deliberately no `tip` method here, and one should not be added.
+   *
+   * A tip is defined constructively (spec/07-transport.md, "tip"): the end of a
+   * forward walk from the genesis position through the blocks the store holds,
+   * crossing them whatever verdict it has reached about any of them, and
+   * following the lowest digest where it holds more than one block at a
+   * position. `walkChain` and `sourceTip` in `transport.ts` are that walk, and
+   * it is the only definition of a tip in this codebase.
+   *
+   * The definition a store's own index answers cheaply — the block of that `pub`
+   * that nothing else names as a predecessor — is the one the profile refuses by
+   * name, and it lived here until todo 097. It differs in three ways and each of
+   * them matters: it reports a tip across a hole that `range` cannot reach
+   * (server rule 1), it withholds a block whose verdict is undecided (server
+   * rule 7), and it picks a fork's branch by insertion order rather than
+   * deterministically and stably. A caller wanting "which of my blocks does
+   * nothing name as a predecessor" wants a plural, unfiltered answer under a
+   * name that is not `tip`; `siblings` is the primitive it builds on.
+   */
 
   /** Every valid block the store holds, in insertion order. */
   validBlocks(): readonly StoredBlock[] {
