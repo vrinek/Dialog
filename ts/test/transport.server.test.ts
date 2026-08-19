@@ -21,6 +21,7 @@ import {
 import { compareBytes, decodeBlockSequence, encodeBlockSequence } from "../src/blockseq.ts";
 import {
   BLOCK_SEQUENCE_TYPE,
+  CBOR_SEQUENCE_TYPE,
   DEFAULT_BASE_PATH,
   DialogServer,
   JSON_TYPE,
@@ -774,9 +775,10 @@ test("a blocks response is cacheable but not immutable: the subset a source hold
   assert.equal(response.headers.get("Cache-Control"), "no-cache");
 });
 
-test("an announce body under the generic CBOR-sequence type is accepted", async () => {
-  // A chain file offered to a server is a valid announce body, and a plain file
-  // server labels one with the generic type — see todos/094.
+test("an announce body admits both block-sequence types, and nothing else", async () => {
+  // The equivalence holds in both directions: a chain file offered to a server
+  // is a valid announce body, and a plain file server labels one with the
+  // generic type.
   const store = new BlockStore();
   const server = new DialogServer({ store, announce: true });
   const chain = chainOf(ALICE, 2);
@@ -784,7 +786,7 @@ test("an announce body under the generic CBOR-sequence type is accepted", async 
   const response = await server.handle(
     new Request(url("/announce"), {
       method: "POST",
-      headers: { "Content-Type": "application/cbor-seq" },
+      headers: { "Content-Type": CBOR_SEQUENCE_TYPE },
       body: encodeBlockSequence(chain),
     }),
   );
@@ -792,14 +794,47 @@ test("an announce body under the generic CBOR-sequence type is accepted", async 
   assert.equal(mediaType(response.headers.get("Content-Type")), JSON_TYPE);
   assert.equal(store.validBlocks().length, 2);
 
-  const wrong = await server.handle(
-    new Request(url("/announce"), {
-      method: "POST",
-      headers: { "Content-Type": JSON_TYPE },
-      body: encodeBlockSequence(chain),
-    }),
-  );
-  assert.equal(wrong.status, 415);
+  // Any other type, and a missing one, is 415.
+  for (const type of [JSON_TYPE, "application/octet-stream", "text/plain", undefined]) {
+    const wrong = await server.handle(
+      new Request(url("/announce"), {
+        method: "POST",
+        ...(type === undefined ? {} : { headers: { "Content-Type": type } }),
+        body: encodeBlockSequence(chain),
+      }),
+    );
+    assert.equal(wrong.status, 415, type ?? "no media type at all");
+  }
+});
+
+test("Accept is not evaluated on announce: the five read operations own the 406", async () => {
+  // A client that speaks this profile carries `Accept:
+  // application/dialog-blocks+cbor-seq` in its standing headers, and this
+  // operation's only response bodies are JSON. A server enforcing 406 uniformly
+  // would refuse a write over a header naming a type the response was never
+  // going to have.
+  const store = new BlockStore();
+  const server = new DialogServer({ store, announce: true });
+  const chain = chainOf(ALICE, 1);
+
+  for (const accept of [BLOCK_SEQUENCE_TYPE, CBOR_SEQUENCE_TYPE, "text/html", `${JSON_TYPE};q=0`]) {
+    const response = await server.handle(
+      new Request(url("/announce"), {
+        method: "POST",
+        headers: { "Content-Type": BLOCK_SEQUENCE_TYPE, Accept: accept },
+        body: encodeBlockSequence(chain),
+      }),
+    );
+    assert.equal(response.status, 200, accept);
+    assert.equal(mediaType(response.headers.get("Content-Type")), JSON_TYPE);
+  }
+
+  // The same header is a 406 at a read operation, where it excludes the only
+  // type the server can send.
+  const read = await get(server, `/chains/${authorText(chain[0]!.block.pub)}/tip`, {
+    headers: { Accept: JSON_TYPE },
+  });
+  assert.equal(read.status, 406);
 });
 
 test("an announce refused by policy is 403 with its own problem type, and no receipt", async () => {

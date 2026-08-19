@@ -879,6 +879,18 @@ export class DialogServer {
         PROBLEM_OPERATION_NOT_OFFERED,
       );
     }
+    // The equivalence of the two block-sequence types holds in both directions:
+    // an announce body's Content-Type MUST be one of them, and anything else —
+    // or nothing at all — is 415. Admitting the generic type is what makes "a
+    // chain file offered to a server is a valid announce body" true of a file
+    // whose type came from a file server rather than from a Dialog client.
+    //
+    // `Accept` is deliberately not evaluated here. This operation's only
+    // response bodies are JSON, so there is nothing for a 406 to protect, and a
+    // server enforcing it uniformly would refuse writes over a header naming a
+    // type the response was never going to have — including the standing
+    // `Accept: application/dialog-blocks+cbor-seq` of a client that speaks this
+    // profile. 406 is defined for the five read operations.
     this.requireContentType(request, [BLOCK_SEQUENCE_TYPE, CBOR_SEQUENCE_TYPE]);
     const body = await readBody(request, this.maxAnnounceBytes);
     const items = decodeBlockSequence(body);
