@@ -351,7 +351,7 @@ export interface WalkOptions {
  * reached about it: a block held as stored-but-unvalidated is one the source
  * has, and withholding it would be the source deciding a validity question on
  * the client's behalf, which is exactly what the client rules forbid the client
- * from delegating (see todos/092).
+ * from delegating (see todos/091).
  */
 export function walkChain(
   source: ServeSource,
@@ -445,7 +445,7 @@ export function acceptsType(accept: string | null, type: string): boolean {
 /** Why a server refused an announce outright. */
 export interface AnnounceRefusal {
   /** The status to answer with. A policy refusal has no status code of its own
-   * in the profile; 403 is this implementation's reading (see todos/093). */
+   * in the profile; 403 is this implementation's reading (see todos/092). */
   readonly status?: number;
   /** For people. */
   readonly detail: string;
@@ -811,8 +811,10 @@ export class DialogServer {
     const response = sequenceResponse(encodeBlockSequence(found));
     // POST /blocks/fetch is the one request in this profile that looks unsafe
     // and is not: a GET with an argument list too long for a URL. It has no
-    // side effects and is idempotent, so its response may be cached.
-    response.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    // side effects and is idempotent, so a server MAY make its response
+    // cacheable — but not immutable, unlike a single block's: the answer is the
+    // subset this source *holds*, and a source's store grows.
+    response.headers.set("Cache-Control", "no-cache");
     return response;
   }
 
@@ -1651,7 +1653,7 @@ export interface SyncOptions {
  * diverges at some position — and in the third case the divergent blocks land
  * in the store, where validation rule 9 fires on them. The alternative, walking
  * the client's own chain backwards asking `siblings` at each position, costs a
- * request per block instead of one. See todos/094.
+ * request per block instead of one. See todos/093.
  */
 export async function syncChain(
   client: DialogClient,

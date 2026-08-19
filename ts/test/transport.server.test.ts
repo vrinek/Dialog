@@ -624,3 +624,81 @@ test("a server that does not implement long polling ignores wait and answers imm
   );
 });
 
+
+test("a parameter the operation does not define is ignored, as the long-poll rule requires", async () => {
+  // The only thing the profile says about a parameter a server does not
+  // implement is that `wait` MUST be ignored, so that long polling degrades to
+  // polling. This server ignores every parameter the matched operation does not
+  // define, which is the reading that keeps that rule true without a special
+  // case — see todos/095.
+  const atlas = demoChain("atlas");
+  const server = serverOver(demoStore());
+  const cid = digestToCidText(atlas.items[0]!.digest);
+
+  const range = await get(server, `/chains/${atlas.keyText}/blocks?prev=${cid}&page=3`);
+  assert.equal(range.status, 200);
+  assert.equal(
+    (await sequenceOf(range)).length,
+    6,
+    "prev names nothing on a range, so the range is from the genesis position",
+  );
+
+  const siblings = await get(server, `/chains/${atlas.keyText}/siblings?after=${cid}`);
+  assert.equal(siblings.status, 200);
+  assert.equal((await sequenceOf(siblings)).length, 1, "the genesis position's sibling set");
+});
+
+test("a blocks response is cacheable but not immutable: the subset a source holds grows", async () => {
+  const atlas = demoChain("atlas");
+  const server = serverOver(demoStore());
+  const response = await server.handle(
+    new Request(url("/blocks/fetch"), {
+      method: "POST",
+      headers: { "Content-Type": JSON_TYPE },
+      body: JSON.stringify({ digests: [digestToCidText(atlas.items[0]!.digest)] }),
+    }),
+  );
+  assert.equal(response.headers.get("Cache-Control"), "no-cache");
+});
+
+test("an announce body under the generic CBOR-sequence type is accepted", async () => {
+  // A chain file offered to a server is a valid announce body, and a plain file
+  // server labels one with the generic type — see todos/094.
+  const store = new BlockStore();
+  const server = new DialogServer({ store, announce: true });
+  const chain = chainOf(ALICE, 2);
+
+  const response = await server.handle(
+    new Request(url("/announce"), {
+      method: "POST",
+      headers: { "Content-Type": "application/cbor-seq" },
+      body: encodeBlockSequence(chain),
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(mediaType(response.headers.get("Content-Type")), JSON_TYPE);
+  assert.equal(store.validBlocks().length, 2);
+
+  const wrong = await server.handle(
+    new Request(url("/announce"), {
+      method: "POST",
+      headers: { "Content-Type": JSON_TYPE },
+      body: encodeBlockSequence(chain),
+    }),
+  );
+  assert.equal(wrong.status, 415);
+});
+
+test("an announce larger than the server accepts is 413, and nothing is stored", async () => {
+  const store = new BlockStore();
+  const server = new DialogServer({ store, announce: true, maxAnnounceBytes: 32 });
+  const response = await server.handle(
+    new Request(url("/announce"), {
+      method: "POST",
+      headers: { "Content-Type": BLOCK_SEQUENCE_TYPE },
+      body: encodeBlockSequence(chainOf(ALICE, 1)),
+    }),
+  );
+  assert.equal(response.status, 413);
+  assert.equal(store.size, 0);
+});

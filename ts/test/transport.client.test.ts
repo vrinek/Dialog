@@ -441,7 +441,7 @@ test("announce: a source may refuse one outright, for reasons that are its own p
       store,
       announce: true,
       // Quota, rate, acquaintance, disk: the profile names the reasons and no
-      // status code, so this server answers 403 — see todos/093.
+      // status code, so this server answers 403 — see todos/092.
       refuseAnnounce: () => ({ detail: "this server takes announces from acquaintances only" }),
     }),
   );
