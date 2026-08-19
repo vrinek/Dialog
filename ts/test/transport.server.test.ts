@@ -702,3 +702,61 @@ test("an announce larger than the server accepts is 413, and nothing is stored",
   assert.equal(response.status, 413);
   assert.equal(store.size, 0);
 });
+
+test("the profile's worked example, value for value", async () => {
+  // spec/07-transport.md, "Examples": the keys, block counts, tips and byte
+  // counts of the grounding demo's committed chains, and the three refs of
+  // errata's genesis block as CIDs.
+  const expected = [
+    ["atlas", "b5ua3y66r5fac352uhwvjhtqw6qyk4so2vt2bxqisck4avcl3lf3zt6i", 6,
+     "bafyreifvr7u624ffnnmymo5cvo4ipzx26l6bwmxcnlsmwijqgmcododv4e", 8661],
+    ["gazetteer", "b5uatugx2rd2fkyiw7rtrssojo2x4ochyic4d55fzjzmwwlpqz2pe4bi", 4,
+     "bafyreifxee6srorhi7cj5nirr62276ixdkgt47sgh6sl4wv2vfrguwveku", 3194],
+    ["errata", "b5uawwbrvnfbfkgkhxsii52p4447rsxmm4lu65xfnkbuywk7wm3xqyhq", 4,
+     "bafyreif3aq6agreuac7edhkd7omkpx7uqukwa4yt36fq6ckda2groln7qu", 2605],
+  ] as const;
+
+  const server = serverOver(demoStore());
+  for (const [name, key, count, tip, bytes] of expected) {
+    const chain = demoChain(name);
+    assert.equal(chain.keyText, key, name);
+
+    const range = await get(server, `/chains/${key}/blocks?limit=64`);
+    const body = new Uint8Array(await range.arrayBuffer());
+    assert.equal(body.length, bytes, `${name}: the range response's byte count`);
+    assert.equal(decodeBlockSequence(body).length, count);
+    assert.equal(range.headers.get(TIP_HEADER), tip);
+    // The last block hashes to the Dialog-Tip value, so the range ended at the
+    // tip rather than at a limit and there is nothing to continue.
+    assert.equal(digestToCidText(decodeBlockSequence(body).at(-1)!.digest), tip);
+  }
+
+  // "Fetching a foreign block by digest": errata's genesis block's three refs,
+  // as CIDs, all three held, 4215 bytes in one response.
+  const errata = demoChain("errata");
+  const genesis = errata.items[0]!.block;
+  assert.ok("refs" in genesis);
+  assert.equal(digestToCidText(errata.items[0]!.digest), "bafyreicrab2mvkd7nv4quzzp3dzibsgmohotvr3pgltpv5aum3vufyxsh4");
+  assert.deepEqual(genesis.refs.map(digestToCidText), [
+    "bafyreicwspbfzqnxfny7zjris7kfdwbbuptnyrzyy5wefwmngm5jnwi7ve",
+    "bafyreibqfmhkauuafibgjkpcz6oq34va7uk36qokockwgynptyuvm7xltq",
+    "bafyreihitrz57fnzne52q7fx3toq2knygfnxe7bz2zkvk3q3657prrkduq",
+  ]);
+
+  const fetched = await server.handle(
+    new Request(url("/blocks/fetch"), {
+      method: "POST",
+      headers: { "Content-Type": JSON_TYPE, Accept: BLOCK_SEQUENCE_TYPE },
+      body: JSON.stringify({ digests: genesis.refs.map(digestToCidText) }),
+    }),
+  );
+  const fetchedBody = new Uint8Array(await fetched.arrayBuffer());
+  assert.equal(fetchedBody.length, 4215, "395 + 965 + 2855");
+  assert.equal(decodeBlockSequence(fetchedBody).length, 3);
+
+  // And a single block, when only one is needed: 2855 bytes, immutable.
+  const one = await get(server, "/blocks/bafyreihitrz57fnzne52q7fx3toq2knygfnxe7bz2zkvk3q3657prrkduq");
+  assert.equal(one.status, 200);
+  assert.equal(one.headers.get("Content-Length"), "2855");
+  assert.equal(one.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
+});
