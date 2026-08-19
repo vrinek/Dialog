@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "099"
 tags: [transport, specification-gap, forks]
@@ -109,9 +109,9 @@ failure mode this profile exists to prevent.
 
 ## Acceptance Criteria
 
-- [ ] The profile says which position a client asks a source it has not used
+- [x] The profile says which position a client asks a source it has not used
       before from, or says that both are allowed and what each costs
-- [ ] The two implementations default to the same one
+- [x] The two implementations default to the same one
 
 ## Work Log
 
@@ -124,6 +124,61 @@ same servers and disagreed about whether a pursuit had happened, because they
 disagreed about where to ask a new source from. Both implementations now carry
 the choice as an option, defaulting to the genesis position so that a run says
 what it did; the default is what this todo has to settle.
+
+### 2026-08-19 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead):** Option 1 with the SHOULD inverted. Both positions
+are permitted and the preferred one is the **genesis position**, not the held
+one. The reasoning against the filed recommendation: the SHOULD is a default
+for a client that has to pick without knowing which case it is in, and there
+the genesis position buys completeness at a cost that is known and bounded —
+the shared prefix, once, per source — while the held position buys a saving
+whose price is that one section's obligation carries the whole of fork
+detection. A client that takes the MAY is not worse off, but it has to
+implement the pursuit for real, and the text says so. The interop concern the
+todo was filed on is answered without the SHOULD: what a conformance suite
+needs is a client that says which position it asked from, which is the third
+clause of the rule and what both implementations' `-from` already is.
+
+**Changes:**
+
+- `spec/07-transport.md`, "Client rules", new subsection **"First contact with
+  a source"**, between "The multi-source rule" and "Pursuing an advertised
+  tip": positions are per source and why; the rule (SHOULD genesis, MAY held,
+  SHOULD record which); a paragraph on each position's cost, the genesis one
+  noting that the divergence arrives as blocks and rule 9 fires on the store,
+  the held one that the divergence is then found by the pursuit *and by nothing
+  else*, so the pursuit is not optional in effect for such a client; the
+  asymmetry the todo asked to be written down rather than lost — a source that
+  has never heard of the client's block answers the empty range whether it is
+  on another branch or merely behind; and that neither choice is a conformance
+  question. One informative paragraph: both reference implementations expose
+  the choice and default to the genesis position, and the harness runs both
+  ways with the same store and the same verdicts either way.
+- `spec/07-transport.md`, "The multi-source rule": the sentence naming where
+  the comparison is written down now names both sections.
+- `spec/07-transport.md`, "Open questions": a paragraph for the two gaps found
+  by crossing the implementations rather than by either alone (096 and this
+  one), which the earlier per-implementation accounting had no place for.
+- Doc comments now cite the paragraph instead of this todo:
+  `go/transport`'s `Syncer.AskFromHeldPosition` (and why the zero value is the
+  one to have), `go/cmd/dialog-sync`'s `-from`, `go/transport`'s
+  `TestAskingASourceFromTheHeldPosition`, `ts/src/transport.ts`'s
+  `SyncOptions.from`, `ts/scripts/sync.ts`'s `-from`, `interop/run.sh` and
+  `interop/README.md`.
+- **No behaviour changed.** Both clients already default to the genesis
+  position; the go battery, the ts battery and `interop/run.sh` (71 checks)
+  pass unchanged.
+
+One thing the application surfaced and did not fix: `ts/`'s `syncChain`
+*library* default is the held position — `from` omitted means the store's own
+tip — while `go/transport`'s `Syncer` zero value is the genesis position. The
+two *clients* agree because `scripts/sync.ts` passes `from: null`, which is
+what the interop harness and the acceptance criterion measure, but a caller of
+the TypeScript library that omits the option silently takes the MAY. Filed as
+`todos/100`.
 
 ## Notes
 
