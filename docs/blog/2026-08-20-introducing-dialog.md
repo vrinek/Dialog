@@ -236,5 +236,5 @@ the most useful thing anyone could tell me right now.
 
 Issues and discussions at
 [github.com/vrinek/Dialog](https://github.com/vrinek/Dialog). Start with
-[`spec/00-overview.md`](../../spec/00-overview.md), or clone the repo and run the
-demo — it is one `go build` and one MCP config entry.
+[`spec/00-overview.md`](https://github.com/vrinek/Dialog/blob/main/spec/00-overview.md),
+or clone the repo and run the demo — it is one `go build` and one MCP config entry.
