@@ -10,7 +10,7 @@ This document defines an optional interoperability profile for moving Dialog blo
 
 ## Terminology
 
-The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119).
+The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", "MAY" and "OPTIONAL" are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119).
 
 - **Source:** Anything a node obtains blocks from: a server, a file, a directory, a removable disk, another node.
 - **Server:** A source that answers the operations of this profile over a network.
