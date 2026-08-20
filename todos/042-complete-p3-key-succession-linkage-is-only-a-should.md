@@ -143,6 +143,13 @@ that takes up key compromise.
    distinct blocks signed by the successor key, all claiming its genesis
    position — so no new machinery is needed to report them.
 
+   > **Superseded on 2026-08-20 by `todos/102`.** Item 3's "resolution
+   > implementation-scoped" is revised, by the project lead, to the strict
+   > reading the same commit wrote into `spec/05-processing-model.md`: a node
+   > MUST surface an ambiguous succession and **MUST NOT pick a successor on
+   > its own**. Accept-first-seen, which rule 9 leaves open for an ordinary
+   > fork, is not available for this position. Items 1 and 2 stand unchanged.
+
 The specification is explicit that this makes succession *checkable*, not
 cryptographically proven: the old key still signs nothing the new key
 produced.

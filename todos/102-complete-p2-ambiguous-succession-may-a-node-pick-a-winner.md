@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p2
 issue_id: "102"
 tags: [specification-gap, key-rotation, block-validation, normative-consistency]
@@ -179,14 +179,14 @@ ratified decision rather than merely clarifying it.
 
 ## Acceptance Criteria
 
-- [ ] `spec/02-block-format.md`, `spec/05-processing-model.md`, and
+- [x] `spec/02-block-format.md`, `spec/05-processing-model.md`, and
       `spec/07-transport.md` state the same rule, in the same words or
       words that plainly mean the same thing, for whether a node may treat
       one candidate as the successor while an ambiguous succession stands
-- [ ] The decision is recorded against todo 042's original ratification —
+- [x] The decision is recorded against todo 042's original ratification —
       either as confirming it (Option 2/3) or as revising it (Option 1),
       explicitly
-- [ ] `go/block`'s `Successors`/`ValidateHistory` (and `ts/`'s equivalent,
+- [x] `go/block`'s `Successors`/`ValidateHistory` (and `ts/`'s equivalent,
       if any) match whichever reading is chosen
 
 ## Work Log
@@ -204,6 +204,83 @@ things. This agent's writable scope was `todos/` only; resolving the
 conflict needs write access to `spec/` and, per the Recommended Action, a
 project-lead decision on whether Option 1 revises todo 042's ratified intent
 or merely restates it more strictly than intended.
+
+### 2026-08-20 - Ratified and Applied
+
+**By:** Claude
+
+**Decision (project lead): Option 1, the strict reading.** A node MUST NOT
+silently pick a successor. An ambiguous succession is a surfaced conflict,
+consistent with the protocol's core stance that conflicts are output and never
+silently resolved, and with fork detection's MUST-surface rule.
+Accept-first-seen is *not* a permissible strategy for succession specifically,
+unlike ordinary fork handling where implementation-scoped strategies remain
+allowed. This **revises** item 3 of todo 042's "Ratified and Implemented"
+decision rather than restating it; a superseding note now sits in that todo's
+work log, next to the item it revises, so a reader of 042 is not led back to
+the permissive reading.
+
+**Spec changes:**
+
+- `spec/02-block-format.md`, "rotate_key" → "Verifiable succession": the
+  "handling strategy... implementation-scoped, exactly as in validation rule 9"
+  sentence is gone. The bullet now states the MUST NOT, cross-references
+  `05-processing-model.md`, says what the prohibition covers
+  (auto-subscription, block order across the junction, any other purpose), and
+  says what it does not (holding and serving every claimant is not a choice
+  between them). The reason is stated in the document's own terms: a silent
+  choice between two chains claiming a rotated key is the unproven chain of
+  custody verifiable succession exists to refuse.
+- `spec/02-block-format.md`, validation rule 9: one added clause, so that a
+  reader arriving from rule 9 — where accept-first-seen is still permitted for
+  an ordinary fork — is told this one case is held to a stricter rule.
+- `spec/05-processing-model.md`, "Chain succession (key rotation)": the MUST
+  NOT was already there; added what happens to steps 2 and 3 in the interim,
+  which was Option 1's one open cons item. They wait: no claimant is added as
+  the successor and none is auto-subscribed to while the ambiguity stands.
+- `spec/07-transport.md` needed no change; it already stated the strict rule.
+
+**Go changes.** The permissive behaviour was *mostly* not there. `Successors`
+already returned every claimant and a `*Fork` and preferred none; `accept`'s
+`blockOrder` already refuses to join an ambiguous junction and surfaces a
+`ConflictAmbiguousSuccession`; `transport` reports the claimants as a fork at
+the genesis position and picks nothing. One place did bless a pick:
+`ValidateHistory` validated whichever junction the caller named and merely
+appended the fork to the successor chain's report, which is the API affirming a
+chosen successor while the ambiguity stands.
+
+- `go/block/chain.go`: new exported `AmbiguousSuccessionError`, naming the
+  rotation block and every claimant. `ValidateHistory` returns it instead of
+  validating the junction, for either claimant; each chain still validates on
+  its own with `ValidateChain`, so what is refused is the junction and not the
+  blocks. A source that does not implement `Referrers` cannot be asked the
+  question and is unaffected. `Successors`'s doc comment no longer reads the
+  permissive text ("reported, not resolved, exactly as rule 9") and states the
+  caller's MUST NOT.
+- `go/block/validate_test.go`: the "two chains claiming one rotation" subtest
+  now proves the ambiguity is surfaced and not resolved — the typed error, both
+  claimants named, both orderings refused, each chain still valid alone.
+
+**TypeScript.** `ts/` does have succession logic despite its wire-format and
+transport scope: `BlockStore` detects successions and exposes
+`ambiguousSuccessions`. It already conforms — it names every claimant, exposes
+no "the successor" accessor, and its doc comment already carried the MUST NOT.
+No change was needed beyond the new vector's test.
+
+**Vectors.** `vectors/blocks.json` gains an `ambiguous_succession` section:
+`alice_successor_rival`, a second genesis block signed by the key
+`alice_rotation` appoints and naming that same rotation block in `refs`. The
+generator (`go/internal/vectors/blocks.go`) validates the claim it publishes —
+the rival is a valid block, and against the scenario it leaves exactly two
+claimants and a fork. Both suites consume it: the Go conformance test replays
+the chain, offers the rival, checks both claimants are reported and that
+`ValidateHistory` refuses either ordering; the TypeScript test runs it through
+the byte-level checks and asserts `ambiguousSuccessions` names both claimants.
+`vectors/README.md` records the section and the stricter rule.
+
+**Verification:** `go test ./...` (all packages), `npm test` (456 tests),
+`golangci-lint run` (0 issues), and the vectors round-trip guard
+(`TestVectorsAreCurrent`) all pass.
 
 ## Notes
 

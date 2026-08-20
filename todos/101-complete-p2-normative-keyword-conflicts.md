@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p2
 issue_id: "101"
 tags: [specification-gap, normative-consistency, key-rotation, terminology]
@@ -179,9 +179,9 @@ interpreted as described in RFC 2119."
 - [x] Every use of an RFC 2119 keyword (including `OPTIONAL`, `REQUIRED`,
       `RECOMMENDED`, `SHALL`) has been checked against the Terminology
       section of the document it appears in
-- [ ] The ambiguous-succession conflict (finding 1) is resolved in the spec
+- [x] The ambiguous-succession conflict (finding 1) is resolved in the spec
       text — tracked as `todos/102`
-- [ ] `OPTIONAL` is added to `spec/07-transport.md`'s Terminology list
+- [x] `OPTIONAL` is added to `spec/07-transport.md`'s Terminology list
       (finding 2)
 
 ## Work Log
@@ -198,6 +198,38 @@ conflicts exist — does not hold: one substantive conflict was found (finding
 here since this agent's writable scope was `todos/` only and could not edit
 `spec/`). Three other candidates were investigated and ruled out (see
 "Considered and ruled out"). No conflicts were found in `README.md`.
+
+### 2026-08-20 - Both Findings Applied
+
+**By:** Claude
+
+Finding 2 is fixed: `spec/07-transport.md`'s Terminology list reads "The key
+words 'MUST', 'MUST NOT', 'SHOULD', 'SHOULD NOT', 'MAY' and 'OPTIONAL'...".
+The suggested wording is followed in substance rather than to the letter — the
+keyword joins the list instead of trailing it in a second clause, which is how
+the other five are presented and reads as one sentence. No sentence using
+`OPTIONAL` changed; the word already meant what RFC 2119 says it means.
+
+`REQUIRED`, `RECOMMENDED`, `NOT RECOMMENDED` and `SHALL` were re-checked with
+`grep -n "\bOPTIONAL\b\|\bREQUIRED\b\|\bRECOMMENDED\b\|\bSHALL\b" spec/*.md
+README.md`: `OPTIONAL` in `07-transport.md` is still the only hit anywhere in
+`spec/` or `README.md`, so no other keyword was added to any list. The other
+seven documents' Terminology sections and `00-overview.md`'s "Conventions" are
+untouched: none of them uses a keyword it does not define.
+
+Finding 1 is resolved under `todos/102`, which the project lead settled on the
+strict reading — a node MUST NOT pick a successor for an ambiguous succession —
+revising item 3 of todo 042's ratification. See that todo's work log for the
+spec, Go and vector changes.
+
+The three "Considered and ruled out" candidates were re-read against the spec
+after both fixes and still hold: the `Dialog-Tip` MUST-carry/omits-the-header
+pair is unchanged general-rule-then-exception drafting in one section;
+`README.md` still summarizes the spec accurately, including "the ten
+validation rules" (rule 9 gained a clause about ambiguous succession under
+todo 102, but the count is unchanged and the README makes no claim about
+rule 9's strategies); and the private-chain nonce distinction is unchanged.
+They stay documented above.
 
 ## Notes
 
