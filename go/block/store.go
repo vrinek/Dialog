@@ -62,6 +62,9 @@ type Referrers interface {
 //
 // Detection is normative; what to do about it is not. This package detects and
 // reports; the caller chooses whether to reject, flag or accept-first-seen.
+// The one exception is an ambiguous succession (two genesis blocks claiming
+// the same rotation block): there accept-first-seen is forbidden — see
+// Successors and ValidateHistory.
 type Fork struct {
 	// Pub is the author whose chain forked.
 	Pub ed25519.PublicKey
