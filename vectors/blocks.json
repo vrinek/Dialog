@@ -1092,6 +1092,115 @@
       ]
     },
     {
+      "name": "ambiguous_succession",
+      "description": "A second genesis block claiming the rotation block alice_successor_genesis already claims. Replay the chain, then offer this block: it is valid, and it makes the succession ambiguous. A node MUST surface the conflict and MUST NOT pick a successor on its own — this position is held to a stricter rule than rule 9's, and accept-first-seen is not available for it (spec/02-block-format.md, \"Verifiable succession\"; spec/05-processing-model.md, \"Chain succession (key rotation)\"). Until the ambiguity is resolved, neither claimant is the successor: not for auto-subscription, not for block order across the junction.",
+      "cases": [
+        {
+          "name": "alice_successor_rival",
+          "description": "A second genesis block signed by the key alice_rotation appoints, naming that same rotation block in refs. It is a valid block, and against a store that already holds alice_successor_genesis it makes the succession ambiguous: two chains claim to continue Alice's. A node MUST surface that conflict and MUST NOT pick a successor — accept-first-seen, which rule 9 leaves open for an ordinary fork, is not available here (spec/02-block-format.md, \"Verifiable succession\").",
+          "author": "alice_successor",
+          "type": "public",
+          "prev": null,
+          "refs": [
+            "ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead"
+          ],
+          "ts": 1740067441,
+          "value": {
+            "type": "map",
+            "entries": [
+              {
+                "key": "v",
+                "value": {
+                  "type": "uint",
+                  "number": "1"
+                }
+              },
+              {
+                "key": "ts",
+                "value": {
+                  "type": "uint",
+                  "number": "1740067441"
+                }
+              },
+              {
+                "key": "ops",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "map",
+                      "entries": [
+                        {
+                          "key": "op",
+                          "value": {
+                            "type": "text",
+                            "text": "create_atom"
+                          }
+                        },
+                        {
+                          "key": "description",
+                          "value": {
+                            "type": "text",
+                            "text": "Toulouse"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "pub",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+                }
+              },
+              {
+                "key": "sig",
+                "value": {
+                  "type": "bytes",
+                  "bytes": "48073c444426ba495be75f16b440e43ee255160bb6da4f272069b54c0c76c488594dcda3a17a4840c55b01a0300d6be3f0bb9bf37ec6a2aabd2e02dc9e500905"
+                }
+              },
+              {
+                "key": "prev",
+                "value": {
+                  "type": "null"
+                }
+              },
+              {
+                "key": "refs",
+                "value": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "bytes",
+                      "bytes": "ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead"
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "type",
+                "value": {
+                  "type": "text",
+                  "text": "public"
+                }
+              }
+            ]
+          },
+          "signing_bytes": "a76176016274731a67b75271636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e68546f756c6f757365637075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16470726576f66472656673815820ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead6474797065667075626c6963",
+          "signing_input": "6469616c6f672d76312d626c6f636ba76176016274731a67b75271636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e68546f756c6f757365637075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d16470726576f66472656673815820ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead6474797065667075626c6963",
+          "signature": "48073c444426ba495be75f16b440e43ee255160bb6da4f272069b54c0c76c488594dcda3a17a4840c55b01a0300d6be3f0bb9bf37ec6a2aabd2e02dc9e500905",
+          "block": "a86176016274731a67b75271636f707381a2626f706b6372656174655f61746f6d6b6465736372697074696f6e68546f756c6f757365637075625820ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d163736967584048073c444426ba495be75f16b440e43ee255160bb6da4f272069b54c0c76c488594dcda3a17a4840c55b01a0300d6be3f0bb9bf37ec6a2aabd2e02dc9e5009056470726576f66472656673815820ac4432e4d0226e4077d41527ae3efcc5ff91905a985e43d6c2e55741aa0aaead6474797065667075626c6963",
+          "digest": "dc28752885b9d35d08763affdf0a87ab1ec60b20411a46013aa0343d4912ad8d",
+          "cid": "01711220dc28752885b9d35d08763affdf0a87ab1ec60b20411a46013aa0343d4912ad8d",
+          "cid_text": "bafyreig4fb2srbnz2noqq5r277pqvb5ld3dawicbdjdacovagq6usevnru"
+        }
+      ]
+    },
+    {
       "name": "invalid",
       "description": "Blocks a conforming implementation MUST reject, each naming the rule it violates. Every one of them is canonical dCBOR and — except where the case is about the signature — correctly signed, so the rejection can only come from the named rule.",
       "cases": [

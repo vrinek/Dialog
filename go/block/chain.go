@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/vrinek/Dialog/go/cid"
 )
@@ -248,10 +249,18 @@ func ValidateSuccession(rotation, genesis *Block) (*Report, error) {
 // counted as one.
 //
 // Only one chain can succeed a rotation. More than one is an ambiguous
-// succession, which spec/02-block-format.md, "Verifiable succession", makes a
-// fork condition — and which is a fork in the strict sense of rule 9 too,
-// since all of them claim the genesis position of the successor key's chain.
-// It is returned the way rule 9's forks are: reported, not resolved.
+// succession: a fork in the strict sense of rule 9, since all of them claim the
+// genesis position of the successor key's chain, but one held to a stricter
+// rule than rule 9's. Every claimant is returned, together with the fork
+// between them, and no claimant is preferred to another — "the node MUST
+// surface the conflict and MUST NOT pick a successor on its own"
+// (spec/02-block-format.md, "Verifiable succession", and
+// spec/05-processing-model.md, "Chain succession (key rotation)"). A caller
+// holding a fork here MUST NOT treat any one of the successors as the
+// successor: not for auto-subscription, not for block order across the
+// junction, not for anything else. Accept-first-seen, which rule 9 leaves open
+// for an ordinary fork, is not available for this one. Holding and serving all
+// of them is not a choice between them.
 //
 // src must implement Referrers; a source that cannot list the blocks referring
 // to a digest cannot answer the question, and says so rather than reporting no
@@ -285,11 +294,44 @@ func Successors(rotation *Block, src Source) (successors []cid.Digest, fork *For
 	return successors, fork, nil
 }
 
+// An AmbiguousSuccessionError reports a rotation block that more than one
+// genesis block claims to continue. It names the rotation block and every
+// claimant, so that a caller can surface the conflict; it names no winner,
+// because there is none to name — "the node MUST surface the conflict and MUST
+// NOT pick a successor on its own" (spec/05-processing-model.md, "Chain
+// succession (key rotation)").
+//
+// It is an error rather than a warning because of what the caller asked for: a
+// history is a claim that these chains succeed one another, and a node that
+// cannot show which chain succeeds a rotation cannot affirm that claim. The
+// chains are not invalid, and each of them still validates on its own with
+// ValidateChain. What is unavailable is the junction.
+type AmbiguousSuccessionError struct {
+	// Rotation is the rotation block the claimants are claiming.
+	Rotation cid.Digest
+	// Successors are the genesis blocks claiming it, ascending by digest.
+	Successors []cid.Digest
+}
+
+func (e *AmbiguousSuccessionError) Error() string {
+	claimants := make([]string, len(e.Successors))
+	for i, d := range e.Successors {
+		claimants[i] = d.String()
+	}
+	return fmt.Sprintf("block: the succession of rotation block %s is ambiguous: %d genesis blocks claim it (%s); the conflict is surfaced and no successor is chosen",
+		e.Rotation, len(e.Successors), strings.Join(claimants, ", "))
+}
+
 // ValidateHistory validates a succession of chains for one author, given the
 // tip of each in order, oldest key first. Each chain is validated with
 // ValidateChain, and each junction with ValidateSuccession: every chain but
 // the last must end in a rotation block, and the next chain's genesis block
 // must be signed by the key that rotation names.
+//
+// A junction more than one genesis block claims is not a history this function
+// affirms: it returns an *AmbiguousSuccessionError naming every claimant, since
+// validating the succession the caller named would be picking a successor for
+// it. Each chain still validates on its own with ValidateChain.
 //
 // Like ValidateChain, it reads an accepted verdict rather than recomputing it
 // when the source carries verdicts.
@@ -315,11 +357,23 @@ func ValidateHistory(tips []cid.Digest, src Source, opts *Options) ([]*Chain, er
 			}
 			chain.Report.Warnings = append(chain.Report.Warnings, report.Warnings...)
 			// A second genesis block claiming the same rotation makes the
-			// succession ambiguous. Detection is required and resolution is
-			// not, so it joins the chain's forks (spec/02-block-format.md,
-			// "Verifiable succession").
-			if _, fork, err := Successors(rotation, src); err == nil && fork != nil {
-				chain.Report.Forks = append(chain.Report.Forks, *fork)
+			// succession ambiguous, and joining the caller's choice of chain
+			// onto the rotation would be picking a successor on its behalf.
+			// The fork is surfaced instead, naming every claimant, and the
+			// history is not affirmed (spec/02-block-format.md, "Verifiable
+			// succession"; spec/05-processing-model.md, "Chain succession (key
+			// rotation)"). A source that cannot read the refs graph backwards
+			// cannot be asked the question at all — it does not implement
+			// Referrers — and there the junction rests on the evidence there
+			// is, the pair of blocks in hand.
+			if _, ok := src.(Referrers); ok {
+				successors, fork, err := Successors(rotation, src)
+				if err != nil {
+					return nil, err
+				}
+				if fork != nil {
+					return nil, &AmbiguousSuccessionError{Rotation: rotation.Digest(), Successors: successors}
+				}
 			}
 		}
 		chains = append(chains, chain)

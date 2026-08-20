@@ -1110,8 +1110,10 @@ func TestRotation(t *testing.T) {
 
 	t.Run("two chains claiming one rotation", func(t *testing.T) {
 		// Only one chain can succeed a rotation. A second genesis block
-		// referencing the same rotation block makes the succession ambiguous,
-		// which is surfaced the way rule 9's forks are: reported, not resolved.
+		// referencing the same rotation block makes the succession ambiguous:
+		// the conflict is surfaced with every claimant named, and no successor
+		// is picked (spec/02-block-format.md, "Verifiable succession";
+		// spec/05-processing-model.md, "Chain succession (key rotation)").
 		rival := mustBuilder(t, 2)
 		if err := rival.Succeeds(rotation); err != nil {
 			t.Fatalf("Succeeds: %v", err)
@@ -1138,14 +1140,30 @@ func TestRotation(t *testing.T) {
 			t.Errorf("fork = %+v, want the successor key's two genesis blocks", fork)
 		}
 
-		// ValidateHistory surfaces it in the successor chain's report rather
-		// than choosing between the two.
-		chains, err := ValidateHistory([]cid.Digest{rotation.Digest(), newGenesis.Digest()}, forked, nil)
-		if err != nil {
-			t.Fatalf("ValidateHistory: %v", err)
+		// ValidateHistory refuses the junction rather than affirming the one
+		// the caller named: validating that succession would be picking a
+		// successor on the caller's behalf. The error names every claimant, so
+		// the caller has the conflict to surface and no winner to read out of
+		// it.
+		var ambiguous *AmbiguousSuccessionError
+		if _, err := ValidateHistory([]cid.Digest{rotation.Digest(), newGenesis.Digest()}, forked, nil); !errors.As(err, &ambiguous) {
+			t.Fatalf("ValidateHistory over an ambiguous succession = %v, want an *AmbiguousSuccessionError", err)
 		}
-		if len(chains[1].Report.Forks) == 0 {
-			t.Error("the ambiguous succession is not in the successor chain's report")
+		if ambiguous.Rotation != rotation.Digest() {
+			t.Errorf("the error names rotation block %s, want %s", ambiguous.Rotation, rotation.Digest())
+		}
+		if !slices.Contains(ambiguous.Successors, newGenesis.Digest()) || !slices.Contains(ambiguous.Successors, other.Digest()) {
+			t.Errorf("the error names %v, want both claimants", ambiguous.Successors)
+		}
+		// The other order is refused just the same: neither claimant is the
+		// one the ambiguity resolves to.
+		if _, err := ValidateHistory([]cid.Digest{rotation.Digest(), other.Digest()}, forked, nil); !errors.As(err, &ambiguous) {
+			t.Errorf("ValidateHistory over the rival claimant = %v, want an *AmbiguousSuccessionError", err)
+		}
+		// Each chain is still valid on its own; what is unavailable is the
+		// junction between them.
+		if _, err := ValidateChain(newGenesis.Digest(), forked, nil); err != nil {
+			t.Errorf("the successor chain must still validate on its own: %v", err)
 		}
 
 		// A source that cannot read the refs graph backwards says so.

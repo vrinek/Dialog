@@ -71,6 +71,7 @@ const EXPECTED_CASE_COUNTS: Record<string, number> = {
   chain: 6,
   forks: 1,
   fork_block: 1,
+  ambiguous_succession: 1,
   invalid: 23,
   invalid_in_chain: 13,
 };
@@ -132,10 +133,12 @@ test("every test key is the one its seed derives", () => {
 // The chain, and the forking block, block by block
 // ---------------------------------------------------------------------------
 
-/** Every case that carries a complete block: the chain plus the fork block. */
+/** Every case that carries a complete block: the chain, the fork block and the
+ * rival successor genesis block. */
 const blockCases: VectorCase[] = [
   ...section(blocks, "chain").cases,
   ...section(blocks, "fork_block").cases,
+  ...section(blocks, "ambiguous_succession").cases,
 ];
 
 for (const vector of blockCases) {
@@ -287,6 +290,31 @@ test("the successor genesis block is recognized as the rotation's successor", ()
     rotation.digest,
     "alice's key is marked inactive by the rotation block",
   );
+});
+
+test("the vectors' rival successor genesis block makes the succession ambiguous", () => {
+  // spec/02-block-format.md, "Verifiable succession": two chains claiming one
+  // rotation is an ambiguous succession, and a node MUST surface it and MUST
+  // NOT pick a successor. Unlike an ordinary rule 9 fork, accept-first-seen is
+  // not available here.
+  const rival = section(blocks, "ambiguous_succession").cases[0]!;
+  const rotation = chainCases()[4]!;
+  const claimed = chainCases()[5]!;
+  const store = replay();
+  const result = store.add(hexToBytes(rival.block!));
+
+  assert.equal(result.status, "accepted", "the rival is a valid block in itself");
+  assert.equal(store.ambiguousSuccessions.length, 2, "the conflict is surfaced");
+  assert.deepEqual(
+    store.ambiguousSuccessions.map((succession) => bytesToHex(succession.genesis)).sort(),
+    [claimed.digest!, rival.digest!].sort(),
+    "both claimants are named, and neither is preferred",
+  );
+  for (const succession of store.ambiguousSuccessions) {
+    assert.equal(bytesToHex(succession.rotation), rotation.digest);
+  }
+  // It is a fork at the genesis position of the successor key's chain too.
+  assert.equal(result.report?.fork?.prev, null);
 });
 
 test("no block is accepted for a key after its rotation block", () => {

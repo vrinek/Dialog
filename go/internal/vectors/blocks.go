@@ -3,6 +3,7 @@ package vectors
 import (
 	"bytes"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 
 	"github.com/vrinek/Dialog/go/block"
@@ -27,6 +28,7 @@ const (
 	tsRotation  = 1740067380
 	tsSuccessor = 1740067440
 	tsFork      = 1740067261
+	tsRival     = 1740067441
 )
 
 // The block rules a vector may violate, named as spec/02-block-format.md
@@ -116,6 +118,12 @@ func blocksDocument() (Document, error) {
 				Cases:       []BlockCase{fork.block},
 			},
 			{
+				Name: "ambiguous_succession",
+				Description: "A second genesis block claiming the rotation block alice_successor_genesis already claims. Replay the chain, then offer this block: it is valid, and it makes the succession ambiguous. " +
+					"A node MUST surface the conflict and MUST NOT pick a successor on its own — this position is held to a stricter rule than rule 9's, and accept-first-seen is not available for it (spec/02-block-format.md, \"Verifiable succession\"; spec/05-processing-model.md, \"Chain succession (key rotation)\"). Until the ambiguity is resolved, neither claimant is the successor: not for auto-subscription, not for block order across the junction.",
+				Cases: []BlockCase{fork.rival},
+			},
+			{
 				Name:        "invalid",
 				Description: "Blocks a conforming implementation MUST reject, each naming the rule it violates. Every one of them is canonical dCBOR and — except where the case is about the signature — correctly signed, so the rejection can only come from the named rule.",
 				Cases:       invalid,
@@ -186,10 +194,12 @@ func blockCase(name, description, author string, b *block.Block) (BlockCase, err
 	}, nil
 }
 
-// forkResult carries the forking block and the summary that names it.
+// forkResult carries the forking block and the summary that names it, and the
+// rival successor genesis block that makes the scenario's succession ambiguous.
 type forkResult struct {
 	block   BlockCase
 	summary ForkCase
+	rival   BlockCase
 }
 
 // scenario builds and validates the chain. Validation is not decoration: a
@@ -328,7 +338,28 @@ func scenario() ([]BlockCase, forkResult, error) {
 		return nil, forkResult{}, fmt.Errorf("vectors: fork block: %w", err)
 	}
 
-	if err := validateScenario(genesis, second, foreign, assertion, rotation, successorGenesis); err != nil {
+	// A second genesis block signed by the very key the rotation appoints,
+	// naming the same rotation block in refs: two chains claiming one
+	// succession, which is the ambiguous succession of spec/02-block-format.md,
+	// "Verifiable succession". The Builder will not produce one — it advances
+	// the chain it opened — so this one is signed directly.
+	rivalGenesis, err := block.Sign(block.Content{
+		Version: block.Version,
+		Type:    block.TypePublic,
+		Pub:     seedPub(seedSuccessor),
+		TS:      tsRival,
+		Refs:    []cid.Digest{rotation.Digest()},
+		Ops:     []block.Operation{block.MustCreateAtom("Toulouse")},
+	}, seedKey(seedSuccessor))
+	if err != nil {
+		return nil, forkResult{}, fmt.Errorf("vectors: rival successor genesis: %w", err)
+	}
+
+	chainBlocks := []*block.Block{genesis, second, foreign, assertion, rotation, successorGenesis}
+	if err := validateScenario(chainBlocks...); err != nil {
+		return nil, forkResult{}, err
+	}
+	if err := validateAmbiguity(chainBlocks, rotation, rivalGenesis); err != nil {
 		return nil, forkResult{}, err
 	}
 
@@ -340,9 +371,8 @@ func scenario() ([]BlockCase, forkResult, error) {
 		{"alice_rotation", "The rotation block that ends Alice's chain. Exactly one rotate_key operation, prev not null, and new_pub naming a different key.", "alice"},
 		{"alice_successor_genesis", "The successor chain's genesis block. It is public and names the rotation block in refs, which is what makes the succession verifiable to a node with no keys.", "alice_successor"},
 	}
-	blocks := []*block.Block{genesis, second, foreign, assertion, rotation, successorGenesis}
-	cases := make([]BlockCase, 0, len(blocks))
-	for i, b := range blocks {
+	cases := make([]BlockCase, 0, len(chainBlocks))
+	for i, b := range chainBlocks {
 		c, err := blockCase(descriptions[i].name, descriptions[i].description, descriptions[i].author, b)
 		if err != nil {
 			return nil, forkResult{}, err
@@ -351,6 +381,13 @@ func scenario() ([]BlockCase, forkResult, error) {
 	}
 
 	forkCase, err := blockCase("alice_fork", "A second block claiming alice_genesis as its predecessor. It is valid in isolation; against a store that already holds alice_second it is a fork.", "alice", forkBlock)
+	if err != nil {
+		return nil, forkResult{}, err
+	}
+	rivalCase, err := blockCase(
+		"alice_successor_rival",
+		"A second genesis block signed by the key alice_rotation appoints, naming that same rotation block in refs. It is a valid block, and against a store that already holds alice_successor_genesis it makes the succession ambiguous: two chains claim to continue Alice's. A node MUST surface that conflict and MUST NOT pick a successor — accept-first-seen, which rule 9 leaves open for an ordinary fork, is not available here (spec/02-block-format.md, \"Verifiable succession\").",
+		"alice_successor", rivalGenesis)
 	if err != nil {
 		return nil, forkResult{}, err
 	}
@@ -364,7 +401,37 @@ func scenario() ([]BlockCase, forkResult, error) {
 			Prev:        genesis.Digest().String(),
 			Blocks:      []string{cases[1].Digest, forkCase.Digest},
 		},
+		rival: rivalCase,
 	}, nil
+}
+
+// validateAmbiguity checks that the rival genesis block is exactly what the
+// vector claims: a valid block that makes the scenario's succession ambiguous,
+// and nothing else. The store reports the fork rather than refusing the block —
+// detection is required either way — and both claimants are then named as
+// successors of the one rotation, with neither preferred to the other.
+func validateAmbiguity(scenario []*block.Block, rotation, rival *block.Block) error {
+	store := block.NewMemStore()
+	for _, b := range scenario {
+		if err := store.Add(b); err != nil {
+			return fmt.Errorf("vectors: storing %s: %w", b, err)
+		}
+	}
+	var forkErr *block.ForkError
+	if err := store.Add(rival); err != nil && !errors.As(err, &forkErr) {
+		return fmt.Errorf("vectors: storing the rival successor genesis block: %w", err)
+	}
+	if _, err := block.Validate(rival, store, nil); err != nil {
+		return fmt.Errorf("vectors: the rival successor genesis block does not validate: %w", err)
+	}
+	successors, fork, err := block.Successors(rotation, store)
+	if err != nil {
+		return fmt.Errorf("vectors: reading the successors of %s: %w", rotation, err)
+	}
+	if len(successors) != 2 || fork == nil {
+		return fmt.Errorf("vectors: the rival successor genesis block leaves %d claimant(s) and fork %v, want two claimants and a fork", len(successors), fork)
+	}
+	return nil
 }
 
 // validateScenario runs the full validation the scenario claims to satisfy.

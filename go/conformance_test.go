@@ -21,6 +21,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -383,6 +384,8 @@ func TestBlockVectors(t *testing.T) {
 		t.Errorf("the fork names %v, want %v", summary.Blocks, got)
 	}
 
+	checkAmbiguousSuccession(t, doc, chain, byName)
+
 	for _, tc := range cases[vectorfile.InvalidCase](t, doc, "invalid") {
 		t.Run("invalid/"+tc.Name, func(t *testing.T) {
 			b, err := block.Decode(mustHex(t, tc.Name, tc.Bytes))
@@ -396,6 +399,77 @@ func TestBlockVectors(t *testing.T) {
 		t.Run("invalid_in_chain/"+tc.Name, func(t *testing.T) {
 			checkChainRejection(t, tc)
 		})
+	}
+}
+
+// checkAmbiguousSuccession replays the chain into a store of its own and offers
+// the rival successor genesis block: a second chain claiming the rotation block
+// alice_successor_genesis already claims. The vector pins the strict rule —
+// "the node MUST surface the conflict and MUST NOT pick a successor on its own"
+// (spec/05-processing-model.md, "Chain succession (key rotation)") — so the
+// block must be valid, both claimants must be reported, and no API may hand
+// back one of them as the successor.
+func checkAmbiguousSuccession(t *testing.T, doc vectorfile.Document, chain []vectorfile.BlockCase, byName map[string]*block.Block) {
+	t.Helper()
+	tc := cases[vectorfile.BlockCase](t, doc, "ambiguous_succession")[0]
+	rival := checkBlockCase(t, tc)
+	rotation, ok := byName["alice_rotation"]
+	if !ok {
+		t.Fatal("the scenario has no alice_rotation block")
+	}
+	claimed, ok := byName["alice_successor_genesis"]
+	if !ok {
+		t.Fatal("the scenario has no alice_successor_genesis block")
+	}
+
+	store := block.NewMemStore()
+	for _, c := range chain {
+		b, ok := byName[c.Name]
+		if !ok {
+			t.Fatalf("the scenario has no %s block", c.Name)
+		}
+		if err := store.Add(b); err != nil {
+			t.Fatalf("replaying %s: %v", c.Name, err)
+		}
+	}
+	// The rival is a fork at the genesis position of the successor key's
+	// chain: this store's policy is accept-and-flag, so the *ForkError is the
+	// detection and not a rejection.
+	var forkErr *block.ForkError
+	if err := store.Add(rival); err != nil && !errors.As(err, &forkErr) {
+		t.Fatalf("Add(%s): %v", tc.Name, err)
+	}
+	if _, err := block.Validate(rival, store, nil); err != nil {
+		t.Fatalf("%s must be a valid block: %v", tc.Name, err)
+	}
+
+	successors, fork, err := block.Successors(rotation, store)
+	if err != nil {
+		t.Fatalf("Successors: %v", err)
+	}
+	if fork == nil {
+		t.Fatalf("the succession of %s is not reported as ambiguous", tc.Name)
+	}
+	want := []string{claimed.Digest().String(), rival.Digest().String()}
+	got := make([]string, len(successors))
+	for i, d := range successors {
+		got[i] = d.String()
+	}
+	slices.Sort(want)
+	slices.Sort(got)
+	if !equalStrings(got, want) {
+		t.Errorf("the ambiguity names %v, want both claimants %v", got, want)
+	}
+
+	// Neither claimant may be validated as the successor while the other
+	// stands: a history over an ambiguous junction is refused, whichever
+	// claimant the caller names.
+	var ambiguous *block.AmbiguousSuccessionError
+	for _, claimant := range []*block.Block{claimed, rival} {
+		tips := []cid.Digest{rotation.Digest(), claimant.Digest()}
+		if _, err := block.ValidateHistory(tips, store, nil); !errors.As(err, &ambiguous) {
+			t.Errorf("ValidateHistory over claimant %s = %v, want an *AmbiguousSuccessionError", claimant.Digest(), err)
+		}
 	}
 }
 

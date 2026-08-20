@@ -17,7 +17,7 @@ specification is ambiguous where it looked clear, which is worth reporting.
 |------|------|---------------|------------------|
 | [`dcbor.json`](dcbor.json) | Deterministic CBOR profile | [03-encoding.md](../spec/03-encoding.md) | `encoding_reference` (10), `canonical` (26), `decimal_fractions` (6), `invalid` (54) |
 | [`entities.json`](entities.json) | Atoms, bonds, molecules, fillers | [01-data-model.md](../spec/01-data-model.md), [06-meta-bonds.md](../spec/06-meta-bonds.md) | `atoms` (5), `bonds` (2), `meta_bonds` (5), `molecules` (4), `fillers` (12), `invalid` (38) |
-| [`blocks.json`](blocks.json) | Blocks, chains, signatures | [02-block-format.md](../spec/02-block-format.md), [04-cryptography.md](../spec/04-cryptography.md), [05-processing-model.md](../spec/05-processing-model.md), [06-meta-bonds.md](../spec/06-meta-bonds.md) | `chain` (6), `forks` (1), `fork_block` (1), `invalid` (23), `invalid_in_chain` (13) |
+| [`blocks.json`](blocks.json) | Blocks, chains, signatures | [02-block-format.md](../spec/02-block-format.md), [04-cryptography.md](../spec/04-cryptography.md), [05-processing-model.md](../spec/05-processing-model.md), [06-meta-bonds.md](../spec/06-meta-bonds.md) | `chain` (6), `forks` (1), `fork_block` (1), `ambiguous_succession` (1), `invalid` (23), `invalid_in_chain` (13) |
 | [`privacy.json`](privacy.json) | Private blocks, key wrapping | [04-cryptography.md](../spec/04-cryptography.md) | `payload` (1), `aead` (4), `x25519` (3), `key_wrap` (2), `private_block` (1), `invalid` (13) |
 
 ## How they are produced
@@ -178,7 +178,12 @@ A reasonable order to work through, each step depending on the last:
    in the signing procedure, not the encoding. Then replay the `chain` section
    in order into a store and validate each block; the `forks` section is the
    one condition [02-block-format.md](../spec/02-block-format.md) rule 9
-   requires you to detect. One pair straddles the two halves and is worth
+   requires you to detect, and `ambiguous_succession` is the one place where
+   detection is not enough: its block is a second chain claiming the rotation
+   `alice_successor_genesis` already claims, and a node MUST surface that
+   conflict and MUST NOT pick a successor — accept-first-seen, which rule 9
+   leaves open for an ordinary fork, is not available there. One pair
+   straddles the two halves and is worth
    checking together: the chain's `bob_meta_molecule` publishes a standard
    meta-bond and the meta-molecule built from it in one block, and
    `invalid_in_chain`'s `unreachable_meta_bond` is the same block with the
