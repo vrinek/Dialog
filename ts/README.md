@@ -81,4 +81,4 @@ for how releases are built.
 
 ## License
 
-MIT
+Apache-2.0

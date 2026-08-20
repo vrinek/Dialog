@@ -7,15 +7,12 @@ This package ships compiled JavaScript with `.d.ts` declarations, built from
 
 ## Pre-flight checklist
 
-- [ ] **LICENSE file.** `package.json` declares `"license": "MIT"` but there is
-      no `LICENSE` file anywhere in the repository (checked both `ts/` and the
-      repo root). Add one before publishing — npm will publish without it, but
-      a declared license with no license file is a real gap for consumers and
-      for `npm`/OSS-scanner tooling. Once added at the repo root, either copy
-      it into `ts/LICENSE` or add `"license"`-adjacent text to `ts/README.md`;
-      `files` in `package.json` does not currently list a `LICENSE` entry
-      because there is nothing to list yet — add one if you place the file at
-      `ts/LICENSE`.
+- [x] **LICENSE file.** `package.json` declares `"license": "Apache-2.0"` and
+      `ts/LICENSE` carries the full license text (a copy of the repo-root
+      `LICENSE`). npm auto-includes a root-level `LICENSE` file in the
+      tarball without needing an entry in `files`; confirmed with
+      `npm pack --dry-run`, which lists `LICENSE` alongside `dist/` and
+      `README.md`.
 - [ ] `version` in `ts/package.json` matches the release you intend
       (currently `0.8.0`).
 - [ ] Working tree is clean and this commit is the one you want published
@@ -24,7 +21,7 @@ This package ships compiled JavaScript with `.d.ts` declarations, built from
 - [ ] `npm run typecheck && npm test` pass (454 tests as of this writing).
 - [ ] `npm run build` succeeds and `dist/` looks right
       (`find dist -type f`).
-- [ ] `npm pack --dry-run` shows only `dist/`, `README.md`, and
+- [ ] `npm pack --dry-run` shows only `dist/`, `README.md`, `LICENSE`, and
       `package.json` — no `test/`, `scripts/`, or `.ts` sources.
 - [ ] You are logged in to npm as an account/org with publish rights to the
       `dialog-protocol` name (unclaimed as of this writing — first publish

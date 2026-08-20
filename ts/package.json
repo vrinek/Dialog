@@ -16,7 +16,7 @@
     "ed25519",
     "x25519"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "homepage": "https://github.com/vrinek/Dialog/tree/main/ts#readme",
   "repository": {
     "type": "git",

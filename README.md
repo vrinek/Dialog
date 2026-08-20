@@ -285,3 +285,7 @@ Build the PDF locally using the provided scripts:
 ```
 
 Generated files (`dialog-protocol-*.pdf`, `dialog-protocol-*.html`) are gitignored and not committed to the repository.
+
+## License
+
+Licensed under the Apache License, Version 2.0 — see [LICENSE](LICENSE).
