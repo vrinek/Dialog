@@ -18,7 +18,7 @@ This package ships compiled JavaScript with `.d.ts` declarations, built from
 - [ ] Working tree is clean and this commit is the one you want published
       (npm publishes exactly what's on disk, not what's committed, but keep
       them in sync).
-- [ ] `npm run typecheck && npm test` pass (454 tests as of this writing).
+- [ ] `npm run typecheck && npm test` pass (456 tests as of this writing).
 - [ ] `npm run build` succeeds and `dist/` looks right
       (`find dist -type f`).
 - [ ] `npm pack --dry-run` shows only `dist/`, `README.md`, `LICENSE`, and
