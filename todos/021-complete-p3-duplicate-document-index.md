@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "021"
 tags: [documentation, overview]
@@ -36,14 +36,20 @@ Remove one table, keep the bottom index.
 
 ## Acceptance Criteria
 
-- [ ] Only one document index table remains
-- [ ] Scope section still communicates what each doc covers
+- [x] Only one document index table remains
+- [x] Scope section still communicates what each doc covers
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/00-overview.md`, "Scope", "What the protocol defines", is now a single prose sentence that links to the Document index anchor instead of repeating it as a table.
+- Exactly one document index table remains, at the bottom of `spec/00-overview.md` (lines 123-132), now also covering 07-transport.
 
 ## Notes
 

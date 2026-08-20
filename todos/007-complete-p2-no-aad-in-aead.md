@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p2
 issue_id: "007"
 tags: [security, cryptography, private-blocks]
@@ -48,10 +48,10 @@ Option 1. Specify AAD as dCBOR of plaintext fields.
 
 ## Acceptance Criteria
 
-- [ ] AAD defined normatively with exact construction
-- [ ] Field ordering specified (dCBOR deterministic map ordering handles this)
-- [ ] Decryption validation: AAD mismatch MUST cause decryption failure
-- [ ] Example updated to show AAD construction
+- [x] AAD defined normatively with exact construction
+- [x] Field ordering specified (dCBOR deterministic map ordering handles this)
+- [x] Decryption validation: AAD mismatch MUST cause decryption failure
+- [x] Example updated to show AAD construction
 
 ## Resources
 
@@ -68,6 +68,14 @@ Option 1. Specify AAD as dCBOR of plaintext fields.
 
 **Learnings:**
 - Using AEAD without AAD is a common oversight — wastes a key security property
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/04-cryptography.md:128` defines the AAD as the deterministic CBOR encoding of a map of the plaintext block fields -- `v`, `type`, `pub`, `prev` -- with dCBOR key ordering making the encoding unambiguous.
+- The field set is `v`/`type`/`pub`/`prev` rather than the list originally proposed here because `refs` and `ts` moved inside the ciphertext under todo 022; nothing left in the clear is unbound.
+- An AAD mismatch (authentication tag failure) MUST reject the block: same file, line 143. Worked example at line 302.
+- The separate key-wrap AEAD deliberately uses an empty AAD, with the reasoning written out at line 218.
 
 ## Notes
 

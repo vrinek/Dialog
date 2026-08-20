@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p1
 issue_id: "001"
 tags: [architecture, key-rotation, layer-model]
@@ -66,14 +66,14 @@ Key rotation is defined as a meta-molecule in `06-meta-bonds.md`, which means it
 
 ## Acceptance Criteria
 
-- [ ] `rotate_key` operation type defined in `02-block-format.md`
-- [ ] Rotation block constraints specified (solo-op only)
-- [ ] Chain-ending semantics documented
-- [ ] New chain genesis linkage defined (SHOULD ref rotation block)
-- [ ] Key rotation meta-bond removed from `06-meta-bonds.md` (5 standard meta-bonds, not 6)
-- [ ] Chain integrity rule updated in `02-block-format.md`
-- [ ] Processing model updated for chain succession in `05-processing-model.md`
-- [ ] No circular L1↔L3 dependency
+- [x] `rotate_key` operation type defined in `02-block-format.md`
+- [x] Rotation block constraints specified (solo-op only)
+- [x] Chain-ending semantics documented
+- [x] New chain genesis linkage defined (SHOULD ref rotation block)
+- [x] Key rotation meta-bond removed from `06-meta-bonds.md` (5 standard meta-bonds, not 6)
+- [x] Chain integrity rule updated in `02-block-format.md`
+- [x] Processing model updated for chain succession in `05-processing-model.md`
+- [x] No circular L1↔L3 dependency
 
 ## Resources
 
@@ -91,6 +91,14 @@ Key rotation is defined as a meta-molecule in `06-meta-bonds.md`, which means it
 **Learnings:**
 - This is the highest-priority architectural issue in the spec
 - Resolution will cascade to issues #2 and #12
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved by the spec rework. `rotate_key` is the fourth operation type and lives only in a `rotation` block: `spec/02-block-format.md`, "Rotation block" (solo-op, `prev` never null, `new_pub` != `pub`) and "rotate_key" (chain-ending, old key marked inactive, successor genesis MUST list the rotation block in `refs` -- "Verifiable succession").
+- Chain integrity rule 3 in `spec/02-block-format.md`, "Validation", now says a chain ends when a rotation block is published and the new key begins a separate chain.
+- `spec/05-processing-model.md`, "Chain succession", carries the processing side; `spec/06-meta-bonds.md` lists five meta-bonds and no key-rotation one.
+- L1 no longer needs any L3 knowledge to accept a rotation: the block `type` field carries it in the clear.
 
 ## Notes
 

@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p2
 issue_id: "006"
 tags: [architecture, security, block-validation]
@@ -50,10 +50,10 @@ Option 1. Require detection, leave handling implementation-scoped. Consistent wi
 
 ## Acceptance Criteria
 
-- [ ] Normative fork detection rule added to `02-block-format.md`
-- [ ] "Linear chain" stated as normative property, not just terminology
-- [ ] Fork handling strategy explicitly noted as implementation-scoped
-- [ ] Security Considerations section updated to mention fork attacks
+- [x] Normative fork detection rule added to `02-block-format.md`
+- [x] "Linear chain" stated as normative property, not just terminology
+- [x] Fork handling strategy explicitly noted as implementation-scoped
+- [x] Security Considerations section updated to mention fork attacks
 
 ## Resources
 
@@ -70,6 +70,14 @@ Option 1. Require detection, leave handling implementation-scoped. Consistent wi
 
 **Learnings:**
 - Pattern: the spec says "linear" in terminology but never enforces it normatively
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/02-block-format.md`, "Validation", rule 9 "Fork detection": a node MUST detect a block whose `prev` matches the `prev` of another stored block from the same `pub`, and the handling strategy (reject, flag, accept-first-seen) is explicitly implementation-scoped.
+- "Security Considerations" in the same file covers chain forking and points at rule 9.
+- The linear-chain property is now normative through the `prev` field rule (null exactly for the genesis block) together with rule 9; "Chain linking" states the singly-linked-list shape.
+- Ambiguous rotation succession is folded in as a fork condition (same file, "rotate_key").
 
 ## Notes
 

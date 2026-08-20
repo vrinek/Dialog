@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "025"
 tags: [documentation, meta-bonds, references]
@@ -34,13 +34,19 @@ One line addition.
 
 ## Acceptance Criteria
 
-- [ ] `03-encoding.md` listed in normative references
+- [x] `03-encoding.md` listed in normative references
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/06-meta-bonds.md`, References, Normative, now lists `03-encoding.md` -- "CBOR encoding and CID computation" -- alongside 01, 02, 04 and 05.
+- The body links it where it matters too: line 104 (meta-bonds identified by the SHA-256 digest of their dCBOR-encoded template) and line 26.
 
 ## Notes
 

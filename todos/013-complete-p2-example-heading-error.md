@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p2
 issue_id: "013"
 tags: [documentation, block-format, examples]
@@ -35,13 +35,18 @@ One-word fix.
 
 ## Acceptance Criteria
 
-- [ ] Heading matches actual operation count in example
+- [x] Heading matches actual operation count in example
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. The heading at `spec/02-block-format.md:285` now reads "Genesis block with four operations", matching the four operations in the example below it.
 
 ## Notes
 

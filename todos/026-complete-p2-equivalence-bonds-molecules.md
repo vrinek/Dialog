@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p2
 issue_id: "026"
 tags: [meta-bonds, data-model, specification-accuracy]
@@ -27,14 +27,21 @@ Change filler types to accept atoms, bonds, or molecules. Either widen to any en
 
 ## Acceptance Criteria
 
-- [ ] Equivalence meta-bond supports atom, bond, and molecule fillers
-- [ ] Examples updated to show bond/molecule equivalence
+- [x] Equivalence meta-bond supports atom, bond, and molecule fillers
+- [x] Examples updated to show bond/molecule equivalence
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** User review
 - User identified that equivalence should not be limited to atoms
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/06-meta-bonds.md`, "1. Equivalence", declares `A = atom (type 0) / bond (type 1) / molecule (type 2)` for both fillers, with a MUST that both be the same type and a stated consequence for mixed types (a valid molecule declaring no equivalence, never an invalid block).
+- Worked examples exist for all three: "Declaring atom equivalence", "Declaring bond equivalence" and "Declaring molecule equivalence" (same file).
+- The informative paragraphs also pin what equivalence does *not* close over -- no composition from bond or filler equivalence up to molecules (todo 063).
 
 ## Notes
 

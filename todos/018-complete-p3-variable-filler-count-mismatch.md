@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "018"
 tags: [data-model, specification-gap, validation]
@@ -35,14 +35,20 @@ One sentence addition to `01-data-model.md` molecule section.
 
 ## Acceptance Criteria
 
-- [ ] Normative MUST rule for filler count = variable count
-- [ ] Validation section references this rule
+- [x] Normative MUST rule for filler count = variable count
+- [x] Validation section references this rule
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/01-data-model.md:122`: "The number of fillers in a molecule MUST equal the number of variables in the referenced bond template. The fillers are positionally matched to variables in the order they appear in the template."
+- The variable count is well-defined because of the grammar added under todo 017.
 
 ## Notes
 

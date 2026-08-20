@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "024"
 tags: [specification-gap, processing-model]
@@ -34,13 +34,19 @@ One sentence reword.
 
 ## Acceptance Criteria
 
-- [ ] Private chains stated as optional (MAY), not assumed
+- [x] Private chains stated as optional (MAY), not assumed
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/05-processing-model.md:262` now reads "A user MAY maintain one or more private chains", replacing the factual assertion.
+- The surrounding paragraphs also make decryption capability and subscription orthogonal, so nothing else in the document assumes a private chain exists.
 
 ## Notes
 

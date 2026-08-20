@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p2
 issue_id: "022"
 tags: [architecture, block-format, foreign-chains, private-blocks, refs]
@@ -79,16 +79,16 @@ Since only recipients process private blocks, encrypt everything except chain ma
 
 ## Acceptance Criteria
 
-- [ ] Public→private reference prohibition stated as normative rule
-- [ ] Private block encrypted fields defined (refs, ts, ops)
-- [ ] Refs semantics changed from "chain tips" to "CID-providing blocks"
-- [ ] `prev` role clarified as ordering-only (not CID resolution)
-- [ ] Demand-driven recursive resolution documented
-- [ ] Undecryptable ref → error behavior defined
-- [ ] Scan limit with safe default specified
-- [ ] Fat block strategy noted as implementation choice
-- [ ] Examples updated to show new ref model
-- [ ] AAD construction updated for new encrypted field set (Issue #7)
+- [x] Public→private reference prohibition stated as normative rule
+- [x] Private block encrypted fields defined (refs, ts, ops)
+- [x] Refs semantics changed from "chain tips" to "CID-providing blocks"
+- [x] `prev` role clarified as ordering-only (not CID resolution)
+- [x] Demand-driven recursive resolution documented
+- [x] Undecryptable ref → error behavior defined
+- [x] Scan limit with safe default specified
+- [x] Fat block strategy noted as implementation choice
+- [x] Examples updated to show new ref model
+- [x] AAD construction updated for new encrypted field set (Issue #7)
 
 ## Resources
 
@@ -109,6 +109,15 @@ Since only recipients process private blocks, encrypt everything except chain ma
 - Explicit dependency graphs (refs → specific blocks) are more robust than implicit traversal (prev → genesis)
 - "What does a non-recipient node do?" is the key question for private block design
 - Fat blocks are a natural consequence of idempotent ops — useful insight for implementation guidance
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved across the spec rework. `spec/02-block-format.md`: `refs` entries are explicit CID-providing blocks (line 220), `prev` is ordering-only (line 216 and the field table), validation rule 6 states the public-block prohibition on naming a private block, rule 10 adds the no-own-chain-reference rule.
+- Private block structure: plaintext `v`/`type`/`pub`/`sig`/`prev`, encrypted `refs`+`ts`+`ops` in one `enc` field (`spec/02-block-format.md`, "Private block", line 94).
+- `spec/05-processing-model.md`, "Foreign chain loading (demand-driven)", carries the resolution procedure, the three-outcome verdict, "Scan limit" (unit = one distinct foreign block, user-configurable, default 256), "Undecryptable reference handling" and "Fat blocks".
+- One deliberate divergence from design decision 5 of this file: an undecryptable `refs` target now yields *stored but unvalidated* plus a MUST to surface the undecided state to the application, not a validation error -- a node's missing key must not decide another author's block invalid (see todo 079). The criterion is ticked as "behaviour defined", with that substitution noted here.
+- AAD construction was updated for the new encrypted field set (`spec/04-cryptography.md:128`, todo 007).
 
 ## Notes
 

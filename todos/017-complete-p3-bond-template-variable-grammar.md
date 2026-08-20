@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "017"
 tags: [data-model, specification-gap, parsing]
@@ -39,15 +39,21 @@ Add grammar rule to `01-data-model.md`.
 
 ## Acceptance Criteria
 
-- [ ] Formal grammar for template variables defined
-- [ ] Ambiguous cases resolved by the grammar
-- [ ] Examples consistent with grammar
+- [x] Formal grammar for template variables defined
+- [x] Ambiguous cases resolved by the grammar
+- [x] Examples consistent with grammar
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/01-data-model.md:55-72` gives the grammar (`variable = "_" 1*UCALPHA "_"`), the leftmost-longest matching rule, and worked cases for exactly the ambiguities raised here: `_AB_`, `_A_B_`, `_A__B_`, `type_of`, `_a_`.
+- All other underscores are literal text, stated normatively. The examples elsewhere in the spec conform.
 
 ## Notes
 

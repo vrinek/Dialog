@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "016"
 tags: [block-format, specification-gap]
@@ -36,13 +36,19 @@ One sentence addition to `02-block-format.md`.
 
 ## Acceptance Criteria
 
-- [ ] SHOULD monotonicity rule added for timestamps within a chain
+- [x] SHOULD monotonicity rule added for timestamps within a chain
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. The `ts` row of the block field table, `spec/02-block-format.md:51`: "The `ts` field SHOULD be greater than or equal to the `ts` of the previous block in the same chain. Implementations SHOULD warn on non-monotonic timestamps."
+- The ordering that decides anything is no longer timestamp-based: `spec/05-processing-model.md`, "Assertion order", defines block order over the `prev` sequence and never over `ts`.
 
 ## Notes
 

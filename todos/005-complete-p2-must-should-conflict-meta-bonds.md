@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p2
 issue_id: "005"
 tags: [specification-consistency, meta-bonds, rfc2119]
@@ -48,7 +48,7 @@ Option 1. One-word change in `06-meta-bonds.md:26`.
 
 ## Acceptance Criteria
 
-- [ ] Both documents use the same RFC 2119 keyword for meta-bond support
+- [x] Both documents use the same RFC 2119 keyword for meta-bond support
 - [ ] No other MUST/SHOULD conflicts between spec documents
 
 ## Resources
@@ -66,6 +66,13 @@ Option 1. One-word change in `06-meta-bonds.md:26`.
 
 **Learnings:**
 - Quick win — one-word fix
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved for the conflict as filed. `spec/06-meta-bonds.md:26` now reads "Implementations MUST support the following five meta-bonds", matching `spec/05-processing-model.md:228` ("Implementations MUST recognize the standard meta-bonds").
+- The count also changed from six to five, following the removal of the key-rotation meta-bond (todo 027).
+- The second criterion -- a sweep for *any* other MUST/SHOULD conflict across the spec -- is left unticked: it was not re-run in this audit and is broader than the issue as filed.
 
 ## Notes
 

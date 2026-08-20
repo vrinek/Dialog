@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p1
 issue_id: "003"
 tags: [specification-consistency, data-model, encoding]
@@ -45,11 +45,11 @@ Change `number` to `int / #6.4([int, int])` in CDDL. Update prose to explain dec
 
 ## Acceptance Criteria
 
-- [ ] CDDL uses `int / #6.4([int, int])` not `number` for numeric filler value
-- [ ] Prose explains decimal fraction encoding (CBOR tag 4)
-- [ ] No IEEE 754 float references remain in data model
-- [ ] Consistent with `03-encoding.md:35` (integers only + tag 4)
-- [ ] Example showing decimal fraction encoding (e.g., `3.14` → `[-2, 314]`)
+- [x] CDDL uses `int / #6.4([int, int])` not `number` for numeric filler value
+- [x] Prose explains decimal fraction encoding (CBOR tag 4)
+- [x] No IEEE 754 float references remain in data model
+- [x] Consistent with `03-encoding.md:35` (integers only + tag 4)
+- [x] Example showing decimal fraction encoding (e.g., `3.14` → `[-2, 314]`)
 
 ## Resources
 
@@ -67,6 +67,13 @@ Change `number` to `int / #6.4([int, int])` in CDDL. Update prose to explain dec
 
 **Learnings:**
 - Quick win — two-line fix with high impact on interoperability
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/01-data-model.md:104` now reads `"value" => int / #6.4([int, int])`, with the prose at lines 143-149 explaining decimal fractions and giving `3.14` -> `#6.4([-2, 314])`.
+- `spec/03-encoding.md`, dCBOR profile rules 5 and 6, bans floating-point values and every tag except tag 4, and "Decimal fractions" pins the canonical form (negative exponent, mantissa neither zero nor divisible by 10, both components in the signed 64-bit range).
+- The worked example is at `spec/03-encoding.md:253-264`. No IEEE 754 float reference remains in the data model.
 
 ## Notes
 

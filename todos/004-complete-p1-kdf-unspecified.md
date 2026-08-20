@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p1
 issue_id: "004"
 tags: [security, cryptography, interoperability]
@@ -51,11 +51,11 @@ Option 1. HKDF-SHA-256 is the standard choice. Add normative text with exact par
 
 ## Acceptance Criteria
 
-- [ ] KDF algorithm named (HKDF-SHA-256)
-- [ ] All parameters specified: salt, info, output length
-- [ ] Added to fixed parameters table in `00-overview.md`
-- [ ] RFC 5869 added to normative references in `04-cryptography.md`
-- [ ] `KDF(shared_secret)` replaced with explicit HKDF invocation in text
+- [x] KDF algorithm named (HKDF-SHA-256)
+- [x] All parameters specified: salt, info, output length
+- [x] Added to fixed parameters table in `00-overview.md`
+- [x] RFC 5869 added to normative references in `04-cryptography.md`
+- [x] `KDF(shared_secret)` replaced with explicit HKDF invocation in text
 
 ## Resources
 
@@ -74,6 +74,13 @@ Option 1. HKDF-SHA-256 is the standard choice. Add normative text with exact par
 **Learnings:**
 - Quick win with high security impact
 - Info string provides domain separation for the KDF context
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/04-cryptography.md`, "Key management", derives the wrapping key with HKDF-SHA-256 (salt empty, ikm the X25519 shared secret, info `"dialog-v1-key-wrap"`, 32-byte output) -- lines 152-160, with the summary at line 341.
+- The fixed-parameters table in `spec/00-overview.md:108` carries the KDF row with all four parameters.
+- RFC 5869 is listed under Normative references in `spec/04-cryptography.md`.
 
 ## Notes
 

@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p2
 issue_id: "010"
 tags: [specification-consistency, cryptography, cddl]
@@ -40,8 +40,8 @@ Option 1. Two-line fix.
 
 ## Acceptance Criteria
 
-- [ ] Both CDDL definitions use `bstr .size 24`
-- [ ] No bare `bstr` for nonce anywhere in spec
+- [x] Both CDDL definitions use `bstr .size 24`
+- [x] No bare `bstr` for nonce anywhere in spec
 
 ## Resources
 
@@ -57,6 +57,12 @@ Option 1. Two-line fix.
 
 **Learnings:**
 - Quick win — constrain sizes in CDDL wherever the crypto mandates them
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/02-block-format.md:76` and `spec/04-cryptography.md:79` both read `"nonce" => bstr .size 24  ; 192-bit XChaCha20 nonce`.
+- A grep for `nonce` across `spec/` finds no remaining bare `bstr`.
 
 ## Notes
 

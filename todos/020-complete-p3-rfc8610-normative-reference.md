@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "020"
 tags: [documentation, encoding, references]
@@ -34,13 +34,18 @@ Move one line between reference sections.
 
 ## Acceptance Criteria
 
-- [ ] RFC 8610 listed as Normative reference in `03-encoding.md`
+- [x] RFC 8610 listed as Normative reference in `03-encoding.md`
 
 ## Work Log
 
 ### 2026-02-24 - Approved for Work
 **By:** Claude Triage System
 - Status changed from pending → ready
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. RFC 8610 (CDDL) is now listed under `### Normative` in the References section of `spec/03-encoding.md` (line 293, beneath the Normative heading at line 285).
 
 ## Notes
 

@@ -1,5 +1,5 @@
 ---
-status: done
+status: complete
 priority: p3
 issue_id: "015"
 tags: [block-format, specification-gap, architecture]
@@ -45,12 +45,12 @@ Add `type` field. Update CDDL in `02-block-format.md` to show three block varian
 
 ## Acceptance Criteria
 
-- [ ] `type` field added to block CDDL with three valid values
-- [ ] Validation rules documented per block type
-- [ ] `nonce` field only present/required for `private` type
-- [ ] `rotation` type constraints documented (solo-op)
-- [ ] Signing input updated to include `type` field
-- [ ] Examples updated to show type field
+- [x] `type` field added to block CDDL with three valid values
+- [x] Validation rules documented per block type
+- [x] `nonce` field only present/required for `private` type
+- [x] `rotation` type constraints documented (solo-op)
+- [x] Signing input updated to include `type` field
+- [x] Examples updated to show type field
 
 ## Resources
 
@@ -69,6 +69,14 @@ Add `type` field. Update CDDL in `02-block-format.md` to show three block varian
 **Learnings:**
 - Version and type are independent axes — keep them separate
 - Three block types means version changes could affect only one type
+
+### 2026-08-20 - Audit against current spec
+**By:** Claude audit pass
+**Actions:**
+- Resolved. `spec/02-block-format.md:46` defines `"type" => tstr` with the three values, and "Validation" rule 1 dispatches per type: public (plaintext `ops`, no `nonce`/`enc`, no `rotate_key`), private (`enc` plus `nonce .size 24`, no plaintext `ops`/`refs`/`ts`), rotation (exactly one `rotate_key` and nothing else).
+- The rotation-block CDDL and its solo-op constraint are at `spec/02-block-format.md:100-125`.
+- The signing input carries `type` in both variants: `spec/04-cryptography.md`, "Signature input" (`signing-input-public`, `signing-input-private`).
+- The block examples in `spec/02-block-format.md` all carry the field.
 
 ## Notes
 
