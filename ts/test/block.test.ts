@@ -19,10 +19,14 @@
  * case replayed into a store of its own — rules 3, 4, 5, 6, the own-chain half
  * of rule 10, and the scan limit at the limit its case names.
  *
+ * The `ambiguous_succession` section is the one case where detection is not
+ * enough: a second chain claiming the rotation the chain's successor already
+ * claims, which a node MUST surface and MUST NOT resolve by picking.
+ *
  * The hand-written tests at the bottom cover what the vectors still leave
- * unpinned — an ambiguous succession, a non-monotonic timestamp, the counting
- * unit of the scan limit — each built from this implementation's own signed
- * blocks.
+ * unpinned — a non-monotonic timestamp, the counting unit of the scan limit,
+ * an ambiguous succession between two chains of this test's own making — each
+ * built from this implementation's own signed blocks.
  */
 
 import assert from "node:assert/strict";
