@@ -1,16 +1,82 @@
 {
   "name": "dialog-protocol",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.8.0",
   "type": "module",
-  "description": "TypeScript implementation of the Dialog protocol wire format",
+  "description": "TypeScript implementation of the Dialog protocol wire format: dCBOR, content identifiers, blocks, entities, and the transport profile",
+  "keywords": [
+    "dialog",
+    "dialog-protocol",
+    "dcbor",
+    "cbor",
+    "cid",
+    "content-addressed",
+    "ontology",
+    "distributed",
+    "wire-format",
+    "ed25519",
+    "x25519"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/vrinek/Dialog/tree/main/ts#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vrinek/Dialog.git",
+    "directory": "ts"
+  },
+  "bugs": {
+    "url": "https://github.com/vrinek/Dialog/issues"
+  },
   "engines": {
     "node": ">=24"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    "./block": {
+      "types": "./dist/block.d.ts",
+      "default": "./dist/block.js"
+    },
+    "./blockseq": {
+      "types": "./dist/blockseq.d.ts",
+      "default": "./dist/blockseq.js"
+    },
+    "./cid": {
+      "types": "./dist/cid.d.ts",
+      "default": "./dist/cid.js"
+    },
+    "./dcbor": {
+      "types": "./dist/dcbor.d.ts",
+      "default": "./dist/dcbor.js"
+    },
+    "./entity": {
+      "types": "./dist/entity.d.ts",
+      "default": "./dist/entity.js"
+    },
+    "./hex": {
+      "types": "./dist/hex.d.ts",
+      "default": "./dist/hex.js"
+    },
+    "./node-http": {
+      "types": "./dist/node-http.d.ts",
+      "default": "./dist/node-http.js"
+    },
+    "./privacy": {
+      "types": "./dist/privacy.d.ts",
+      "default": "./dist/privacy.js"
+    },
+    "./transport": {
+      "types": "./dist/transport.d.ts",
+      "default": "./dist/transport.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@noble/ciphers": "^2.3.0",
